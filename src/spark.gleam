@@ -41,7 +41,10 @@ pub fn path(term: Term) -> String {
     let u = int.to_float(i) /. cols
     let y =
       { int.to_float(mid) }
-      -. { int.to_float(amplitude) *. cos({ two_pi *. int.to_float(term.k) *. u } +. term.phase) }
+      -. {
+        int.to_float(amplitude)
+        *. cos({ two_pi *. int.to_float(term.k) *. u } +. term.phase)
+      }
     let yi = float.round(y)
     point(i, yi, i == 0)
   })

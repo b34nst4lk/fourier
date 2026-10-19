@@ -57,3 +57,19 @@ phase is committed.
   the trace matches the sketch with no y negation anywhere.
 - Pending manual smoke: lap animation smoothness, slider scrub while
   dragging, final-frame freeze, play/pause states, resize refit.
+
+## Phase 6 notes
+
+- spark.gleam: x-projection sparklines as integer-coordinate paths
+  (viewBox 0 0 36x16, 36 samples); per-row amplitude normalisation — the
+  wave's own radius maps to the box, since absolute amplitudes span orders
+  of magnitude across rows (correction recorded in module docs: (k, r, phi)
+  vs (-k, r, phi) x-projections are identical only at phi = 0; elsewhere
+  they are time-mirrors).
+- Table shows ALL computed terms; rows at or below the circles-slider cut
+  render dimmed (opacity .32) — table and animation stay visibly in sync.
+- Perf watch item: 256 rows x (3 text cells + path attr) re-render on every
+  drag frame — accepted for phase 6; if smoke shows lag, options are fewer
+  sparkline samples for cut rows or sparklines only on active rows.
+- Pending manual smoke: sticky header, scroll, dimming vs slider, live
+  updates during dot drags.

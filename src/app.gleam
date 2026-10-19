@@ -20,6 +20,7 @@ import lustre/element/svg
 import lustre/event
 import render
 import sketch.{type Dot, type Sketch}
+import spark
 import store
 import terms
 
@@ -267,12 +268,29 @@ pub fn view(model: Model) -> Element(Msg) {
     },
     html.div([attr.class("panel"), attr.class("terms")], [
       html.div([attr.class("panel-label")], [html.text("terms")]),
-      html.div([attr.class("placeholder")], [
-        html.text(case ready {
-          True -> stats_line(model)
-          False -> "No terms yet."
-        }),
+      case ready {
+        True -> term_table(model)
+        False ->
+          html.div([attr.class("placeholder")], [html.text("No terms yet.")])
+      },
+    ]),
+  ])
+}
+
+/// Panel 3: every computed term, amplitude-descending, with its x-projection
+/// sparkline. Rows below the circles-slider cut render dimmed.
+fn term_table(model: Model) -> Element(Msg) {
+  html.div([attr.class("terms-scroll")], [
+    html.table([attr.class("term-table")], [
+      html.thead([], [
+        html.tr([], [
+          html.th([], [html.text("k")]),
+          html.th([], [html.text("radius")]),
+          html.th([], [html.text("phase")]),
+          html.th([], [html.text("wave")]),
+        ]),
       ]),
+      html.tbody([], term_rows(model)),
     ]),
   ])
 }
@@ -334,20 +352,32 @@ fn fourier_toolbar(model: Model) -> Element(Msg) {
   ])
 }
 
-/// Visible proof of the live wiring until the real table lands in phase 6.
-fn stats_line(model: Model) -> String {
-  let top = case model.terms {
-    [t, ..] -> " · top radius " <> float.to_string(t.radius)
-    [] -> ""
-  }
-  int.to_string(list.length(model.terms)) <> " terms" <> top
-}
-
-fn panel(label: String, note: String) -> Element(Msg) {
-  html.div([attr.class("panel")], [
-    html.div([attr.class("panel-label")], [html.text(label)]),
-    html.div([attr.class("placeholder")], [html.text(note)]),
-  ])
+/// One table row per computed term. The sparkline column holds a small SVG
+/// with integer coordinates (see spark module for the normalisation story).
+fn term_rows(model: Model) -> List(Element(Msg)) {
+  model.terms
+  |> list.index_map(fn(t, i) {
+    html.tr([attr.classes([#("cut", i >= model.circles)])], [
+      html.td([], [html.text(int.to_string(t.k))]),
+      html.td([], [html.text(spark.format_float2(t.radius))]),
+      html.td([], [html.text(spark.format_float2(t.phase))]),
+      html.td([], [
+        svg.svg(
+          [
+            attr.class("spark"),
+            attr.attribute(
+              "viewBox",
+              "0 0 "
+                <> int.to_string(spark.columns)
+                <> " "
+                <> int.to_string(spark.box_height),
+            ),
+          ],
+          [svg.path([attr.attribute("d", spark.path(t))])],
+        ),
+      ]),
+    ])
+  })
 }
 
 fn sketch_panel(sk: Sketch) -> Element(Msg) {

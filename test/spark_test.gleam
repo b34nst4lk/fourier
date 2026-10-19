@@ -45,16 +45,13 @@ pub fn real_terms_produce_paths_test() {
   // integration sanity: every term of a real pipeline has a well-formed path
   let waves = terms.compute(sketch.star(), 64, 64)
   waves
-    |> list_each(fn(t) {
-      let p = spark.path(t)
-      should.be_true(string.starts_with(p, "M0,"))
-    })
+  |> list_each(fn(t) {
+    let p = spark.path(t)
+    should.be_true(string.starts_with(p, "M0,"))
+  })
 }
 
-fn list_each(
-  items: List(terms.Term),
-  check: fn(terms.Term) -> Nil,
-) -> Nil {
+fn list_each(items: List(terms.Term), check: fn(terms.Term) -> Nil) -> Nil {
   case items {
     [] -> Nil
     [t, ..rest] -> {

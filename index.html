@@ -129,6 +129,44 @@
         text-align: right;
         color: #5cc3ff;
       }
+
+      .terms-scroll {
+        flex: 1;
+        overflow-y: auto;
+      }
+      .term-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 12px;
+      }
+      .term-table th {
+        position: sticky;
+        top: 0;
+        background: #12161d;
+        color: #4b5666;
+        text-align: left;
+        padding: 4px 10px;
+        font-weight: normal;
+        z-index: 1;
+      }
+      .term-table td {
+        padding: 2px 10px;
+        border-top: 1px solid #1a202a;
+        white-space: nowrap;
+      }
+      .term-table tr.cut {
+        opacity: 0.32;
+      }
+      .spark {
+        width: 108px;
+        height: 16px;
+        display: block;
+      }
+      .spark path {
+        fill: none;
+        stroke: #5eead4;
+        stroke-width: 1;
+      }
     </style>
   </head>
   <body>
