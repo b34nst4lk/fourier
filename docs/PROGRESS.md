@@ -122,3 +122,29 @@ tag inlined, guard against '</script' in bundle). Single file => none of
 the three failure modes apply. Deploy = copy one file.
 NOTE to self: `pkill -f dev-server.mjs` self-matches the invoking bash
 command line and kills the session — use pkill -f 'dev-serve[r]\.mjs'.
+
+## Resource audit: phone-heat report (2026-10-19)
+
+User symptom: phone gets hot just from loading the page. Measured with
+`scripts/bench_render.mjs` (real FFI module against an op-counting stub
+canvas; raster cost itself is browser-side and modeled analytically).
+
+| Metric (Node, JIT-hot) | Value |
+|---|---|
+| JS math per frame (canvas loop) | ~21 μs — irrelevant |
+| Canvas ops/frame playing, circles=64 (default) | ~489 (37 arcs, 65 strokes, 256-seg trace) |
+| Canvas ops/frame **paused** | ~501 — REPaints identical frame 60×/s |
+| Canvas ops/frame **final mode** | ~631 |
+| Canvas ops/frame playing, circles=256 | ~1245 |
+| rebuild_cache per model change (every Msg) | 0.39 ms @64 terms / 1.5 ms @256 |
+| Fill: 500 CSS-px panel, dpr=3 | 2.25 Mpx cleared+repainted per frame |
+
+Root causes, ranked: (1) RAF loop draws unconditionally every frame — paused
+and final modes burn at 100% play rate forever; (2) uncapped dpr ⇒ 3× phones
+repaint 2.25 Mpx × 60 Hz just clearRect-ing; (3) default circles=64 + preset
+seeded on empty storage ⇒ full-rate animation starts on load; (4) no
+off-screen gating (stacked phone layout keeps painting while scrolled away);
+(5) per-segment strokes (~102 stroke calls where 4 batched paths would do);
+(6) rebuild_cache on every model change even when terms are unchanged.
+NOT the cause: bundle size, DFT pipeline (3.9 ms on drag), no shadowBlur/
+filters, no per-frame Gleam/VDOM dispatch (loop never calls back).
