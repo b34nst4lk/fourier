@@ -50,7 +50,8 @@ pub fn remove_dot_undo_restores_test() {
 }
 
 pub fn remove_out_of_range_is_noop_test() {
-  let s = sketch.load_dots(sketch.new(), [#(0.0, 0.0)])
+  // start() has no history: a no-op action must not create any
+  let s = sketch.start([#(0.0, 0.0)])
   let s = sketch.remove_dot(s, 5)
   should.equal(sketch.dots(s), [#(0.0, 0.0)])
   should.be_false(sketch.can_undo(s))
@@ -65,7 +66,7 @@ pub fn set_dot_moves_only_target_test() {
 }
 
 pub fn set_out_of_range_noop_test() {
-  let s0 = sketch.load_dots(sketch.new(), [#(0.0, 0.0)])
+  let s0 = sketch.start([#(0.0, 0.0)])
   let s = sketch.set_dot(s0, 7, #(5.0, 5.0))
   should.equal(sketch.dots(s), [#(0.0, 0.0)])
   should.be_false(sketch.can_undo(s))
@@ -84,9 +85,10 @@ pub fn grab_set_undo_redo_test() {
 }
 
 pub fn drag_is_one_history_step_test() {
-  // grab once, many set_dots: exactly one undo step
+  // grab once, many set_dots: exactly one undo step (on a no-history state,
+  // so the remaining stack after undo is provably empty)
   let s =
-    sketch.load_dots(sketch.new(), [#(0.0, 0.0)])
+    sketch.start([#(0.0, 0.0)])
     |> sketch.grab_dot(0)
     |> sketch.set_dot(0, #(1.0, 0.0))
     |> sketch.set_dot(0, #(2.0, 0.0))
@@ -97,7 +99,7 @@ pub fn drag_is_one_history_step_test() {
 }
 
 pub fn cancel_grab_after_no_move_test() {
-  let s0 = sketch.load_dots(sketch.new(), [#(0.0, 0.0)])
+  let s0 = sketch.start([#(0.0, 0.0)])
   let s = sketch.cancel_grab(sketch.grab_dot(s0, 0))
   should.equal(sketch.dots(s), [#(0.0, 0.0)])
   should.be_false(sketch.can_undo(s))
