@@ -7,6 +7,7 @@
 
 import gleam/dynamic/decode
 import gleam/float
+import gleam/int
 
 import gleam/list
 import gleam/option.{type Option, None, Some}
@@ -19,6 +20,7 @@ import lustre/element/svg
 import lustre/event
 import sketch.{type Dot, type Sketch}
 import store
+import terms
 
 // -- model -------------------------------------------------------------------
 
@@ -36,7 +38,7 @@ pub type Msg {
 }
 
 pub type Model {
-  Model(sketch: Sketch, drag: Option(Int))
+  Model(sketch: Sketch, drag: Option(Int), terms: List(terms.Term))
 }
 
 /// The SVG element's document id; the FFI looks it up for coordinate
@@ -46,6 +48,13 @@ const svg_id = "sketch-svg"
 /// Grab radius in sketch units.
 const hit_radius = 3.0
 
+/// Arc-length resample resolution for the live pipeline.
+const sample_count = 512
+
+/// Keep every signed term the DFT produces (truncation happens at render
+/// time once the circles slider exists in phase 5).
+const max_terms = 1024
+
 // -- lifecycle ---------------------------------------------------------------
 
 pub fn init(_: Nil) -> #(Model, Effect(Msg)) {
@@ -53,7 +62,14 @@ pub fn init(_: Nil) -> #(Model, Effect(Msg)) {
     Ok(dots) -> dots
     Error(_) -> []
   }
-  #(Model(sketch: sketch.start(dots), drag: None), effect.none())
+  let sk = sketch.start(dots)
+  #(Model(sketch: sk, drag: None, terms: pipeline(sk)), effect.none())
+}
+
+/// The live pipeline: dots -> resample -> DFT -> sorted (k, radius, phase).
+/// Runs on every sketch change, exactly as decision #8 demands.
+fn pipeline(sk: Sketch) -> List(terms.Term) {
+  terms.compute(sketch.dots(sk), sample_count, max_terms)
 }
 
 pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
@@ -118,7 +134,7 @@ fn preset(model: Model, dots: List(Dot)) -> #(Model, Effect(Msg)) {
 /// sketch-affecting message flows through here.
 fn commit(model: Model, change: fn(Sketch) -> Sketch) -> #(Model, Effect(Msg)) {
   let sk = change(model.sketch)
-  #(Model(..model, sketch: sk), autosave(sk))
+  #(Model(..model, sketch: sk, terms: pipeline(sk)), autosave(sk))
 }
 
 /// Apply a sketch change together with a new drag state, then autosave.
@@ -128,7 +144,7 @@ fn drag_commit(
   drag: Option(Int),
 ) -> #(Model, Effect(Msg)) {
   let sk = change(model.sketch)
-  #(Model(sketch: sk, drag: drag), autosave(sk))
+  #(Model(sketch: sk, drag: drag, terms: pipeline(sk)), autosave(sk))
 }
 
 fn autosave(sk: Sketch) -> Effect(Msg) {
@@ -193,12 +209,21 @@ pub fn view(model: Model) -> Element(Msg) {
       html.div([attr.class("panel-label")], [html.text("terms")]),
       html.div([attr.class("placeholder")], [
         html.text(case ready {
-          True -> "The term table lands in phase 6."
+          True -> stats_line(model)
           False -> "No terms yet."
         }),
       ]),
     ]),
   ])
+}
+
+/// Visible proof of the live wiring until the real table lands in phase 6.
+fn stats_line(model: Model) -> String {
+  let top = case model.terms {
+    [t, ..] -> " · top radius " <> float.to_string(t.radius)
+    [] -> ""
+  }
+  int.to_string(list.length(model.terms)) <> " terms" <> top
 }
 
 fn panel(label: String, note: String) -> Element(Msg) {

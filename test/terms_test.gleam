@@ -18,9 +18,7 @@ pub fn empty_or_degenerate_dots_give_empty_terms_test() {
 }
 
 pub fn sorted_by_radius_descending_test() {
-  should.be_true(sorted_desc(
-    terms.compute(sketch.star(), samples, 1000),
-  ))
+  should.be_true(sorted_desc(terms.compute(sketch.star(), samples, 1000)))
 }
 
 fn sorted_desc(ts: List(terms.Term)) -> Bool {
@@ -60,7 +58,7 @@ pub fn chain_tip_at_zero_equals_first_sample_test() {
   let first_sample =
     resample.resample_closed(dots, samples)
     |> list.first
-  let Ok(first_sample) = first_sample
+  let assert Ok(first_sample) = first_sample
   let tip = terms.position_at(terms.compute(dots, samples, 1000), 0.0)
   approx.be_close(tip.0, first_sample.0, 0.000_000_001)
   approx.be_close(tip.1, first_sample.1, 0.000_000_001)
@@ -73,9 +71,8 @@ pub fn position_at_half_period_test() {
     resample.resample_closed(dots, samples)
     |> list.drop(samples / 2)
     |> list.first
-  let Ok(mid) = mid
-  let tip =
-    terms.position_at(terms.compute(dots, samples, 1000), 0.5)
+  let assert Ok(mid) = mid
+  let tip = terms.position_at(terms.compute(dots, samples, 1000), 0.5)
   approx.be_close(tip.0, mid.0, 0.000_000_001)
   approx.be_close(tip.1, mid.1, 0.000_000_001)
 }
