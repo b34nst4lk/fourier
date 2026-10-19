@@ -143,10 +143,37 @@ for (const dpr of [1, 2, 3]) {
       `(full clearRect + full redraw, no dirty gating)`,
   );
 }
-console.log(
-  `\nper-frame stroke-call breakdown (playing, terms=64): ` +
-    Object.entries(playing_ops)
-      .filter(([k]) => k !== "setTransform")
-      .map(([k, v]) => `${k}=${(v / 600).toFixed(0)}`)
-      .join("  "),
-);
+// ---- 7. repeated calculations per frame -----------------------------------
+// The FFI computes Math.cos/sin via global lookup at call time, so patching
+// counts exactly what the shipping draw() recomputes each frame.
+const real_cos = Math.cos,
+  real_sin = Math.sin;
+let cos_n = 0,
+  sin_n = 0;
+Math.cos = (x) => {
+  cos_n++;
+  return real_cos(x);
+};
+Math.sin = (x) => {
+  sin_n++;
+  return real_sin(x);
+};
+
+function trig_case(label, terms, final, playing) {
+  ffi.canvas_sync(terms, final, playing); // sync costs one rebuild: not part of per-frame count
+  cos_n = 0;
+  sin_n = 0;
+  drive(120);
+  const per_frame = (cos_n + sin_n) / 120;
+  console.log(
+    `${label.padEnd(8)} terms=${String(terms.length).padStart(3)}  ` +
+      `cos/sin calls per frame=${per_frame.toFixed(1)}` +
+      (playing || final ? "" : "  ← identical output every frame"),
+  );
+}
+trig_case("playing", make_terms(64), false, true);
+trig_case("playing", make_terms(256), false, true);
+trig_case("paused", make_terms(64), false, false);
+trig_case("final", make_terms(64), true, true);
+Math.cos = real_cos;
+Math.sin = real_sin;
