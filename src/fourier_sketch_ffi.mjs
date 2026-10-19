@@ -98,6 +98,8 @@ const anim = {
   visible: true,
 };
 
+let boot_retry = null; // pending self-re-boot while the canvas is unmounted
+
 function pump() {
   // schedule at most one pending frame; re-arming after idle goes through here
   if (anim.raf === null && anim.visible && anim.ctx) {
@@ -121,7 +123,20 @@ function terms_equal(a, b) {
 
 export function canvas_boot(id) {
   const el = document.getElementById(id);
-  if (!el) return;
+  if (!el) {
+    // Lustre can run the sync effect before the view is attached (reproduced:
+    // the init effect looked up fourier-canvas while the panel was still
+    // unmounted, even with a restored sketch). Retry on the next frame until
+    // the canvas exists — one getElementById per frame, self-terminating when
+    // found, and restartable through every later sync's boot call.
+    if (boot_retry === null) {
+      boot_retry = requestAnimationFrame(() => {
+        boot_retry = null;
+        canvas_boot(id);
+      });
+    }
+    return;
+  }
   const dpr = Math.min(Math.max(window.devicePixelRatio || 1, 1), MAX_DPR);
   const rect = el.getBoundingClientRect();
   const w = Math.max(1, Math.floor(rect.width));
@@ -159,8 +174,16 @@ export function canvas_boot(id) {
 }
 
 export function canvas_sync(terms, final, playing) {
-  if (!terms_equal(anim.terms, terms)) rebuild_cache();
-  anim.terms = terms;
+  // Lustre hands over a Gleam List of tuples: iterable, but NOT a JS array —
+  // no .length, no index access (draw() crashes with a RangeError otherwise,
+  // every frame). Normalize once at the boundary; everything below sees plain
+  // rows [k, radius, phase].
+  const rows = Array.from(terms, (t) => [t[0], t[1], t[2]]);
+  // assign BEFORE rebuilding: rebuild_cache() reads anim.terms, so the trace
+  // cache must be rebuilt from the incoming terms, not the previous ones.
+  const terms_changed = !terms_equal(anim.terms, rows);
+  anim.terms = rows;
+  if (terms_changed) rebuild_cache();
   anim.final = final;
   anim.playing = playing;
   // final frame should show the complete closed trace immediately

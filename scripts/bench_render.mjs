@@ -10,6 +10,7 @@ import * as ffi from "../src/fourier_sketch_ffi.mjs";
 
 // ---- stub DOM --------------------------------------------------------------
 const ops = {};
+const calls = []; // recorded draw-call coords, reset alongside ops
 function count(name) {
   ops[name] = (ops[name] || 0) + 1;
 }
@@ -19,9 +20,23 @@ const ctxStub = {
   beginPath: () => count("beginPath"),
   stroke: () => count("stroke"),
   fill: () => count("fill"),
-  moveTo: () => count("moveTo"),
-  lineTo: () => count("lineTo"),
-  arc: () => count("arc"),
+  moveTo: (x, y) => {
+    count("moveTo");
+    calls.push(["moveTo", Math.round(x * 100) / 100, Math.round(y * 100) / 100]);
+  },
+  lineTo: (x, y) => {
+    count("lineTo");
+    calls.push(["lineTo", Math.round(x * 100) / 100, Math.round(y * 100) / 100]);
+  },
+  arc: (x, y, r) => {
+    count("arc");
+    calls.push([
+      "arc",
+      Math.round(x * 100) / 100,
+      Math.round(y * 100) / 100,
+      Math.round(r * 100) / 100,
+    ]);
+  },
 };
 ctxStub.__defineSetter__("lineWidth", () => {});
 ctxStub.__defineSetter__("strokeStyle", () => {});
@@ -34,7 +49,10 @@ const el = {
   getBoundingClientRect: () => ({ width: CSS, height: CSS, left: 0, top: 0 }),
   getContext: () => ctxStub,
 };
-globalThis.document = { getElementById: () => el };
+let canvas_in_dom = true; // simulates Lustre running sync effects pre-attach
+globalThis.document = {
+  getElementById: () => (canvas_in_dom ? el : null),
+};
 globalThis.window = {
   devicePixelRatio: 3,
   addEventListener: () => {},
@@ -58,15 +76,29 @@ globalThis.IntersectionObserver = class {
 };
 
 // ---- helpers ---------------------------------------------------------------
+// A Gleam List on the JS target is iterable but NOT an array — no .length,
+// no index access. All sync contracts feed this shape so the harness can
+// never again pass on array-shaped data while the app ships list-shaped.
+class GleamishList {
+  constructor(rows) {
+    this._rows = rows;
+    Object.defineProperty(this, "length", { value: undefined });
+  }
+  [Symbol.iterator]() {
+    return this._rows[Symbol.iterator]();
+  }
+}
+
 function make_terms(n) {
   const out = [];
   for (let i = 1; i <= n; i++) {
     out.push([i % 2 === 0 ? -i / 2 : (i + 1) / 2, 9 / i, i * 0.13]);
   }
-  return out;
+  return new GleamishList(out);
 }
 const reset = () => {
   for (const k of Object.keys(ops)) delete ops[k];
+  calls.length = 0;
 };
 const total = () => Object.values(ops).reduce((a, b) => a + b, 0);
 
@@ -75,7 +107,8 @@ let sim_now = 0; // monotonic simulated clock — drive() must not regress it,
 function drive(frames) {
   for (let i = 0; i < frames; i++) {
     sim_now += 1000 / 60;
-    raf_cb(sim_now);
+    // loop may legitimately be dead (pre-fix boot ordering) — tolerate that
+    if (typeof raf_cb === "function") raf_cb(sim_now);
   }
 }
 const ms = (fn) => {
@@ -83,6 +116,28 @@ const ms = (fn) => {
   fn();
   return performance.now() - t0;
 };
+
+let failures = 0;
+function verify(label, cond) {
+  console.log(`${cond ? "PASS" : "FAIL"}  ${label}`);
+  if (!cond) failures++;
+}
+
+// ---- 0a. boot-before-mount contract (fresh-load reproduction) -------------
+// Lustre can run the canvas_sync effect BEFORE the view is attached (repro:
+// the init effect found fourier-canvas null even with a restored sketch).
+// The loop must self-start once the canvas appears — with no further
+// canvas_sync/boot calls from the app.
+canvas_in_dom = false;
+ffi.canvas_boot("fourier-canvas"); // el null → boot must schedule a retry
+ffi.canvas_sync(make_terms(64), false, true); // pump: ctx still null → no draw
+canvas_in_dom = true; // element appears at patch time
+reset();
+drive(120);
+verify(
+  "boot-before-mount: loop self-starts once canvas mounts (≥10 draws)",
+  (ops.clearRect || 0) >= 10,
+);
 
 // ---- 0. boot --------------------------------------------------------------
 ffi.canvas_boot("fourier-canvas");
@@ -179,7 +234,7 @@ function trig_case(label, terms, final, playing) {
   drive(120);
   const per_frame = (cos_n + sin_n) / 120;
   console.log(
-    `${label.padEnd(8)} terms=${String(terms.length).padStart(3)}  ` +
+    `${label.padEnd(8)} terms=${String([...terms].length).padStart(3)}  ` +
       `cos/sin calls per frame=${per_frame.toFixed(1)}` +
       (playing || final ? "" : "  ← identical output every frame"),
   );
@@ -192,11 +247,24 @@ Math.cos = real_cos;
 Math.sin = real_sin;
 
 // ---- 8. machine-verified behavior contracts (RED→GREEN gate) --------------
-let failures = 0;
-function verify(label, cond) {
-  console.log(`${cond ? "PASS" : "FAIL"}  ${label}`);
-  if (!cond) failures++;
-}
+
+// trace cache must reflect the CURRENT terms, not one sync late (stale-rebuild
+// regression): one term k=1, r=10, φ=0 ⇒ the trace's index-64 point sits at
+// sketch ≈(0,10) → canvas (0,50) (square 500px panel: scale 5, ox/oy 0) — a
+// coordinate no circle/link stroke can produce.
+reset();
+ffi.canvas_sync(new GleamishList([[1, 10, 0]]), true, true); // list-shaped
+drive(4);
+const tracePoint = calls.find(
+  (c) =>
+    c[0] === "lineTo" &&
+    Math.abs(c[1] - 0) < 0.25 &&
+    Math.abs(c[2] - 50) < 0.25,
+);
+verify(
+  "trace cache built from CURRENT terms (trace hits (0,50))",
+  Boolean(tracePoint),
+);
 
 // dpr capped at 2: 500 CSS px @ dpr 3 => 1000px backing store
 verify(

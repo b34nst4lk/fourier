@@ -163,3 +163,26 @@ updating it per-tick halves pen speed under the gate (caught by contract).
 After-numbers: paused/final ~0.5 ops/frame (was ~500), playing@64 ~112
 ops/tick at 30fps ≈ 4.3 strokes/draw (was 489 at 60fps), off-screen 0 draws,
 dpr=3 backing 1500→1000 px. Site redeployed (212 KB single file, live 200).
+
+### Animation regression post-mortem (2026-10-19, same day as thermal fix) — fixed
+
+User report: "animation doesn't work at all." Reproduced the REAL deployed
+bundle under happy-dom (probe scripts /tmp/fsd; seeded store + canvas ctx
+wrap). Three stacked defects, all in src/fourier_sketch_ffi.mjs:
+1. (my thermal fix) batching/dedupe indexed terms like a JS array — the app
+   hands over a GLEAM LIST (iterable, no .length/index) ⇒ draw() threw
+   RangeError every frame ⇒ no animation. THE killer. Pre-fix code used
+   for..of so it never hit this. Fix: Array.from normalization at the sync
+   boundary. Lesson recorded: harness feeds GleamishList now, tests must use
+   the app's real data shapes.
+2. (latent, pre-existing pattern) Lustre runs the init canvas_sync effect
+   before the canvas element is attached; canvas_boot early-returned on
+   el=null and nothing re-booted ⇒ loop never starts on fresh load without
+   interaction. Fix: boot retries itself per RAF while unmounted.
+3. (my thermal fix) rebuild_cache ran BEFORE anim.terms was reassigned —
+   trace cache built from the previous term set (first boot: all zeros).
+   Fix: assign then rebuild.
+Harness: two new permanent contracts (boot-before-mount self-start; trace
+cache reflects current terms), 9/9 PASS; both proven RED against HEAD, GREEN
+after. Suite 79/79, format clean. happy-dom full-stack probe: boot→retry→
+self-start→~30fps draws with batched ops. Redeployed (live 200).
