@@ -11,7 +11,7 @@ phase is committed.
 | 2 | Math core (TDD) | RED suite: complex, resample, dft (round-trip, Parseval, known inputs, degenerates). GREEN: implementation makes suite pass | ✅ done (24/24) | RED commit + GREEN commit |
 | 3 | Panel 1 sketchpad | sketch.gleam state model TDD'd (add/move/delete/undo/clear/presets/gate); SVG view wired; autosave store | ✅ done | RED + GREEN (1); shell+view+autosave (2) |
 | 4 | Pipeline wiring | live resample→DFT→terms on every mousemove; feeds panels 2–3 | ✅ done | RED/GREEN part 1 + bench part 2 |
-| 5 | Panel 2 output | canvas FFI, RAF epicycle animation, pause + final frame, circles slider 4–256, mirror fix visible | ⬜ | |
+| 5 | Panel 2 output | canvas FFI, RAF epicycle animation, pause + final frame, circles slider 4–256, mirror fix visible | ✅ done | bridge RED/GREEN + canvas commit |
 | 6 | Panel 3 term table | amplitude-sorted terms, (k, radius, phase) + sine sparklines, dimmed cut rows, empty states | ⬜ | |
 | 7 | Delivery | bench ≤ 8 ms published; README (usage + smoke checklist); static build verified servable; final full-suite run | ⬜ | |
 
@@ -45,3 +45,15 @@ phase is committed.
 - Pending manual smoke (no browser in dev env): click/drag/delete round,
   autosave survives refresh, corrupt-storage fallback. Added to phase-7
   checklist scope.
+
+## Phase 5 notes
+
+- Loop design: Gleam pushes targets ([k, radius, phase] arrays — tuples
+  compile to JS arrays) + mode flags on every sync-worthy change; the FFI
+  RAF loop owns the clock (0.25 laps/s), caches the 256-step trace in
+  SKETCH coords (resize-safe, letterbox mapping at draw time), and self-
+  boots idempotently on every sync.
+- Mirror story (PLAN §3 corrected): canvas y-down == complex im axis, so
+  the trace matches the sketch with no y negation anywhere.
+- Pending manual smoke: lap animation smoothness, slider scrub while
+  dragging, final-frame freeze, play/pause states, resize refit.

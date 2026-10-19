@@ -1,11 +1,11 @@
 import gleam/list
 import gleeunit/should
 import render
+import sketch
 import terms
 
 pub fn build_targets_slices_top_n_test() {
-  let full =
-    terms.compute(sketch.star(), 64, 1000)
+  let full = terms.compute(sketch.star(), 64, 1000)
   let targets = render.build_targets(full, 5)
   should.equal(list.length(targets), 5)
   // each target is (k, radius, phase) — same rows, same order as the slice

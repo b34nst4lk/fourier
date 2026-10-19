@@ -78,6 +78,7 @@ versioned. Original grilling names kept: `fourier_sketch` (phase 1),
 | `src/sketch.gleam` | panel-1 state model: add/move/delete, undo stack, gates, presets | ✓ unit + properties |
 | `src/store.gleam` | versioned localStorage save/load via FFI | ✓ round-trip on JS |
 | `src/animation.gleam` | time→chain pose (pure): given terms+time, positions of circles & pen tip | ✓ unit |
+| `src/render.gleam` | model↔canvas bridge: top-N target slicing, slider clamp, FFI sync; drawing is JS (smoke) | ✓ unit (pure parts) |
 | `src/app.gleam` | Lustre app: Model, Msg, update, view (2×2 grid, empty states) | smoke checklist |
 | `src/fourier_sketch_ffi.mjs` | canvas ops, RAF, localStorage | smoke checklist |
 | `src/fourier_sketch/bench.gleam` | perf bench entry (phase 7) | budget report |
@@ -90,10 +91,11 @@ versioned. Original grilling names kept: `fourier_sketch` (phase 1),
   folded to **signed k** in `−N/2 < k ≤ N/2` (negative k = clockwise spin).
 - **Inverse/reconstruction:** `p(t) = Σ_k c_k · e^{+2πikt}`; epicycles are the
   chain of vectors `c_k·e^{2πikt}` tip-to-tail; the tip traces the drawing.
-- **y-axis mirror fix:** screen y grows downward. To keep panel 2's trace
-  oriented like the sketch, the forward pipeline samples with `y` negated and
-  the render negates `y` again when drawing. (Requirement: trace matches
-  sketch orientation; mechanism chosen here.)
+- **y-axis mirror:** requirement — panel 2's trace matches the sketch's
+  orientation. Mechanism: **none needed** — the browser canvas y-axis also
+  grows downward, so complex-plane (re, im) plotted directly as (x, y)
+  reproduces the sketch exactly. (The classic epicycle-mirroring bug exists
+  only with y-up drawing maths; recorded so nobody "fixes" it back in.)
 - **Round-trip identity:** forward→inverse reproduces the samples to < 1e−9.
 - **Discrete Parseval:** `Σ|p_n|² = N · Σ|c_k|²` (tested as an invariant).
 - Resampler guarantees: output length = n; first sample = first dot; gaps

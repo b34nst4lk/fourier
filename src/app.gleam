@@ -18,6 +18,7 @@ import lustre/element.{type Element}
 import lustre/element/html
 import lustre/element/svg
 import lustre/event
+import render
 import sketch.{type Dot, type Sketch}
 import store
 import terms
@@ -34,11 +35,21 @@ pub type Msg {
   LoadStar
   LoadHeart
   LoadWobble
+  SetCircles(Int)
+  ToggleFinal
+  TogglePlaying
   Ignored
 }
 
 pub type Model {
-  Model(sketch: Sketch, drag: Option(Int), terms: List(terms.Term))
+  Model(
+    sketch: Sketch,
+    drag: Option(Int),
+    terms: List(terms.Term),
+    circles: Int,
+    show_final: Bool,
+    playing: Bool,
+  )
 }
 
 /// The SVG element's document id; the FFI looks it up for coordinate
@@ -63,7 +74,16 @@ pub fn init(_: Nil) -> #(Model, Effect(Msg)) {
     Error(_) -> []
   }
   let sk = sketch.start(dots)
-  #(Model(sketch: sk, drag: None, terms: pipeline(sk)), effect.none())
+  let model =
+    Model(
+      sketch: sk,
+      drag: None,
+      terms: pipeline(sk),
+      circles: 64,
+      show_final: False,
+      playing: True,
+    )
+  #(model, canvas_sync(model))
 }
 
 /// The live pipeline: dots -> resample -> DFT -> sorted (k, radius, phase).
@@ -123,6 +143,18 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
     LoadHeart -> preset(model, sketch.heart())
     LoadWobble -> preset(model, sketch.wobble())
     Ignored -> #(model, effect.none())
+    SetCircles(n) -> {
+      let m = Model(..model, circles: render.clamp_circles(n))
+      #(m, canvas_sync(m))
+    }
+    ToggleFinal -> {
+      let m = Model(..model, show_final: !model.show_final)
+      #(m, canvas_sync(m))
+    }
+    TogglePlaying -> {
+      let m = Model(..model, playing: !model.playing)
+      #(m, canvas_sync(m))
+    }
   }
 }
 
@@ -134,7 +166,8 @@ fn preset(model: Model, dots: List(Dot)) -> #(Model, Effect(Msg)) {
 /// sketch-affecting message flows through here.
 fn commit(model: Model, change: fn(Sketch) -> Sketch) -> #(Model, Effect(Msg)) {
   let sk = change(model.sketch)
-  #(Model(..model, sketch: sk, terms: pipeline(sk)), autosave(sk))
+  let m = Model(..model, sketch: sk, terms: pipeline(sk))
+  #(m, effect.batch([autosave(sk), canvas_sync(m)]))
 }
 
 /// Apply a sketch change together with a new drag state, then autosave.
@@ -144,7 +177,28 @@ fn drag_commit(
   drag: Option(Int),
 ) -> #(Model, Effect(Msg)) {
   let sk = change(model.sketch)
-  #(Model(sketch: sk, drag: drag, terms: pipeline(sk)), autosave(sk))
+  let m =
+    Model(
+      sketch: sk,
+      drag: drag,
+      terms: pipeline(sk),
+      circles: model.circles,
+      show_final: model.show_final,
+      playing: model.playing,
+    )
+  #(m, effect.batch([autosave(sk), canvas_sync(m)]))
+}
+
+/// Push the current render state (top-N targets + mode flags) into the
+/// FFI animation loop.
+fn canvas_sync(model: Model) -> Effect(Msg) {
+  effect.from(fn(_dispatch) {
+    render.sync(
+      render.build_targets(model.terms, model.circles),
+      model.show_final,
+      model.playing,
+    )
+  })
 }
 
 fn autosave(sk: Sketch) -> Effect(Msg) {
@@ -201,10 +255,16 @@ pub fn view(model: Model) -> Element(Msg) {
   let ready = sketch.gate_ready(sk)
   html.div([attr.class("app")], [
     sketch_panel(sk),
-    panel("fourier", case ready {
-      True -> "Epicycles render here in the next build (phase 5)."
-      False -> "Add at least 3 dots to summon the Fourier view."
-    }),
+    case ready {
+      True -> fourier_panel(model)
+      False ->
+        html.div([attr.class("panel")], [
+          html.div([attr.class("panel-label")], [html.text("fourier")]),
+          html.div([attr.class("placeholder")], [
+            html.text("Add at least 3 dots to summon the Fourier view."),
+          ]),
+        ])
+    },
     html.div([attr.class("panel"), attr.class("terms")], [
       html.div([attr.class("panel-label")], [html.text("terms")]),
       html.div([attr.class("placeholder")], [
@@ -213,6 +273,63 @@ pub fn view(model: Model) -> Element(Msg) {
           False -> "No terms yet."
         }),
       ]),
+    ]),
+  ])
+}
+
+/// Panel 2: live epicycle canvas + mode toggles + circles slider.
+fn fourier_panel(model: Model) -> Element(Msg) {
+  html.div([attr.class("panel")], [
+    html.div([attr.class("panel-label")], [html.text("fourier")]),
+    html.div([attr.class("fourier-body")], [
+      fourier_toolbar(model),
+      html.canvas([
+        attr.attribute("id", render.canvas_id),
+        attr.class("fourier-canvas"),
+      ]),
+    ]),
+  ])
+}
+
+fn fourier_toolbar(model: Model) -> Element(Msg) {
+  html.div([attr.class("toolbar")], [
+    html.button(
+      [
+        event.on_click(TogglePlaying),
+        attr.disabled(model.show_final),
+        attr.classes([#("active", model.playing && !model.show_final)]),
+      ],
+      [
+        html.text(case model.playing {
+          True -> "pause"
+          False -> "play"
+        }),
+      ],
+    ),
+    html.button(
+      [
+        event.on_click(ToggleFinal),
+        attr.classes([#("active", model.show_final)]),
+      ],
+      [
+        html.text(case model.show_final {
+          True -> "animate"
+          False -> "final frame"
+        }),
+      ],
+    ),
+    html.span([attr.class("slider-label")], [html.text("circles")]),
+    html.input([
+      attr.type_("range"),
+      attr.attribute("min", "4"),
+      attr.attribute("max", "256"),
+      attr.attribute("step", "1"),
+      attr.attribute("value", int.to_string(model.circles)),
+      attr.class("circles-slider"),
+      event.on("input", circles_decoder()),
+    ]),
+    html.span([attr.class("count-label")], [
+      html.text(int.to_string(model.circles)),
     ]),
   ])
 }
@@ -313,4 +430,17 @@ fn closed_path(dots: List(Dot)) -> String {
 
 fn point_str(p: Dot) -> String {
   float.to_string(p.0) <> " " <> float.to_string(p.1)
+}
+
+@external(javascript, "./fourier_sketch_ffi.mjs", "event_value")
+fn event_value(event: decode.Dynamic, otherwise: Float) -> Float
+
+fn circles_decoder() -> decode.Decoder(Msg) {
+  decode.new_primitive_decoder("circles-slider", fn(data) {
+    let v = event_value(data, -1.0)
+    case v >=. 0.0 {
+      True -> Ok(SetCircles(float.round(v)))
+      False -> Error(Ignored)
+    }
+  })
 }
