@@ -150,7 +150,7 @@ cannot leak:
 
 | Finding | Due | Detail |
 |---------|-----|--------|
-| DFT twiddle table | phase 4 (measure first) | forward/inverse call `exp_i` per (k, m) pair: ~2·N² trig calls at 512 points (~524k/frame, likely over the 8 ms budget). Fix: precompute `w[n] = exp(−2πin/N)` once, index `w[(k·m) mod N]` → N trig calls total. Apply only if the bench says over budget |
-| Resampler monotonic walk | phase 4 (same bench) | `walk` restarts from edge 0 per sample → O(n·edges); targets ascend so a persistent-index walk is O(n+E); `edge_len` also computed twice. Harmless at locked scale, fold into perf work |
+| DFT twiddle table | ✅ RESOLVED phase 4 | Measure-first done: naive per-(k,m) exp_i = **7.7 ms avg / 7.2 ms min** at 60 dots → 512 samples → 512 terms (96% of the 8 ms budget *before* rendering — confirmed over-budget once render time lands). Fix shipped: one twiddle table w[m] = e^{−2πim/N} (N trig calls) + multiplicative rotation per k: **4.5 ms avg / 3.4 ms min** (bench: `gleam run -m fourier_sketch/bench --target javascript`). Inverse DFT left naive — test-only path |
+| Resampler monotonic walk | phase 4 (same bench) | `walk` restarts from edge 0 per sample → O(n·edges); targets ascend so a persistent-index walk is O(n+E); `edge_len` also computed twice. With the twiddle table landed, total pipeline sits at 44–56% of budget — **still parked**, revisit only if the render stack pushes totals over budget |
 | Real README | phase 7 | usage, bench numbers vs budget, smoke-test checklist |
 | Hex metadata licence | phase 7 | `licences = ["MIT"]` set provisionally during review fixes — confirm before publishing |

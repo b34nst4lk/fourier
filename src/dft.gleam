@@ -23,6 +23,15 @@ fn indices(n: Int) -> List(Int) {
   |> list.index_map(fn(_, i) { i })
 }
 
+// ---- forward DFT -----------------------------------------------------------
+// Performance (bench: fourier_sketch/bench, decision #8 live recompute):
+// the naive per-(k,m) exp_i costs ~2·N² trig calls (~7.7 ms at 512 points,
+// 96% of the 8 ms budget before rendering). Instead we build ONE twiddle
+// table w[m] = e^{−2πim/N} (N trig calls total) and, for each k, walk the
+// samples with a multiplicatively rotating twiddle: tw_{m+1} = tw_m · w[k].
+// Rotated-product rounding error over 511 steps ~1e−13, far inside the
+// round-trip tolerance the tests enforce.
+
 /// Forward DFT: N samples -> N terms with signed k.
 pub fn forward(
   samples: List(#(Float, Float)),
@@ -31,10 +40,9 @@ pub fn forward(
   let fn_ = int.to_float(n)
   let pcx = list.map(samples, fn(p) { complex.from_xy(p.0, p.1) })
   let half = n / 2
-  indices(n)
-  |> list.map(fn(k) {
-    let base = { -2.0 *. pi *. int.to_float(k) } /. fn_
-    let sum = go_sum(pcx, base, 0, complex.zero())
+  twiddle_table(n)
+  |> list.index_map(fn(wk, k) {
+    let sum = go_sum(pcx, wk, complex.zero(), complex.Complex(1.0, 0.0))
     let signed = case k > half {
       True -> k - n
       False -> k
@@ -43,8 +51,35 @@ pub fn forward(
   })
 }
 
+fn go_sum(
+  ps: List(complex.Complex),
+  wk: complex.Complex,
+  acc: complex.Complex,
+  tw: complex.Complex,
+) -> complex.Complex {
+  case ps {
+    [] -> acc
+    [p, ..rest] ->
+      go_sum(
+        rest,
+        wk,
+        complex.add(acc, complex.mul(p, tw)),
+        complex.mul(tw, wk),
+      )
+  }
+}
+
+/// w[m] = e^{−2πim/N} for m in 0..N-1 — N trig calls, shared by every k.
+fn twiddle_table(n: Int) -> List(complex.Complex) {
+  let fn_ = int.to_float(n)
+  indices(n)
+  |> list.map(fn(m) { complex.exp_i({ -2.0 *. pi *. int.to_float(m) } /. fn_) })
+}
+
 /// Inverse DFT: signed-k terms -> reconstruction of the path sampled at
 /// `n` points over one period.
+/// Note: test-only at production scale (the canvas reconstructs analytically
+/// from (k, radius, phase)) — the naive exp_i-per-use cost is fine here.
 pub fn inverse(
   terms: List(#(Int, complex.Complex)),
   n: Int,
@@ -62,19 +97,4 @@ pub fn inverse(
       })
     #(s.re, s.im)
   })
-}
-
-fn go_sum(
-  ps: List(complex.Complex),
-  base: Float,
-  idx: Int,
-  acc: complex.Complex,
-) -> complex.Complex {
-  case ps {
-    [] -> acc
-    [p, ..rest] -> {
-      let twiddle = complex.exp_i({ base *. int.to_float(idx) })
-      go_sum(rest, base, idx + 1, complex.add(acc, complex.mul(p, twiddle)))
-    }
-  }
 }

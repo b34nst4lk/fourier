@@ -50,3 +50,6 @@ export function event_point(event, svg_id, otherwise) {
     return otherwise;
   }
 }
+export function now_ms() {
+  return performance.now();
+}
