@@ -142,3 +142,43 @@ pub fn parseval_test() {
     0.000_001,
   )
 }
+pub fn odd_n_roundtrip_test() {
+  let dots = [
+    #(3.1, 0.2),
+    #(1.0, 2.0),
+    #(-1.5, 1.7),
+    #(-2.2, -0.9),
+    #(0.4, -2.6),
+    #(1.9, -1.1),
+  ]
+  let n = 7
+  let samples = resample.resample_closed(dots, n)
+  let rebuilt = samples |> dft.forward |> dft.inverse(n)
+  should.be_true(worst_pair_error(samples, rebuilt) <. 0.000_000_001)
+}
+
+pub fn signed_k_folds_nyquist_positive_test() {
+  // N = 2: k = 1 is Nyquist and must stay labelled positive; no -1 exists
+  let terms2 = dft.forward([#(1.0, 0.0), #(-1.0, 0.0)])
+  should.be_true(has_key(terms2, 1))
+  should.be_true(has_key(terms2, 0))
+  should.be_false(has_key(terms2, -1))
+  // N = 4: k = 2 (Nyquist) stays positive; k = 3 folds to -1
+  let terms4 =
+    dft.forward([
+      #(1.0, 0.0),
+      #(0.0, 1.0),
+      #(-1.0, 0.0),
+      #(0.0, -1.0),
+    ])
+  should.be_true(has_key(terms4, 2))
+  should.be_true(has_key(terms4, -1))
+  should.be_false(has_key(terms4, 3))
+}
+
+fn has_key(terms: List(#(Int, complex.Complex)), target: Int) -> Bool {
+  case list.key_find(terms, target) {
+    Ok(_) -> True
+    Error(_) -> False
+  }
+}

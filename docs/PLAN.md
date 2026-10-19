@@ -51,6 +51,7 @@ versioned. Original grilling names kept: `fourier_sketch` (phase 1),
 | 16 | Sparklines | Per-row sine sparkline = term's **x-projection**: peak=radius, cycles=\|k\|, shift=phase; sign of k stays in the k column; rows below the slider cut render dimmed | Cheap, honest, educational |
 | 17 | Process | **TDD**: red→green for all logic-carrying code; render/FFI layers are thin translators covered by the smoke checklist | Honest application, not dogma |
 | 18 | Commit policy | Commits are made **per phase**, matching docs/PROGRESS.md | History explains itself |
+| 19 | Undo history | **Cap at 200 entries**, newest kept, oldest dropped silently | Unbounded snapshots = memory creep; undo depth past 200 is unusable anyway |
 
 ## 2. Architecture
 
@@ -59,6 +60,8 @@ versioned. Original grilling names kept: `fourier_sketch` (phase 1),
   - build: `gleam build --target javascript`
   - test: `gleam test --target javascript`
 - **Framework:** Lustre for state/app shell; panel 1 is declarative SVG.
+- **CI:** runs the JavaScript target (`gleam test --target javascript`);
+  `actions/checkout@v7` verified current during the phase-3 review.
 - **FFI line:** all math, state, and logic in pure Gleam. JS FFI owns only:
   canvas 2D operations, the `requestAnimationFrame` loop, localStorage access.
 - **Rendering split:** panels 1 & 3 are SVG/DOM driven by Lustre; panel 2 is a
@@ -139,3 +142,15 @@ approximate a target shape, scored by pointwise path distance over the period.
   normalized.
 - Wants from `fourier_sketch`: the math core package (complex, resample, dft,
   terms), plus a shareable JSON export format (parked until now).
+
+## 8. Parked review findings (tracked)
+
+From the phase-3 code review; parked here with their due phase so they
+cannot leak:
+
+| Finding | Due | Detail |
+|---------|-----|--------|
+| DFT twiddle table | phase 4 (measure first) | forward/inverse call `exp_i` per (k, m) pair: ~2·N² trig calls at 512 points (~524k/frame, likely over the 8 ms budget). Fix: precompute `w[n] = exp(−2πin/N)` once, index `w[(k·m) mod N]` → N trig calls total. Apply only if the bench says over budget |
+| Resampler monotonic walk | phase 4 (same bench) | `walk` restarts from edge 0 per sample → O(n·edges); targets ascend so a persistent-index walk is O(n+E); `edge_len` also computed twice. Harmless at locked scale, fold into perf work |
+| Real README | phase 7 | usage, bench numbers vs budget, smoke-test checklist |
+| Hex metadata licence | phase 7 | `licences = ["MIT"]` set provisionally during review fixes — confirm before publishing |

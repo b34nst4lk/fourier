@@ -212,3 +212,18 @@ pub fn presets_are_distinct_test() {
   should.not_equal(sketch.star(), sketch.wobble())
   should.not_equal(sketch.heart(), sketch.wobble())
 }
+pub fn history_is_capped_test() {
+  // 220 additions -> exactly 200 undo steps available, then the floor
+  let s =
+    list.repeat(Nil, 220)
+    |> list.fold(sketch.new(), fn(acc, _) { sketch.add_dot(acc, #(1.0, 1.0)) })
+  let s = undo_n(s, 200)
+  should.be_false(sketch.can_undo(s))
+}
+
+fn undo_n(s: sketch.Sketch, n: Int) -> sketch.Sketch {
+  case n <= 0 {
+    True -> s
+    False -> undo_n(sketch.undo(s), n - 1)
+  }
+}

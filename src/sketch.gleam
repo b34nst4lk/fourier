@@ -19,6 +19,8 @@ pub type Dot =
 
 /// What an undo entry remembers: the dots to restore, plus the redo stack as
 /// it was before the action (so cancel_grab can put it back untouched).
+/// Public for the app layer's convenience, but only sketch.gleam should
+/// construct one — the semantics below are module-internal.
 pub type Snapshot {
   Snapshot(dots: List(Dot), redo_stack: List(List(Dot)))
 }
@@ -67,12 +69,24 @@ pub fn can_redo(s: Sketch) -> Bool {
   }
 }
 
+/// Maximum remembered history (newest kept). Caps memory growth during long
+/// sessions and keeps undo depth human.
+const max_history = 200
+
 fn push_history(s: Sketch, new_dots: List(Dot)) -> Sketch {
   Sketch(
     new_dots,
-    [Snapshot(s.dots, s.redo_stack), ..s.undo_stack],
+    push_capped([Snapshot(s.dots, s.redo_stack), ..s.undo_stack]),
     [],
   )
+}
+
+/// Keep the newest `max_history` snapshots, silently dropping the oldest.
+fn push_capped(stack: List(Snapshot)) -> List(Snapshot) {
+  case list.length(stack) > max_history {
+    True -> list.take(stack, max_history)
+    False -> stack
+  }
 }
 
 fn in_bounds(s: Sketch, index: Int) -> Bool {

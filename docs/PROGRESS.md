@@ -20,6 +20,11 @@ phase is committed.
 - Umbrella layout: both projects live under `workspace/projects/fourier/`
   (moved from `~/`; build cache wiped after the move; session-shell path
   pinned via `projects/fourier-toy` symlink -> `fourier/fourier_sketch`).
+- Review pass (after phase-3 part 1): fixed CI target + workflow note, undo
+  history cap (200, PLAN decision #19), dead import, three probe tests
+  promoted (odd-N round-trip, negative coords, signed-k/Nyquist), Snapshot
+  doc note, gleam.toml description/licence. Performance findings parked in
+  PLAN §8. Retraction: `actions/checkout@v7` verified real — no change.
 - Every build/test command on this machine must pass `--target javascript`
   (no Erlang installed). Recorded in PLAN.md §2.
 - gleeunit JS runner auto-discovers `test/*_test.gleam` — suite stays modular.

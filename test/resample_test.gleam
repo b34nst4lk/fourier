@@ -1,4 +1,3 @@
-import approx
 import gleam/float
 import gleam/int
 import gleam/list
@@ -182,4 +181,15 @@ pub fn single_dot_test() {
   let samples = resample.resample_closed([#(5.0, 5.0)], 8)
   should.equal(list.length(samples), 8)
   should.be_true(list.all(samples, fn(p) { { p.0 == 5.0 } && { p.1 == 5.0 } }))
+}
+pub fn negative_coordinates_test() {
+  let dots = [#(-5.0, -5.0), #(5.0, -5.0), #(5.0, 5.0)]
+  let samples = resample.resample_closed(dots, 12)
+  should.equal(list.length(samples), 12)
+  should.equal(list.first(samples), Ok(#(-5.0, -5.0)))
+  should.be_true(
+    list.all(samples, fn(p) {
+      dist_to_closed_polygon(p, dots) <. 0.000_001
+    }),
+  )
 }
