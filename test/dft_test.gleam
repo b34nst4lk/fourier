@@ -1,23 +1,29 @@
 import complex
 import dft
-import gleam/float
 import gleam/int
 import gleam/list
 import gleeunit/should
+import approx
 import resample
 
 const pi = 3.141_592_653_589_793
+
+/// Index sequence [0, .., n-1] — gleam_stdlib 1.0 has no list.range.
+fn indices(n: Int) -> List(Int) {
+  list.repeat(Nil, n)
+  |> list.index_map(fn(_, i) { i })
+}
 
 fn circle(n: Int, radius: Float, clockwise: Bool) -> List(#(Float, Float)) {
   let dir = case clockwise {
     True -> -1.0
     False -> 1.0
   }
-  list.range(0, n - 1)
+  indices(n)
   |> list.map(fn(i) {
     let t = 2.0 *. pi *. { int.to_float(i) /. int.to_float(n) }
     let a = dir *. t
-    #(radius *. float.cos(a), radius *. float.sin(a))
+    complex.to_xy(complex.polar(radius, a))
   })
 }
 
@@ -65,34 +71,34 @@ pub fn term_count_matches_sample_count_test() {
 pub fn pure_circle_lands_in_k_1_test() {
   let terms = dft.forward(circle(64, 2.0, False))
   let c1 = coeff_for(terms, 1)
-  should.be_close(complex.magnitude(c1), 2.0, 0.000_001)
+  approx.be_close(complex.magnitude(c1), 2.0, 0.000_001)
   // phase 0: the path starts at (2, 0)
-  should.be_close(c1.re, 2.0, 0.000_001)
-  should.be_close(c1.im, 0.0, 0.000_001)
+  approx.be_close(c1.re, 2.0, 0.000_001)
+  approx.be_close(c1.im, 0.0, 0.000_001)
 }
 
 pub fn reversed_circle_lands_in_minus_1_test() {
   let terms = dft.forward(circle(64, 2.0, True))
-  should.be_close(
+  approx.be_close(
     complex.magnitude(coeff_for(terms, -1)),
     2.0,
     0.000_001,
   )
-  should.be_close(complex.magnitude(coeff_for(terms, 1)), 0.0, 0.000_001)
+  approx.be_close(complex.magnitude(coeff_for(terms, 1)), 0.0, 0.000_001)
 }
 
 pub fn constant_offset_is_pure_dc_test() {
   let terms = dft.forward(list.repeat(#(5.0, 3.0), 16))
   let dc = coeff_for(terms, 0)
-  should.be_close(dc.re, 5.0, 0.000_001)
-  should.be_close(dc.im, 3.0, 0.000_001)
+  approx.be_close(dc.re, 5.0, 0.000_001)
+  approx.be_close(dc.im, 3.0, 0.000_001)
   let rest = list.fold(terms, 0.0, fn(acc, t) {
     case t.0 == 0 {
       True -> acc
       False -> acc +. complex.magnitude(t.1)
     }
   })
-  should.be_close(rest, 0.0, 0.000_001)
+  approx.be_close(rest, 0.0, 0.000_001)
 }
 
 pub fn zero_path_is_zero_spectrum_test() {
@@ -130,7 +136,7 @@ pub fn parseval_test() {
   let samples = resample.resample_closed(pentagon, n)
   let terms = dft.forward(samples)
   // discrete Parseval: sum |p_n|^2 == N * sum |c_k|^2
-  should.be_close(
+  approx.be_close(
     flat_mag(samples),
     { int.to_float(n) *. spectrum_energy(terms) },
     0.000_001,
