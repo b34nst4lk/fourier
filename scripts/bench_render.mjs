@@ -45,6 +45,18 @@ globalThis.requestAnimationFrame = (cb) => {
   raf_cb = cb;
 };
 
+// IntersectionObserver stub — captures the instance so the verify section can
+// fire visibility transitions manually (harmless before the fix exists).
+let io_instance = null;
+globalThis.IntersectionObserver = class {
+  constructor(cb) {
+    this.cb = cb;
+    io_instance = this;
+  }
+  observe() {}
+  disconnect() {}
+};
+
 // ---- helpers ---------------------------------------------------------------
 function make_terms(n) {
   const out = [];
@@ -58,11 +70,12 @@ const reset = () => {
 };
 const total = () => Object.values(ops).reduce((a, b) => a + b, 0);
 
-function drive(frames, start_ms = 0) {
-  let now = start_ms;
+let sim_now = 0; // monotonic simulated clock — drive() must not regress it,
+// the FFI's gates compare against real elapsed time
+function drive(frames) {
   for (let i = 0; i < frames; i++) {
-    now += 1000 / 60;
-    raf_cb(now);
+    sim_now += 1000 / 60;
+    raf_cb(sim_now);
   }
 }
 const ms = (fn) => {
@@ -177,3 +190,77 @@ trig_case("paused", make_terms(64), false, false);
 trig_case("final", make_terms(64), true, true);
 Math.cos = real_cos;
 Math.sin = real_sin;
+
+// ---- 8. machine-verified behavior contracts (RED→GREEN gate) --------------
+let failures = 0;
+function verify(label, cond) {
+  console.log(`${cond ? "PASS" : "FAIL"}  ${label}`);
+  if (!cond) failures++;
+}
+
+// dpr capped at 2: 500 CSS px @ dpr 3 => 1000px backing store
+verify(
+  "dpr cap: backing store = 500×2 = 1000 (was 1500 at dpr=3)",
+  el.width === 1000 && el.height === 1000,
+);
+
+// paused: exactly one repaint on sync, then the loop disengages
+ffi.canvas_sync(terms64, false, false);
+reset();
+drive(600);
+verify(`paused: 1 draw in 600 frames (was 600)`, ops.clearRect === 1);
+
+// final frame: one repaint on sync, then idle
+ffi.canvas_sync(terms64, true, true);
+reset();
+drive(600);
+verify(`final: 1 draw in 600 frames (was 600)`, ops.clearRect === 1);
+
+// playing: 30fps gate => ~half the draws of a 60fps budget
+ffi.canvas_sync(terms64, false, true);
+reset();
+drive(600);
+verify(
+  "playing @30fps gate: ~300 draws in 600 frames (was 600)",
+  ops.clearRect >= 250 && ops.clearRect <= 330,
+);
+
+// canvas off-screen: render loop fully disengaged
+if (!io_instance) {
+  verify("off-screen gating: IntersectionObserver wired", false);
+} else {
+  io_instance.cb([{ isIntersecting: false }]);
+  reset();
+  drive(600);
+  verify("off-screen: 0 draws in 600 frames", (ops.clearRect || 0) === 0);
+  io_instance.cb([{ isIntersecting: true }]);
+  drive(600);
+  verify(
+    "back on-screen: playing loop resumes (~30fps)",
+    ops.clearRect >= 30,
+  );
+}
+
+// sync with unchanged terms skips the O(STEPS×terms) rebuild_cache
+Math.cos = (x) => {
+  cos_n++;
+  return real_cos(x);
+};
+Math.sin = (x) => {
+  sin_n++;
+  return real_sin(x);
+};
+const t64 = make_terms(64);
+ffi.canvas_sync(t64, false, true);
+const rebuilt_once = cos_n + sin_n;
+ffi.canvas_sync(t64, false, true); // identical terms
+const rebuilt_twice = cos_n + sin_n - rebuilt_once;
+Math.cos = real_cos;
+Math.sin = real_sin;
+verify(
+  `sync w/ unchanged terms: rebuild skipped (0 trig, was ${rebuilt_twice})`,
+  rebuilt_twice === 0,
+);
+
+console.log(failures === 0 ? "\nALL VERIFICATIONS PASS" : `\n${failures} FAILURES`);
+process.exitCode = failures === 0 ? 0 : 1;

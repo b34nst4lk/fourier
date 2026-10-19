@@ -59,9 +59,25 @@ export function now_ms() {
 // The loop owns its clock; Gleam pushes state (targets/mode) on model change.
 // Trace points are cached in SKETCH coords and mapped per frame, so window
 // resizes need no cache rebuild — only a canvas refit.
+//
+// Thermal/resource guardrails (bench-verified: scripts/bench_render.mjs,
+// see the phone-heat audit in docs/PROGRESS.md):
+//   1. dirty gate — draw only when t advanced or model state changed;
+//      paused/final repaint once per sync, then the RAF chain disengages.
+//   2. visibility gate — IntersectionObserver fully stops the loop when the
+//      canvas is off-screen (stacked mobile layout keeps it scrolled away).
+//   3. frame-rate cap — playing mode draws at ~30fps (visually identical at
+//      0.25 laps/s); halves the playing burn.
+//   4. DPR cap at 2 — 3× phones would repaint >2× pixels for no visible gain.
+//   5. batched paths — circles and links each become ONE beginPath+stroke
+//      instead of per-term strokes (~100× fewer stroke calls at defaults).
+//   6. sync dedupe — rebuild_cache (O(STEPS×terms) trig) runs only when the
+//      pushed terms are value-different from the cached ones.
 
 const SPEED = 0.25; // laps per second
 const STEPS = 256;
+const MAX_DPR = 2;
+const FRAME_MS = 1000 / 30; // playing-mode draw cap
 
 const anim = {
   started: false,
@@ -76,12 +92,37 @@ const anim = {
   playing: true,
   t: 0,
   last: null,
+  lastDraw: -Infinity,
+  raf: null, // pending RAF handle (null = loop disengaged)
+  dirty: true,
+  visible: true,
 };
+
+function pump() {
+  // schedule at most one pending frame; re-arming after idle goes through here
+  if (anim.raf === null && anim.visible && anim.ctx) {
+    anim.raf = requestAnimationFrame(frame);
+  }
+}
+
+// Value equality over [k, radius, phase] rows: O(terms), while rebuild_cache
+// is O(STEPS×terms) trig — the dedupe pays for itself on every no-op sync.
+function terms_equal(a, b) {
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i][0] !== b[i][0] || a[i][1] !== b[i][1] || a[i][2] !== b[i][2]
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
 
 export function canvas_boot(id) {
   const el = document.getElementById(id);
   if (!el) return;
-  const dpr = Math.max(window.devicePixelRatio || 1, 1);
+  const dpr = Math.min(Math.max(window.devicePixelRatio || 1, 1), MAX_DPR);
   const rect = el.getBoundingClientRect();
   const w = Math.max(1, Math.floor(rect.width));
   const h = Math.max(1, Math.floor(rect.height));
@@ -95,23 +136,37 @@ export function canvas_boot(id) {
     anim.dpr = dpr;
     el.width = Math.floor(w * dpr);
     el.height = Math.floor(h * dpr);
+    anim.dirty = true; // backing store changed: repaint once
   }
   if (!anim.started) {
     anim.started = true;
     window.addEventListener("resize", () => {
       canvas_boot(id);
+      anim.dirty = true;
+      pump();
     });
-    requestAnimationFrame(frame);
+    if (typeof IntersectionObserver !== "undefined") {
+      anim.io = new IntersectionObserver((entries) => {
+        const was = anim.visible;
+        anim.visible = entries.some((e) => e.isIntersecting);
+        if (anim.visible && !was) anim.dirty = true; // stale content while away
+        pump();
+      });
+      anim.io.observe(el);
+    }
+    pump();
   }
 }
 
 export function canvas_sync(terms, final, playing) {
+  if (!terms_equal(anim.terms, terms)) rebuild_cache();
   anim.terms = terms;
   anim.final = final;
   anim.playing = playing;
-  rebuild_cache();
   // final frame should show the complete closed trace immediately
   if (final) anim.t = 1.0;
+  anim.dirty = true;
+  pump();
 }
 
 function rebuild_cache() {
@@ -131,13 +186,33 @@ function rebuild_cache() {
 }
 
 function frame(now) {
-  requestAnimationFrame(frame);
-  if (!anim.ctx) return;
-  const last = anim.last === null ? now : anim.last;
-  const dt = Math.min((now - last) / 1000, 0.05);
-  anim.last = now;
-  if (!anim.final && anim.playing) anim.t = (anim.t + dt * SPEED) % 1;
-  draw();
+  anim.raf = null;
+  // The RAF chain is kept alive only while there is work: playing advances t
+  // each capped frame; anything else waits for a dirty flag from canvas_sync,
+  // resize, or visibility changes (all routed through pump()).
+  if (!anim.visible) return;
+  if ((!anim.playing || anim.final) && !anim.dirty) return;
+  anim.raf = requestAnimationFrame(frame);
+
+  if (anim.playing && !anim.final) {
+    // frame-rate cap: skip trig+draw between capped frames. dt is measured
+    // from the last DRAWN frame (anim.last only advances on draws), so pen
+    // speed on screen is unchanged by the gating.
+    const first = anim.last === null;
+    const dt = first ? 0 : Math.min((now - anim.last) / 1000, 0.05);
+    if (first || now - anim.lastDraw >= FRAME_MS) {
+      if (!first) anim.t = (anim.t + dt * SPEED) % 1;
+      anim.lastDraw = now;
+      anim.last = now;
+      anim.dirty = true;
+      draw();
+      anim.dirty = false;
+    }
+  } else if (anim.dirty) {
+    draw();
+    anim.dirty = false;
+    anim.last = now;
+  }
 }
 
 function draw() {
@@ -157,29 +232,48 @@ function draw() {
 
   const t = anim.final ? 1.0 : anim.t;
 
-  // epicycle chain: starts at sketch origin, each term rotates its own circle
+  // chain centers: one pass, shared by circles, links and the pen tip
+  const n = anim.terms.length;
+  const centers = anim.centers || (anim.centers = []);
+  centers.length = n + 1;
+  centers[0] = [0, 0];
   let cx = 0;
   let cy = 0;
-  ctx.lineWidth = 1;
-  for (const term of anim.terms) {
-    const r = term[1] * scale;
-    if (r > 1.2) {
-      ctx.strokeStyle = "rgba(148, 163, 184, 0.28)";
-      ctx.beginPath();
-      ctx.arc(sx(cx), sy(cy), r, 0, 2 * Math.PI);
-      ctx.stroke();
-    }
+  for (let i = 0; i < n; i++) {
+    const term = anim.terms[i];
     const ang = 2 * Math.PI * term[0] * t + term[2];
-    const nx = cx + term[1] * Math.cos(ang);
-    const ny = cy + term[1] * Math.sin(ang);
-    ctx.strokeStyle = "rgba(148, 163, 184, 0.55)";
-    ctx.beginPath();
-    ctx.moveTo(sx(cx), sy(cy));
-    ctx.lineTo(sx(nx), sy(ny));
-    ctx.stroke();
-    cx = nx;
-    cy = ny;
+    cx += term[1] * Math.cos(ang);
+    cy += term[1] * Math.sin(ang);
+    centers[i + 1] = [cx, cy];
   }
+
+  ctx.lineWidth = 1;
+
+  // all circles share one stroke style: ONE beginPath+stroke for the whole
+  // chain (moveTo avoids connecting chords between arcs)
+  ctx.strokeStyle = "rgba(148, 163, 184, 0.28)";
+  ctx.beginPath();
+  for (let i = 0; i < n; i++) {
+    const r = anim.terms[i][1] * scale;
+    if (r > 1.2) {
+      const c = centers[i];
+      const X = sx(c[0]);
+      const Y = sy(c[1]);
+      ctx.moveTo(X + r, Y);
+      ctx.arc(X, Y, r, 0, 2 * Math.PI);
+    }
+  }
+  ctx.stroke();
+
+  // all links share one stroke style: ONE beginPath+stroke
+  ctx.strokeStyle = "rgba(148, 163, 184, 0.55)";
+  ctx.beginPath();
+  ctx.moveTo(sx(centers[0][0]), sy(centers[0][1]));
+  for (let i = 1; i <= n; i++) {
+    const c = centers[i];
+    ctx.lineTo(sx(c[0]), sy(c[1]));
+  }
+  ctx.stroke();
 
   // trace: the portion of this lap drawn so far (full loop in final mode)
   const idx = Math.max(1, Math.floor(t * STEPS));
@@ -192,7 +286,7 @@ function draw() {
   }
   ctx.stroke();
 
-  // pen tip
+  // pen tip (chain end = last center)
   ctx.fillStyle = "#ffd166";
   ctx.beginPath();
   ctx.arc(sx(cx), sy(cy), 3, 0, 2 * Math.PI);
