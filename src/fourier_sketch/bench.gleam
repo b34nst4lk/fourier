@@ -2,12 +2,10 @@
 //// Run: gleam run -m fourier_sketch/bench --target javascript
 
 import complex
-import dft
 import gleam/float
 import gleam/int
 import gleam/io
 import gleam/list
-import resample
 import terms
 
 @external(javascript, "../fourier_sketch_ffi.mjs", "now_ms")

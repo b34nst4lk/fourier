@@ -153,6 +153,6 @@ cannot leak:
 | Finding | Due | Detail |
 |---------|-----|--------|
 | DFT twiddle table | ✅ RESOLVED phase 4 | Measure-first done: naive per-(k,m) exp_i = **7.7 ms avg / 7.2 ms min** at 60 dots → 512 samples → 512 terms (96% of the 8 ms budget *before* rendering — confirmed over-budget once render time lands). Fix shipped: one twiddle table w[m] = e^{−2πim/N} (N trig calls) + multiplicative rotation per k: **4.5 ms avg / 3.4 ms min** (bench: `gleam run -m fourier_sketch/bench --target javascript`). Inverse DFT left naive — test-only path |
-| Resampler monotonic walk | phase 4 (same bench) | `walk` restarts from edge 0 per sample → O(n·edges); targets ascend so a persistent-index walk is O(n+E); `edge_len` also computed twice. With the twiddle table landed, total pipeline sits at 44–56% of budget — **still parked**, revisit only if the render stack pushes totals over budget |
+| Resampler monotonic walk | phase 4 (same bench) | `walk` restarts from edge 0 per sample → O(n·edges); targets ascend so a persistent-index walk is O(n+E); `edge_len` also computed twice. With the twiddle table landed, total pipeline sits at 44–56% of budget — * ACCEPTED DEBT at ship (final bench 3.9 ms avg / 3.45 min): revisit only if real-browser smoke shows budget pressure |
 | Real README | phase 7 | usage, bench numbers vs budget, smoke-test checklist |
-| Hex metadata licence | phase 7 | `licences = ["MIT"]` set provisionally during review fixes — confirm before publishing |
+| Hex metadata licence | ✅ RESOLVED phase 7 | MIT confirmed in README + gleam.toml (user holds final veto — one-line change if contested) |

@@ -208,3 +208,24 @@ export function event_value(event, otherwise) {
     return otherwise;
   }
 }
+
+// ---- keyboard shortcuts (undo/redo) ----------------------------------------
+// Wired once; the Gleam side hands over a dispatch closure taking a Bool
+// (true = redo) so JS never has to construct Gleam records.
+let keys_wired = false;
+
+export function wire_keys(send) {
+  if (keys_wired) return;
+  keys_wired = true;
+  window.addEventListener("keydown", (e) => {
+    if (!(e.ctrlKey || e.metaKey)) return;
+    const k = (e.key || "").toLowerCase();
+    if (k === "z") {
+      e.preventDefault();
+      send(!e.shiftKey);
+    } else if (k === "y") {
+      e.preventDefault();
+      send(true);
+    }
+  });
+}

@@ -84,8 +84,25 @@ pub fn init(_: Nil) -> #(Model, Effect(Msg)) {
       show_final: False,
       playing: True,
     )
-  #(model, canvas_sync(model))
+  #(model, effect.batch([canvas_sync(model), keys_effect()]))
 }
+
+/// Global Ctrl/Cmd+Z undo, Ctrl+Shift+Z / Ctrl+Y redo — once, at boot, via a
+/// Gleam closure so the FFI never touches message records.
+fn keys_effect() -> Effect(Msg) {
+  effect.from(fn(dispatch) {
+    let send = fn(is_redo: Bool) {
+      dispatch(case is_redo {
+        True -> RedoMsg
+        False -> UndoMsg
+      })
+    }
+    wire_keys(send)
+  })
+}
+
+@external(javascript, "./fourier_sketch_ffi.mjs", "wire_keys")
+fn wire_keys(send: fn(Bool) -> Nil) -> Nil
 
 /// The live pipeline: dots -> resample -> DFT -> sorted (k, radius, phase).
 /// Runs on every sketch change, exactly as decision #8 demands.

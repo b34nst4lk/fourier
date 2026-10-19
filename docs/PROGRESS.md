@@ -12,8 +12,8 @@ phase is committed.
 | 3 | Panel 1 sketchpad | sketch.gleam state model TDD'd (add/move/delete/undo/clear/presets/gate); SVG view wired; autosave store | ✅ done | RED + GREEN (1); shell+view+autosave (2) |
 | 4 | Pipeline wiring | live resample→DFT→terms on every mousemove; feeds panels 2–3 | ✅ done | RED/GREEN part 1 + bench part 2 |
 | 5 | Panel 2 output | canvas FFI, RAF epicycle animation, pause + final frame, circles slider 4–256, mirror fix visible | ✅ done | bridge RED/GREEN + canvas commit |
-| 6 | Panel 3 term table | amplitude-sorted terms, (k, radius, phase) + sine sparklines, dimmed cut rows, empty states | ⬜ | |
-| 7 | Delivery | bench ≤ 8 ms published; README (usage + smoke checklist); static build verified servable; final full-suite run | ⬜ | |
+| 6 | Panel 3 term table | amplitude-sorted terms, (k, radius, phase) + sine sparklines, dimmed cut rows, empty states | ✅ done | spark + table commits |
+| 7 | Delivery | bench ≤ 8 ms published; README (usage + smoke checklist); static build verified servable; final full-suite run | ✅ done (browser smoke = sole open item, user-run) | delivery commit |
 
 ## Notes
 
@@ -73,3 +73,19 @@ phase is committed.
   sparkline samples for cut rows or sparklines only on active rows.
 - Pending manual smoke: sticky header, scroll, dimming vs slider, live
   updates during dot drags.
+
+## Phase 7 / ship notes
+
+- README rewritten (usage, math summary, bench numbers, dev commands,
+  14-point manual smoke checklist). Licence: MIT confirmed.
+- Gap vs plan closed: Ctrl/Cmd+Z / Ctrl+Shift+Z / Ctrl+Y keyboard undo/redo
+  (wire_keys FFI + Gleam dispatch closure — JS never builds Msg records).
+- scripts/build-dist.sh: static bundle in dist/ (index + full JS tree,
+  4.1 MB) — all endpoints curl-smoked 200 via a static server on dist/.
+- Final bench at ship: 3.9 ms avg / 3.45 ms min (budget 8 ms).
+- Format --check clean, 79/79 tests, build clean, no warnings in src.
+- Open acceptance item: the user runs the README smoke checklist in a real
+  browser once. Everything machine-verifiable has been run on this box.
+- fourier_toy (phase 2) may now consume the math core: complex, resample,
+  dft (signed-k forward/inverse), terms gates + invariants are all package
+  surface with documented contracts in docs/PLAN.md section 3.
