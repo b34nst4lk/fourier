@@ -104,3 +104,21 @@ phase is committed.
   the toy source) part of the regeneration.
 
 - URL: https://jacks.im/toys/fourier-sketch
+
+## Deployment failure post-mortem (2026-10-19) — fixed by single-file bundle
+
+The first jacks.im deploy rendered nothing; three independent layers failed
+in sequence:
+1. MY bug: the relocatable rewrite produced `from "build/..."` — a bare
+   relative specifier. ES modules require "./", "../" or "/" prefixes.
+   Module graph died pre-render (user console error confirmed).
+2. jacks.im serves .mjs as application/octet-stream — browsers refuse
+   module scripts with non-JS MIME even when specifiers are valid.
+3. The deployed build/ tree silently vanished from public/ (regardless of
+   what the origin served) — external sync/shim process suspected.
+Resolution: scripts/build-dist.sh now bundles EVERYTHING into one 210 KB
+dist/index.html (esbuild via npx, --format=esm --platform=browser; script
+tag inlined, guard against '</script' in bundle). Single file => none of
+the three failure modes apply. Deploy = copy one file.
+NOTE to self: `pkill -f dev-server.mjs` self-matches the invoking bash
+command line and kills the session — use pkill -f 'dev-serve[r]\.mjs'.
