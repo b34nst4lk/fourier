@@ -1,5 +1,8 @@
-import gleam/io
+import app
+import lustre
 
 pub fn main() -> Nil {
-  io.println("Hello from fourier_sketch!")
+  let boot = lustre.application(app.init, app.update, app.view)
+  let _ = lustre.start(boot, "#app", Nil)
+  Nil
 }

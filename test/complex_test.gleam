@@ -1,6 +1,6 @@
+import approx
 import complex
 import gleeunit/should
-import approx
 
 pub fn add_test() {
   let a = complex.Complex(1.0, 2.0)

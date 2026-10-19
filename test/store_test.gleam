@@ -27,12 +27,6 @@ pub fn decode_missing_dots_is_error_test() {
 }
 
 pub fn decode_wrong_shape_is_error_test() {
-  should.equal(
-    store.decode("{\"v\":1,\"dots\":[[1,2,3]]}"),
-    Error(Nil),
-  )
-  should.equal(
-    store.decode("{\"v\":1,\"dots\":[[\"a\",2]]}"),
-    Error(Nil),
-  )
+  should.equal(store.decode("{\"v\":1,\"dots\":[[1,2,3]]}"), Error(Nil))
+  should.equal(store.decode("{\"v\":1,\"dots\":[[\"a\",2]]}"), Error(Nil))
 }

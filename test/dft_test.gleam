@@ -1,9 +1,9 @@
+import approx
 import complex
 import dft
 import gleam/int
 import gleam/list
 import gleeunit/should
-import approx
 import resample
 
 const pi = 3.141_592_653_589_793
@@ -79,11 +79,7 @@ pub fn pure_circle_lands_in_k_1_test() {
 
 pub fn reversed_circle_lands_in_minus_1_test() {
   let terms = dft.forward(circle(64, 2.0, True))
-  approx.be_close(
-    complex.magnitude(coeff_for(terms, -1)),
-    2.0,
-    0.000_001,
-  )
+  approx.be_close(complex.magnitude(coeff_for(terms, -1)), 2.0, 0.000_001)
   approx.be_close(complex.magnitude(coeff_for(terms, 1)), 0.0, 0.000_001)
 }
 
@@ -92,12 +88,13 @@ pub fn constant_offset_is_pure_dc_test() {
   let dc = coeff_for(terms, 0)
   approx.be_close(dc.re, 5.0, 0.000_001)
   approx.be_close(dc.im, 3.0, 0.000_001)
-  let rest = list.fold(terms, 0.0, fn(acc, t) {
-    case t.0 == 0 {
-      True -> acc
-      False -> acc +. complex.magnitude(t.1)
-    }
-  })
+  let rest =
+    list.fold(terms, 0.0, fn(acc, t) {
+      case t.0 == 0 {
+        True -> acc
+        False -> acc +. complex.magnitude(t.1)
+      }
+    })
   approx.be_close(rest, 0.0, 0.000_001)
 }
 
@@ -142,6 +139,7 @@ pub fn parseval_test() {
     0.000_001,
   )
 }
+
 pub fn odd_n_roundtrip_test() {
   let dots = [
     #(3.1, 0.2),

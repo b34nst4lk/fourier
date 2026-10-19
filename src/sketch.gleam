@@ -112,12 +112,7 @@ pub fn remove_dot(s: Sketch, index: Int) -> Sketch {
 pub fn grab_dot(s: Sketch, index: Int) -> Sketch {
   case in_bounds(s, index) {
     False -> s
-    True ->
-      Sketch(
-        s.dots,
-        [Snapshot(s.dots, s.redo_stack), ..s.undo_stack],
-        [],
-      )
+    True -> Sketch(s.dots, [Snapshot(s.dots, s.redo_stack), ..s.undo_stack], [])
   }
 }
 
@@ -127,7 +122,10 @@ pub fn set_dot(s: Sketch, index: Int, at: Dot) -> Sketch {
     False -> s
     True ->
       Sketch(
-        list.append(list.take(s.dots, index), [at, ..list.drop(s.dots, index + 1)]),
+        list.append(list.take(s.dots, index), [
+          at,
+          ..list.drop(s.dots, index + 1)
+        ]),
         s.undo_stack,
         s.redo_stack,
       )
@@ -149,8 +147,7 @@ pub fn cancel_grab(s: Sketch) -> Sketch {
 
 pub fn undo(s: Sketch) -> Sketch {
   case s.undo_stack {
-    [Snapshot(prev, _), ..rest] ->
-      Sketch(prev, rest, [s.dots, ..s.redo_stack])
+    [Snapshot(prev, _), ..rest] -> Sketch(prev, rest, [s.dots, ..s.redo_stack])
     _ -> s
   }
 }
@@ -173,6 +170,37 @@ pub fn clear(s: Sketch) -> Sketch {
 /// Load a dot list as an undoable action (presets, imports).
 pub fn load_dots(s: Sketch, dots: List(Dot)) -> Sketch {
   push_history(s, dots)
+}
+
+/// Index of the dot closest to `at`, if any lies within `max_dist`.
+/// Squared distances throughout (no sqrt). Ties go to the earliest index.
+pub fn nearest_dot(
+  dots: List(Dot),
+  at: Dot,
+  max_dist: Float,
+) -> Result(Int, Nil) {
+  let limit = {
+    max_dist *. max_dist
+  }
+  let #(_, found) =
+    list.index_fold(dots, #(limit, Error(Nil)), fn(acc, d, i) {
+      let dx = {
+        d.0 -. at.0
+      }
+      let dy = {
+        d.1 -. at.1
+      }
+      let d2 = { dx *. dx } +. { dy *. dy }
+      let accept = case acc.1 {
+        Ok(_) -> d2 <. acc.0
+        Error(_) -> d2 <=. acc.0
+      }
+      case accept {
+        True -> #(d2, Ok(i))
+        False -> acc
+      }
+    })
+  found
 }
 
 // ---------------------------------------------------------------------------
@@ -200,8 +228,7 @@ fn indices(n: Int) -> List(Int) {
 pub fn star() -> List(Dot) {
   indices(10)
   |> list.map(fn(i) {
-    let a =
-      { pi *. { int.to_float(i) /. 5.0 } } -. { pi /. 2.0 }
+    let a = { pi *. { int.to_float(i) /. 5.0 } } -. { pi /. 2.0 }
     let r = case { i % 2 } == 0 {
       True -> 40.0
       False -> 17.0

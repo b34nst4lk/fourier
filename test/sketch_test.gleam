@@ -197,7 +197,10 @@ pub fn presets_in_bounds_test() {
   list.each([sketch.star(), sketch.heart(), sketch.wobble()], fn(dots) {
     should.be_true(
       list.all(dots, fn(d) {
-        { d.0 >=. 0.0 } && { d.0 <=. 100.0 } && { d.1 >=. 0.0 } && { d.1 <=. 100.0 }
+        { d.0 >=. 0.0 }
+        && { d.0 <=. 100.0 }
+        && { d.1 >=. 0.0 }
+        && { d.1 <=. 100.0 }
       }),
     )
   })
@@ -229,6 +232,7 @@ pub fn presets_are_distinct_test() {
   should.not_equal(sketch.star(), sketch.wobble())
   should.not_equal(sketch.heart(), sketch.wobble())
 }
+
 pub fn history_is_capped_test() {
   // 220 additions -> exactly 200 undo steps available, then the floor
   let s =

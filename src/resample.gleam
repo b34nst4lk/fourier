@@ -40,9 +40,7 @@ pub fn resample_closed(
       let total = list.fold(edges, 0.0, fn(acc, e) { acc +. edge_len(e) })
       let step = total /. int.to_float(n)
       indices(n)
-      |> list.map(fn(i) {
-        sample_at(edges, { int.to_float(i) *. step })
-      })
+      |> list.map(fn(i) { sample_at(edges, { int.to_float(i) *. step }) })
     }
   }
 }
@@ -57,9 +55,7 @@ fn polygon_edges(dots: List(#(Float, Float))) -> List(Edge) {
 
 fn edge_len(edge: Edge) -> Float {
   let #(#(x1, y1), #(x2, y2)) = edge
-  sqrt(
-    { { x2 -. x1 } *. { x2 -. x1 } } +. { { y2 -. y1 } *. { y2 -. y1 } },
-  )
+  sqrt({ { x2 -. x1 } *. { x2 -. x1 } } +. { { y2 -. y1 } *. { y2 -. y1 } })
 }
 
 /// Point at distance `target` along the edge chain (cumulative from 0).
@@ -87,10 +83,7 @@ fn lerp(edge: Edge, len: Float, t: Float) -> #(Float, Float) {
     True -> {
       let u = t /. len
       let #(#(x1, y1), #(x2, y2)) = edge
-      #(
-        { x1 +. { u *. { x2 -. x1 } } },
-        { y1 +. { u *. { y2 -. y1 } } },
-      )
+      #({ x1 +. { u *. { x2 -. x1 } } }, { y1 +. { u *. { y2 -. y1 } } })
     }
   }
 }

@@ -52,13 +52,14 @@ pub fn inverse(
   let fn_ = int.to_float(n)
   indices(n)
   |> list.map(fn(m) {
-    let s = list.fold(terms, complex.zero(), fn(acc, t) {
-      let base = { 2.0 *. pi *. int.to_float(t.0) } /. fn_
-      complex.add(
-        acc,
-        complex.mul(t.1, complex.exp_i({ base *. int.to_float(m) })),
-      )
-    })
+    let s =
+      list.fold(terms, complex.zero(), fn(acc, t) {
+        let base = { 2.0 *. pi *. int.to_float(t.0) } /. fn_
+        complex.add(
+          acc,
+          complex.mul(t.1, complex.exp_i({ base *. int.to_float(m) })),
+        )
+      })
     #(s.re, s.im)
   })
 }
