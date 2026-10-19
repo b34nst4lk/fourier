@@ -25,7 +25,10 @@ No Erlang needed anywhere — this project is JavaScript-target end to end
 
 ```sh
 ./scripts/build-dist.sh        # writes dist/ (serve dist/ statically)
+cp -r dist/* <webroot>/toys/fourier-sketch/   # e.g. deployed at jacks.im/toys/fourier-sketch
 ```
+
+The bundle's module import is path-relative, so it works at any mount depth.
 
 ## Using it
 
