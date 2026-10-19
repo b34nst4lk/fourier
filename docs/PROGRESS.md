@@ -18,8 +18,10 @@ phase is committed.
 ## Notes
 
 - Umbrella layout: both projects live under `workspace/projects/fourier/`
-  (moved from `~/`; build cache wiped after the move; session-shell path
-  pinned via `projects/fourier-toy` symlink -> `fourier/fourier_sketch`).
+  (moved from `~/`; build cache wiped after the move). The pinned session
+  shell anchor was first a symlink (`projects/fourier-toy` -> project),
+  then replaced with a plain shim directory containing only a README note —
+  the file tree now shows the project exactly once.
 - Review pass (after phase-3 part 1): fixed CI target + workflow note, undo
   history cap (200, PLAN decision #19), dead import, three probe tests
   promoted (odd-N round-trip, negative coords, signed-k/Nyquist), Snapshot
