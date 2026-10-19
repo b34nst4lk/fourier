@@ -17,6 +17,9 @@ phase is committed.
 
 ## Notes
 
+- Umbrella layout: both projects live under `workspace/projects/fourier/`
+  (moved from `~/`; build cache wiped after the move; session-shell path
+  pinned via `projects/fourier-toy` symlink -> `fourier/fourier_sketch`).
 - Every build/test command on this machine must pass `--target javascript`
   (no Erlang installed). Recorded in PLAN.md §2.
 - gleeunit JS runner auto-discovers `test/*_test.gleam` — suite stays modular.
