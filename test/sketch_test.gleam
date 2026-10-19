@@ -207,6 +207,23 @@ pub fn star_has_ten_points_test() {
   should.equal(list.length(sketch.star()), 10)
 }
 
+pub fn nearest_dot_finds_closest_test() {
+  let dots = [#(0.0, 0.0), #(5.0, 0.0), #(9.0, 0.0)]
+  should.equal(sketch.nearest_dot(dots, #(8.8, 0.2), 1.0), Ok(2))
+  should.equal(sketch.nearest_dot(dots, #(50.0, 0.0), 1.0), Error(Nil))
+  should.equal(sketch.nearest_dot([], #(0.0, 0.0), 5.0), Error(Nil))
+}
+
+pub fn nearest_dot_out_of_radius_test() {
+  let dots = [#(0.0, 0.0), #(5.0, 0.0)]
+  should.equal(sketch.nearest_dot(dots, #(3.0, 0.0), 1.0), Error(Nil))
+}
+
+pub fn nearest_dot_tie_goes_to_earliest_index_test() {
+  let dots = [#(0.0, 0.0), #(5.0, 0.0)]
+  should.equal(sketch.nearest_dot(dots, #(2.5, 0.0), 3.0), Ok(0))
+}
+
 pub fn presets_are_distinct_test() {
   should.not_equal(sketch.star(), sketch.heart())
   should.not_equal(sketch.star(), sketch.wobble())
