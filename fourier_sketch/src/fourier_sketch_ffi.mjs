@@ -273,8 +273,8 @@ function draw() {
   ctx.lineWidth = 1;
 
   // all circles share one stroke style: ONE beginPath+stroke for the whole
-  // chain (moveTo avoids connecting chords between arcs)
-  ctx.strokeStyle = "rgba(148, 163, 184, 0.28)";
+  // chain (moveTo avoids connecting chords between arcs) — warm ink wash
+  ctx.strokeStyle = "rgba(70, 53, 31, 0.25)";
   ctx.beginPath();
   for (let i = 0; i < n; i++) {
     const r = anim.terms[i][1] * scale;
@@ -289,7 +289,7 @@ function draw() {
   ctx.stroke();
 
   // all links share one stroke style: ONE beginPath+stroke
-  ctx.strokeStyle = "rgba(148, 163, 184, 0.55)";
+  ctx.strokeStyle = "rgba(70, 53, 31, 0.55)";
   ctx.beginPath();
   ctx.moveTo(sx(centers[0][0]), sy(centers[0][1]));
   for (let i = 1; i <= n; i++) {
@@ -298,9 +298,9 @@ function draw() {
   }
   ctx.stroke();
 
-  // trace: the portion of this lap drawn so far (full loop in final mode)
+  // trace: routes are drawn in red-brick ink on a cartographer's map
   const idx = Math.max(1, Math.floor(t * STEPS));
-  ctx.strokeStyle = "#5eead4";
+  ctx.strokeStyle = "#a4372a";
   ctx.lineWidth = 2;
   ctx.beginPath();
   ctx.moveTo(sx(anim.path[0][0]), sy(anim.path[0][1]));
@@ -309,8 +309,8 @@ function draw() {
   }
   ctx.stroke();
 
-  // pen tip (chain end = last center)
-  ctx.fillStyle = "#ffd166";
+  // pen tip (chain end = last center) — a gold coin marker
+  ctx.fillStyle = "#d9a92f";
   ctx.beginPath();
   ctx.arc(sx(cx), sy(cy), 3, 0, 2 * Math.PI);
   ctx.fill();

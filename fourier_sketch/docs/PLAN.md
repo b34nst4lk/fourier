@@ -47,7 +47,7 @@ versioned. Original grilling names kept: `fourier_sketch` (phase 1),
 | 12 | Term-count control | **Circles slider 4–256** in panel 2; renders top-N terms by amplitude | Truncation is the core intuition-builder |
 | 13 | Stress testing | **A+B**: property tests + measured perf budget. Optional tier C demoted to a manual **visual smoke-test checklist** | No Playwright; no new toolchain |
 | 14 | Persistence | **localStorage autosave** (versioned schema), presets as corrupt-restore fallback | Refresh survival for free; export parked |
-| 15 | Layout | **2×2 grid**: sketch TL, output TR, term table across bottom row; **dark-only theme** | All three panels react live; equal siblings |
+| 15 | Layout | **2×2 grid**: sketch TL, output TR, term table across bottom row; **parchment cartography theme** (was dark-only; rethemed 2026-10-20 with the user's direction: adopt the visual language of projects/cartographer's solo build — sepia ink on aged paper, serif small-caps, hard offset shadows; rationale: one house look for the toys) | All three panels react live; equal siblings |
 | 16 | Sparklines | Per-row sine sparkline = term's **x-projection**: peak=radius, cycles=\|k\|, shift=phase; sign of k stays in the k column; rows below the slider cut render dimmed | Cheap, honest, educational |
 | 17 | Process | **TDD**: red→green for all logic-carrying code; render/FFI layers are thin translators covered by the smoke checklist | Honest application, not dogma |
 | 18 | Commit policy | Commits are made **per phase**, matching docs/PROGRESS.md | History explains itself |

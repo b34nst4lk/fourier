@@ -38,7 +38,7 @@ gives it, so the puzzle is fair by construction and self-checking).
 | 9 | Solved gate | match ≥ 95% → "solved" badge + ground-truth reveal (show true radius/phase per term) | PROPOSED |
 | 10 | Reveal | One button, shows true values and can apply them ("show me the solution") — applies only on explicit press | PROPOSED |
 | 11 | Layout | Two panels: left = SVG overlay (target ghost dashed, reconstruction solid), right = slider bank (per-term k label, radius, phase, readouts); header = preset picker + difficulty + score % | PROPOSED |
-| 12 | Dark theme + visual family | Same palette genes as fourier_sketch (dark only, glowing traces) | PROPOSED |
+| 12 | Dark theme + visual family | **Parchment cartography family** (rethemed 2026-10-20 with the sibling — user directed one house look from projects/cartographer; supersedes "dark theme, sibling palette genes") | PROPOSED |
 | 13 | Animation | None in v1 — static overlay compare. RAF/animated play mode = shelf | PROPOSED |
 | 14 | Persistence | None in v1 (no localStorage) — puzzle state is throwaway; best-score/recent-shelf later | PROPOSED |
 | 15 | FFI line | Pure Gleam only: SVG/DOM via Lustre, math via fourier_sketch core. No canvas, no RAF, no storage FFI — the FFI modules of the sibling stay untouched | PROPOSED |

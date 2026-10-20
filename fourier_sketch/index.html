@@ -3,16 +3,32 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>fourier_sketch</title>
+    <title>Fourier Sketch</title>
     <style>
+      /* Theme: parchment cartography — lifted from projects/cartographer's
+         solo build (dist/cartographers-solo.html). Ink on aged paper, serif
+         small-caps headings, 1.5px ink borders, hard offset "pressed"
+         shadows. Supersedes the dark-only palette (PLAN #15 — see the
+         ruling note there). */
       :root {
-        color-scheme: dark;
+        color-scheme: light;
+        --ink: #46351f;
+        --ink-faint: #8a764f;
+        --parchment: #f3ead2;
+        --parchment-dark: #e4d6b4;
+        --page: #d8c9a5;
+        --accent: #96621f;
+        --danger: #a4372a;
+        --coin: #d9a92f;
+        --water: #82a7ba;
       }
       body {
         margin: 0;
-        background: #0e1116;
-        color: #c9d1d9;
-        font-family: ui-monospace, "SF Mono", Menlo, monospace;
+        background: var(--page)
+          radial-gradient(ellipse at 50% 30%, #e3d6b4 0%, var(--page) 70%);
+        background-attachment: fixed;
+        color: var(--ink);
+        font-family: "Iowan Old Style", Georgia, "Times New Roman", serif;
         font-size: 14px;
       }
       .app {
@@ -28,9 +44,10 @@
         position: relative;
         display: flex;
         flex-direction: column;
-        border: 1px solid #1f2630;
+        border: 1.5px solid var(--ink);
         border-radius: 10px;
-        background: #12161d;
+        background: var(--parchment);
+        box-shadow: 0 2px 0 rgba(70, 53, 31, 0.35);
         overflow: hidden;
       }
       .terms {
@@ -40,10 +57,10 @@
         position: absolute;
         top: 9px;
         left: 12px;
-        font-size: 11px;
-        letter-spacing: 0.14em;
-        text-transform: uppercase;
-        color: #4b5666;
+        font-size: 12px;
+        font-variant-caps: small-caps;
+        letter-spacing: 0.18em;
+        color: var(--ink-faint);
         user-select: none;
         z-index: 2;
       }
@@ -51,21 +68,34 @@
         display: flex;
         gap: 6px;
         padding: 6px 10px;
-        margin-left: 74px;
+        margin-left: 88px;
       }
       .toolbar button {
-        background: #161b22;
-        border: 1px solid #263040;
-        color: #c9d1d9;
+        background: var(--parchment);
+        border: 1.5px solid var(--ink);
+        color: var(--ink);
         border-radius: 6px;
         padding: 3px 10px;
         font: inherit;
         font-size: 12px;
         cursor: pointer;
+        box-shadow: 0 2px 0 rgba(70, 53, 31, 0.35);
+        transition: transform 0.05s ease;
+      }
+      .toolbar button:hover:not(:disabled) {
+        background: #faf3e0;
+      }
+      .toolbar button:active:not(:disabled) {
+        transform: translateY(1px);
+        box-shadow: none;
       }
       .toolbar button:disabled {
-        opacity: 0.35;
+        opacity: 0.45;
         cursor: not-allowed;
+      }
+      .toolbar button.active {
+        border-color: var(--accent);
+        color: var(--accent);
       }
       .sketch-svg {
         flex: 1;
@@ -76,24 +106,27 @@
         -webkit-user-select: none;
       }
       .sketch-bg {
-        fill: #12161d;
+        fill: var(--parchment);
       }
+      /* the pen line: sepia, like a mapmaker's ink */
       .sketch-path {
         fill: none;
-        stroke: #5cc3ff;
+        stroke: var(--accent);
         stroke-width: 0.4;
         stroke-linejoin: round;
       }
+      /* dots are the cartographer's coins */
       .dot {
-        fill: #ffd166;
-        stroke: #0e1116;
+        fill: var(--coin);
+        stroke: var(--parchment);
         stroke-width: 0.15;
         cursor: grab;
       }
       .placeholder {
         margin: auto;
         padding: 48px;
-        color: #4b5666;
+        color: var(--ink-faint);
+        font-style: italic;
         font-size: 13px;
         letter-spacing: 0.02em;
       }
@@ -110,24 +143,20 @@
         min-height: 0;
         display: block;
       }
-      .toolbar button.active {
-        border-color: #5cc3ff;
-        color: #5cc3ff;
-      }
       .circles-slider {
         flex: 1;
-        accent-color: #5cc3ff;
+        accent-color: var(--accent);
       }
       .slider-label {
         align-self: center;
-        color: #4b5666;
+        color: var(--ink-faint);
         font-size: 12px;
       }
       .count-label {
         align-self: center;
         min-width: 3ch;
         text-align: right;
-        color: #5cc3ff;
+        color: var(--accent);
       }
 
       .terms-scroll {
@@ -142,8 +171,10 @@
       .term-table th {
         position: sticky;
         top: 0;
-        background: #12161d;
-        color: #4b5666;
+        background: var(--parchment);
+        color: var(--ink-faint);
+        font-variant-caps: small-caps;
+        letter-spacing: 0.08em;
         text-align: left;
         padding: 4px 10px;
         font-weight: normal;
@@ -151,7 +182,7 @@
       }
       .term-table td {
         padding: 2px 10px;
-        border-top: 1px solid #1a202a;
+        border-top: 1px solid var(--parchment-dark);
         white-space: nowrap;
       }
       .term-table tr.cut {
@@ -162,9 +193,10 @@
         height: 16px;
         display: block;
       }
+      /* waveforms drawn in water-wash, like rivers on the map */
       .spark path {
         fill: none;
-        stroke: #5eead4;
+        stroke: var(--water);
         stroke-width: 1;
       }
     </style>
