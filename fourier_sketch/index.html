@@ -54,6 +54,71 @@
         margin: 12px 10%;
         display: flex;
         flex-direction: column;
+        position: relative;
+      }
+      /* collapsible explainer: chip in the title band's top-right corner;
+         the card floats over the grid when open — panels never reflow */
+      .about {
+        position: absolute;
+        top: 8px;
+        right: 0;
+        z-index: 5;
+      }
+      .about summary {
+        list-style: none;
+        cursor: pointer;
+        font-size: 12px;
+        font-variant-caps: small-caps;
+        letter-spacing: 0.18em;
+        color: var(--ink);
+        background: var(--parchment);
+        border: 1.5px solid var(--ink);
+        border-radius: 6px;
+        padding: 4px 14px;
+        box-shadow: 0 2px 0 rgba(70, 53, 31, 0.35);
+        transition: transform 0.05s ease;
+      }
+      .about summary::-webkit-details-marker {
+        display: none;
+      }
+      .about summary:active {
+        transform: translateY(1px);
+        box-shadow: none;
+      }
+      .about[open] summary {
+        border-color: var(--accent);
+        color: var(--accent);
+      }
+      .about-card {
+        position: absolute;
+        top: 34px;
+        right: 0;
+        width: min(400px, 92vw);
+        background: var(--parchment);
+        border: 2px solid var(--ink);
+        border-radius: 10px;
+        box-shadow: 0 10px 40px rgba(70, 53, 31, 0.35),
+          inset 0 0 0 5px var(--parchment-dark);
+        padding: 18px 24px 16px;
+        color: var(--ink);
+      }
+      .about-heading {
+        font-variant-caps: small-caps;
+        letter-spacing: 0.2em;
+        font-size: 16px;
+        margin: 0 0 8px;
+        color: var(--ink);
+      }
+      .about-card p {
+        margin: 0 0 8px;
+        font-size: 13.5px;
+        line-height: 1.55;
+      }
+      .about-card .about-sub {
+        color: var(--ink-faint);
+        font-style: italic;
+        font-size: 12.5px;
+        margin: 0;
       }
       /* page brand — f-sketch, written like one continuous epicycle stroke */
       .page-title {
@@ -263,6 +328,33 @@
   </head>
   <body>
     <div class="sheet">
+      <details class="about">
+        <summary>how it works</summary>
+        <div class="about-card">
+          <div class="about-heading">what the fourier transform does</div>
+          <p>
+            Your closed drawing is resampled to 512 points, evenly spaced by
+            arc length, then decomposed into a sum of rotating circles — one
+            per term. Each term is <em>(k, radius, phase)</em>:
+            <em>k</em> counts laps per period (negative = clockwise spin),
+            <em>radius</em> is the circle's size, <em>phase</em> is where the
+            pen starts on it.
+          </p>
+          <p>
+            Sorted by amplitude, the biggest circles carry the shape and tiny
+            ones add detail — the <em>circles</em> slider keeps only the
+            top-N. Truncate the sum and the drawing becomes a wobble; the
+            last few circles are where sharp corners live. The pen tip is the
+            sum of the whole chain: every circle spins at k laps per period,
+            and its tip draws your curve.
+          </p>
+          <p class="about-sub">
+            The big outer circle never spins — it is the average position of
+            your shape. The final-frame view draws the complete closed
+            trace in one pass.
+          </p>
+        </div>
+      </details>
       <div class="page-title">f-sketch</div>
       <div id="app"></div>
     </div>
