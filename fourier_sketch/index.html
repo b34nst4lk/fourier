@@ -101,6 +101,10 @@
         color: var(--ink-faint);
         user-select: none;
         z-index: 2;
+        /* parchment tag: scrolling content passes underneath cleanly */
+        background: var(--parchment);
+        padding: 2px 10px;
+        border-radius: 0 0 8px 0;
       }
       .toolbar {
         display: flex;
@@ -200,6 +204,8 @@
       .terms-scroll {
         flex: 1;
         overflow-y: auto;
+        /* clear the absolutely-positioned "terms" label zone */
+        padding-top: 30px;
       }
       .term-table {
         width: 100%;
@@ -208,7 +214,8 @@
       }
       .term-table th {
         position: sticky;
-        top: 0;
+        /* stick below the label chip, not at the raw panel top */
+        top: 30px;
         background: var(--parchment);
         color: var(--ink-faint);
         font-variant-caps: small-caps;
