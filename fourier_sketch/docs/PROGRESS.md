@@ -305,14 +305,10 @@ Gates: 79/79, 11/11 contracts, probe-verified dark draw loop. Bundle 112→116K.
 
 ### Terms panel layout parity (2026-10-20)
 
-The "Terms" title + export chip moved OUT of the in-table header stack into
-the panel's own chrome: a label chip (like sketch/fourier) + a shared
-.toolbar row holding the export chip (disabled until the gate clears). The
-table keeps a single sticky column-header row (top: 0) with scrollable
-rows; the two-header-band hack is retired. Note: .toolbar margin-left is
-now 78px (fits BOTH panel chips — the fourier chip needed 100px, so the
-fourier toolbar gained a dedicated override? no — 78px clears the terms
-chip; the fourier panel's chip is wider and gets margin from its own
-rule… resolved: shared .toolbar keeps 78px and FOURIER uses margin-left:
-100px via a .fourier-toolbar variant). Correct: fourier toolbar override
-added; terms toolbar uses the base margin.
+The "Terms" title + export chip moved into the panel's own chrome — a label
+chip + shared .toolbar row holding the export chip (disabled until the gate
+clears) — matching sketch/fourier layout. The in-table title row was removed
+in a follow-up pass (it duplicated the chip's "terms"); the table keeps ONE
+sticky column-header row (top: 0) with scrollable rows. The shared
+.toolbar margin is 100px, clearing the wider fourier chip (the terms chip
+is shorter and clears with room to spare).

@@ -347,16 +347,6 @@ fn term_table(model: Model) -> Element(Msg) {
   html.div([attr.class("terms-scroll")], [
     html.table([attr.class("term-table")], [
       html.thead([], [
-        // Title row: lives INSIDE the table so it scrolls-sticks with the
-        // column header beneath it — no overlay, by construction.
-        html.tr([], [
-          html.th([attr.attribute("colspan", "4")], [
-            html.span([attr.class("terms-title")], [html.text("Terms")]),
-            html.button([attr.class("export-btn"), event.on_click(ExportCsv)], [
-              html.text("export csv"),
-            ]),
-          ]),
-        ]),
         html.tr([], [
           html.th([], [html.text("k")]),
           html.th([], [html.text("radius")]),
