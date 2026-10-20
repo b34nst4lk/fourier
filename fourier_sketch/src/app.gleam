@@ -284,11 +284,15 @@ pub fn view(model: Model) -> Element(Msg) {
         ])
     },
     html.div([attr.class("panel"), attr.class("terms")], [
-      html.div([attr.class("panel-label")], [html.text("terms")]),
       case ready {
         True -> term_table(model)
         False ->
-          html.div([attr.class("placeholder")], [html.text("No terms yet.")])
+          html.div([], [
+            html.div([attr.class("panel-label")], [html.text("terms")]),
+            html.div([attr.class("placeholder")], [
+              html.text("No terms yet."),
+            ]),
+          ])
       },
     ]),
   ])
@@ -300,6 +304,11 @@ fn term_table(model: Model) -> Element(Msg) {
   html.div([attr.class("terms-scroll")], [
     html.table([attr.class("term-table")], [
       html.thead([], [
+        // Title row: lives INSIDE the table so it scrolls-sticks with the
+        // column header beneath it — no overlay, by construction.
+        html.tr([], [
+          html.th([attr.attribute("colspan", "4")], [html.text("Terms")]),
+        ]),
         html.tr([], [
           html.th([], [html.text("k")]),
           html.th([], [html.text("radius")]),

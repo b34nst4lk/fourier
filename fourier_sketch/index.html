@@ -204,8 +204,6 @@
       .terms-scroll {
         flex: 1;
         overflow-y: auto;
-        /* clear the absolutely-positioned "terms" label zone */
-        padding-top: 30px;
       }
       .term-table {
         width: 100%;
@@ -214,8 +212,7 @@
       }
       .term-table th {
         position: sticky;
-        /* stick below the label chip, not at the raw panel top */
-        top: 30px;
+        /* sticky rows scroll with the table, body slides underneath */
         background: var(--parchment);
         color: var(--ink-faint);
         font-variant-caps: small-caps;
@@ -224,6 +221,20 @@
         padding: 4px 10px;
         font-weight: normal;
         z-index: 1;
+      }
+      /* title band of the header stack */
+      .term-table thead tr:first-child th {
+        top: 0;
+        height: 26px;
+        box-sizing: border-box;
+        padding: 5px 10px;
+        font-size: 12px;
+        line-height: 16px;
+        letter-spacing: 0.18em;
+      }
+      /* column headers stick directly beneath the title band */
+      .term-table thead tr + tr th {
+        top: 27px;
       }
       .term-table td {
         padding: 2px 10px;
