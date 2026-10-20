@@ -186,3 +186,14 @@ Harness: two new permanent contracts (boot-before-mount self-start; trace
 cache reflects current terms), 9/9 PASS; both proven RED against HEAD, GREEN
 after. Suite 79/79, format clean. happy-dom full-stack probe: boot→retry→
 self-start→~30fps draws with batched ops. Redeployed (live 200).
+
+## Monorepo + GitHub (2026-10-20)
+
+- https://github.com/b34nst4lk/fourier — public; both toys live here as
+  subtree imports (full per-repo histories preserved behind the import
+  commits; original nested .git dirs archived to /tmp/fourier-archive).
+- One CI workflow at the repo root (test matrix over both projects, JS-target
+  truth per PLAN §2). The old per-repo workflows were never actually executed
+  (no remote existed) — first real runs found toy-side format drift only.
+  NOTE: local `gleam format --check … | tail` swallows exit codes — check
+  exit status directly.

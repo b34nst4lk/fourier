@@ -31,3 +31,10 @@ phase is committed. Sibling convention: see `../fourier_sketch/docs/PROGRESS.md`
 - Git identity is repo-local (jacksim / jacksim@localhost), matching sibling.
 - Umbrella layout: `workspace/projects/fourier/` holds both repos; the
   umbrella itself is not versioned.
+## Monorepo + GitHub (2026-10-20)
+
+- Repo moved under the umbrella monorepo https://github.com/b34nst4lk/fourier
+  (subtree import — full local history preserved). Path dep on
+  ../fourier_sketch resolves unchanged inside the monorepo.
+- CI: shared root workflow, JS-target truth; first real run caught format
+  drift in this repo's test file — fixed.
