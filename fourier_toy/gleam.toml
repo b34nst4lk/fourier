@@ -1,0 +1,14 @@
+name = "fourier_toy"
+version = "0.1.0"
+
+description = "Tuning puzzle: adjust Fourier term configurations to match a target shape. Consumes the fourier_sketch math core."
+licences = ["MIT"]
+
+[dependencies]
+gleam_stdlib = ">= 1.0.0 and < 2.0.0"
+lustre = ">= 5.7.1 and < 6.0.0"
+gleam_json = ">= 1.0.0 and < 4.0.0"
+fourier_sketch = { path = "../fourier_sketch" }
+
+[dev_dependencies]
+gleeunit = ">= 1.0.0 and < 2.0.0"
