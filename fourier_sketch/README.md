@@ -43,7 +43,9 @@ to the first — the transform wants a closed loop. Your sketch autosaves.
 shows the complete closed trace (final frame). The `circles` slider (4–256)
 truncates the sum to the top-N terms by radius — drop it low and watch the
 drawing become a wobble, raise it and the corners snap back in. That slider
-is the whole lesson.
+is the whole lesson. The `speed` slider (25–100%) scales the pen's
+per-frame advance (the frame rate never changes): slide down for
+slow-motion, up for the designed pace.
 
 **Terms (bottom):** every circle the DFT produced, amplitude-descending:
 `k` (laps per period, negative = clockwise), `radius`, `phase` (radians),
@@ -105,6 +107,8 @@ of record lives in `docs/PLAN.md`, phase-tracked in `docs/PROGRESS.md`.
 - [ ] Slider scrub 4 → 256 → 4 while dragging: no crash, dimming follows
 - [ ] `pause/play`: off shows the complete closed trace (final frame), on
   animates the chain
+- [ ] `speed` slider: 100% is the designed pace; 25% slow-motion — smooth
+  at both ends.
 - [ ] Refresh mid-session: sketch restored from autosave
 - [ ] DevTools: `localStorage.setItem('fourier_sketch', '{oops')`, refresh —
       clean empty state, presets still work
