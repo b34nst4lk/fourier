@@ -98,6 +98,7 @@ const anim = {
   visible: true,
   io: null, // IntersectionObserver, bound in canvas_boot
   centers: [], // per-draw chain centers, allocated once in draw()
+  highlight: null, // selected term's k, or null
 };
 
 let boot_retry = null; // pending self-re-boot while the canvas is unmounted
@@ -188,7 +189,7 @@ export function canvas_boot(id) {
   }
 }
 
-export function canvas_sync(terms, final, playing) {
+export function canvas_sync(terms, final, playing, highlight) {
   // Lustre hands over a Gleam List of tuples: iterable, but NOT a JS array —
   // no .length, no index access (draw() crashes with a RangeError otherwise,
   // every frame). Normalize once at the boundary; everything below sees plain
@@ -201,6 +202,7 @@ export function canvas_sync(terms, final, playing) {
   if (terms_changed) rebuild_cache();
   anim.final = final;
   anim.playing = playing;
+  anim.highlight = highlight === 999_999 ? null : highlight;
   // final frame should show the complete closed trace immediately
   if (final) anim.t = 1.0;
   anim.dirty = true;
@@ -265,12 +267,14 @@ function palette() {
         links: "rgba(234, 217, 180, 0.35)",
         trace: "#d05848",
         pen: "#d9a92f",
+        highlight: "#e2b45c",
       }
     : {
         circles: "rgba(70, 53, 31, 0.25)",
         links: "rgba(70, 53, 31, 0.55)",
         trace: "#a4372a",
         pen: "#d9a92f",
+        highlight: "#96621f",
       };
 }
 
@@ -311,9 +315,15 @@ function draw() {
 
   // all circles share one stroke style: ONE beginPath+stroke for the whole
   // chain (moveTo avoids connecting chords between arcs) — warm ink wash
+  // except the selected term's circle, which gets its own bright stroke
+  const hiIdx =
+    anim.highlight != null
+      ? anim.terms.findIndex((row) => row[0] === anim.highlight)
+      : -1;
   ctx.strokeStyle = pal.circles;
   ctx.beginPath();
   for (let i = 0; i < n; i++) {
+    if (i === hiIdx) continue;
     const r = anim.terms[i][1] * scale;
     if (r > 1.2) {
       const c = centers[i];
@@ -324,6 +334,23 @@ function draw() {
     }
   }
   ctx.stroke();
+
+  // selection highlight: a thicker accent ring around the chosen circle
+  if (hiIdx >= 0) {
+    const c = centers[hiIdx];
+    const r = anim.terms[hiIdx][1] * scale;
+    if (r > 1.2) {
+      const X = sx(c[0]);
+      const Y = sy(c[1]);
+      ctx.strokeStyle = pal.highlight;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(X + r, Y);
+      ctx.arc(X, Y, r, 0, 2 * Math.PI);
+      ctx.stroke();
+      ctx.lineWidth = 1;
+    }
+  }
 
   // all links share one stroke style: ONE beginPath+stroke
   ctx.strokeStyle = pal.links;
@@ -360,6 +387,23 @@ export function event_value(event, otherwise) {
     return Number.isFinite(v) ? v : otherwise;
   } catch {
     return otherwise;
+  }
+}
+
+// ---- terms csv export -----------------------------------------------------
+// Offer the given text as a file download (blob + synthetic anchor click).
+export function download_csv(name, text) {
+  try {
+    const blob = new Blob([text], { type: "text/csv" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.setTimeout(() => URL.revokeObjectURL(a.href), 0);
+  } catch {
+    // best-effort: browsers without blob download support simply do nothing
   }
 }
 

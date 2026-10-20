@@ -28,6 +28,10 @@ pub fn build_targets(
   |> list.map(fn(t) { #(t.k, t.radius, t.phase) })
 }
 
+/// Sentinel for the FFI's highlight slot when no term is selected.
+/// k values are bounded by ±N/2 ≤ 256, so this value is unambiguous.
+pub const no_highlight = 999_999
+
 /// Clamp the circles slider into [min_circles, max_circles].
 pub fn clamp_circles(n: Int) -> Int {
   int.max(min_circles, int.min(max_circles, n))
@@ -41,9 +45,10 @@ pub fn sync(
   targets: List(#(Int, Float, Float)),
   show_final: Bool,
   playing: Bool,
+  highlight_k: Int,
 ) -> Nil {
   boot(canvas_id)
-  ffi_sync(targets, show_final, playing)
+  ffi_sync(targets, show_final, playing, highlight_k)
 }
 
 @external(javascript, "./fourier_sketch_ffi.mjs", "canvas_sync")
@@ -51,4 +56,9 @@ fn ffi_sync(
   targets: List(#(Int, Float, Float)),
   show_final: Bool,
   playing: Bool,
+  highlight_k: Int,
 ) -> Nil
+
+/// Offer a CSV file for download (browser-native blob anchor).
+@external(javascript, "./fourier_sketch_ffi.mjs", "download_csv")
+pub fn download_csv(name: String, csv: String) -> Nil

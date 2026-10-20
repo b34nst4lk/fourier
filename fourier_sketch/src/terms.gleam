@@ -9,9 +9,11 @@
 
 import complex
 import dft
+import gleam/float
 import gleam/int
 import gleam/list
 import gleam/order
+import gleam/string
 import resample
 import sketch.{type Dot}
 import util.{pi}
@@ -70,4 +72,41 @@ fn term_at(term: Term, t: Float) -> complex.Complex {
     term.radius,
     { 2.0 *. pi *. int.to_float(term.k) *. t } +. term.phase,
   )
+}
+
+/// CSV rendering of the term rows: a one-line header, then one line per term
+/// as plain `k,radius,phase` (floats in shortest Gleam form — CSV-clean).
+/// No trailing newline; an empty list yields the header only.
+pub fn to_csv(rows: List(Term)) -> String {
+  list.append(
+    ["k,radius,phase"],
+    list.map(rows, fn(t: Term) {
+      int.to_string(t.k)
+      <> ","
+      <> float.to_string(t.radius)
+      <> ","
+      <> float.to_string(t.phase)
+    }),
+  )
+  |> string.join(
+    "
+",
+  )
+}
+
+/// Position of a term with this k in the list; -1 when absent — the same
+/// "absent" convention the canvas FFI uses for its highlight slot.
+pub fn index_of_k(rows: List(Term), k: Int) -> Int {
+  do_index(rows, k, 0)
+}
+
+fn do_index(rows: List(Term), k: Int, i: Int) -> Int {
+  case rows {
+    [] -> -1
+    [t, ..rest] ->
+      case t.k == k {
+        True -> i
+        False -> do_index(rest, k, i + 1)
+      }
+  }
 }

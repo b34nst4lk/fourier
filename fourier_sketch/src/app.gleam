@@ -39,6 +39,8 @@ pub type Msg {
   LoadWobble
   SetCircles(Int)
   ToggleAnimate
+  SelectTerm(Int)
+  ExportCsv
   Ignored
 }
 
@@ -49,6 +51,7 @@ pub type Model {
     terms: List(terms.Term),
     circles: Int,
     animate: Bool,
+    selected: Option(Int),
   )
 }
 
@@ -81,6 +84,7 @@ pub fn init(_: Nil) -> #(Model, Effect(Msg)) {
       terms: pipeline(sk),
       circles: 64,
       animate: True,
+      selected: None,
     )
   #(model, effect.batch([canvas_sync(model), keys_effect()]))
 }
@@ -160,13 +164,46 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
     LoadWobble -> preset(model, sketch.wobble())
     Ignored -> #(model, effect.none())
     SetCircles(n) -> {
-      let m = Model(..model, circles: render.clamp_circles(n))
+      let n = render.clamp_circles(n)
+      // the selection survives only while its term sits inside the cut
+      let sel = case model.selected {
+        Some(k) ->
+          case terms.index_of_k(model.terms, k) {
+            -1 -> None
+            i ->
+              case i < n {
+                True -> model.selected
+                False -> None
+              }
+          }
+        None -> None
+      }
+      let m = Model(..model, circles: n, selected: sel)
       #(m, canvas_sync(m))
     }
     ToggleAnimate -> {
       let m = Model(..model, animate: !model.animate)
       #(m, canvas_sync(m))
     }
+    SelectTerm(k) -> {
+      // click the selected row again to clear it
+      let sel = case model.selected {
+        Some(k2) ->
+          case k2 == k {
+            True -> None
+            False -> Some(k)
+          }
+        None -> Some(k)
+      }
+      let m = Model(..model, selected: sel)
+      #(m, canvas_sync(m))
+    }
+    ExportCsv -> #(
+      model,
+      effect.from(fn(_dispatch) {
+        render.download_csv("f-sketch-terms.csv", terms.to_csv(model.terms))
+      }),
+    )
   }
 }
 
@@ -196,6 +233,7 @@ fn drag_commit(
       terms: pipeline(sk),
       circles: model.circles,
       animate: model.animate,
+      selected: model.selected,
     )
   #(m, effect.batch([autosave(sk), canvas_sync(m)]))
 }
@@ -208,6 +246,10 @@ fn canvas_sync(model: Model) -> Effect(Msg) {
       render.build_targets(model.terms, model.circles),
       bool.negate(model.animate),
       model.animate,
+      case model.selected {
+        Some(k) -> k
+        None -> render.no_highlight
+      },
     )
   })
 }
@@ -300,7 +342,12 @@ fn term_table(model: Model) -> Element(Msg) {
         // Title row: lives INSIDE the table so it scrolls-sticks with the
         // column header beneath it — no overlay, by construction.
         html.tr([], [
-          html.th([attr.attribute("colspan", "4")], [html.text("Terms")]),
+          html.th([attr.attribute("colspan", "4")], [
+            html.span([attr.class("terms-title")], [html.text("Terms")]),
+            html.button([attr.class("export-btn"), event.on_click(ExportCsv)], [
+              html.text("export csv"),
+            ]),
+          ]),
         ]),
         html.tr([], [
           html.th([], [html.text("k")]),
@@ -363,26 +410,38 @@ fn fourier_toolbar(model: Model) -> Element(Msg) {
 fn term_rows(model: Model) -> List(Element(Msg)) {
   model.terms
   |> list.index_map(fn(t, i) {
-    html.tr([attr.classes([#("cut", i >= model.circles)])], [
-      html.td([], [html.text(int.to_string(t.k))]),
-      html.td([], [html.text(spark.format_float2(t.radius))]),
-      html.td([], [html.text(spark.format_float2(t.phase))]),
-      html.td([], [
-        svg.svg(
-          [
-            attr.class("spark"),
-            attr.attribute(
-              "viewBox",
-              "0 0 "
-                <> int.to_string(spark.columns)
-                <> " "
-                <> int.to_string(spark.box_height),
-            ),
-          ],
-          [svg.path([attr.attribute("d", spark.path(t))])],
-        ),
-      ]),
-    ])
+    html.tr(
+      [
+        attr.classes([
+          #("cut", i >= model.circles),
+          #("selected", case model.selected {
+            Some(k) -> k == t.k
+            None -> False
+          }),
+        ]),
+        event.on_click(SelectTerm(t.k)),
+      ],
+      [
+        html.td([], [html.text(int.to_string(t.k))]),
+        html.td([], [html.text(spark.format_float2(t.radius))]),
+        html.td([], [html.text(spark.format_float2(t.phase))]),
+        html.td([], [
+          svg.svg(
+            [
+              attr.class("spark"),
+              attr.attribute(
+                "viewBox",
+                "0 0 "
+                  <> int.to_string(spark.columns)
+                  <> " "
+                  <> int.to_string(spark.box_height),
+              ),
+            ],
+            [svg.path([attr.attribute("d", spark.path(t))])],
+          ),
+        ]),
+      ],
+    )
   })
 }
 

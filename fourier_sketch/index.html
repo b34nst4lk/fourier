@@ -317,15 +317,41 @@
         font-weight: normal;
         z-index: 1;
       }
-      /* title band of the header stack */
+      /* title band of the header stack: title + export chip on one line */
       .term-table thead tr:first-child th {
         top: 0;
         height: 26px;
         box-sizing: border-box;
-        padding: 5px 10px;
+        padding: 3px 10px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
         font-size: 12px;
         line-height: 16px;
         letter-spacing: 0.18em;
+      }
+      .export-btn {
+        flex: none;
+        font: inherit;
+        font-size: 10.5px;
+        font-variant-caps: small-caps;
+        letter-spacing: 0.12em;
+        color: var(--ink-faint);
+        background: transparent;
+        border: 1px solid var(--ink-faint);
+        border-radius: 5px;
+        padding: 1px 9px;
+        cursor: pointer;
+      }
+      .export-btn:hover {
+        border-color: var(--accent);
+        color: var(--accent);
+        background: var(--hover);
+      }
+      /* the selected term's row echoes its circle's highlight */
+      .term-table tr.selected td {
+        background: var(--hover);
+        color: var(--ink);
       }
       /* column headers stick directly beneath the title band */
       .term-table thead tr + tr th {

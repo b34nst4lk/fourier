@@ -281,3 +281,24 @@ about chip (corner-tools group); choice stored at f-sketch-theme
 localStorage key; unset = follows prefers-color-scheme. Canvas FFI reads the
 attribute at draw time (palette()) — the toggle never touches the app code.
 Gates: 79/79, 11/11 contracts, probe-verified dark draw loop. Bundle 112→116K.
+
+### Term selection + csv export (2026-10-20)
+
+- Feature 1: click a term row -> the row (tr.selected, hovered bg + full ink)
+  and ITS circle on the fourier panel (excluded from the batched stroke,
+  redrawn bright in the palette's highlight colour, lineWidth 2). Selection
+  lives by k (unique in the signed spectrum); clicks on the selected row
+  toggle it off. The slider cut resets it: SetCircles re-checks
+  terms.index_of_k(row) < circles, else the selection clears. The FFI
+  learns a 4th sync arg (highlight k; sentinel render.no_highlight =
+  999_999 -> null). Note: because the spectrum always covers the full
+  signed-k range at N=512, a selected k always exists in the table — the
+  cut is the only thing that can retire a selection.
+- Feature 2: terms.to_csv (tested: header + shortest-float rows, no
+  trailing newline) + an "export csv" chip in the table's title band ->
+  Msg ExportCsv -> FFI download_csv (blob + anchor) -> f-sketch-terms.csv.
+- TDD: 4 new core tests RED (compile errors) -> GREEN (83/83). Two test
+  bugs caught on the way (float.to_string keeps .0 on whole numbers; a
+  sloppy "expect index 2 for a missing k" assertion) — both fixed in the
+  tests, not the implementation. One missing brace in the palette insert
+  (module parse error) fixed next turn.
