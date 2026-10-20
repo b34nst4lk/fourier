@@ -384,7 +384,7 @@ fn fourier_panel(model: Model) -> Element(Msg) {
 }
 
 fn fourier_toolbar(model: Model) -> Element(Msg) {
-  html.div([attr.class("toolbar")], [
+  html.div([attr.class("toolbar fourier-toolbar")], [
     html.button(
       [
         event.on_click(ToggleAnimate),
