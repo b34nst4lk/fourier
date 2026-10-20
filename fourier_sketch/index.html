@@ -110,7 +110,8 @@
         display: flex;
         gap: 6px;
         padding: 6px 10px;
-        margin-left: 88px;
+        /* clear the absolute "fourier" label chip fully */
+        margin-left: 100px;
       }
       .toolbar button {
         background: var(--parchment);
@@ -186,7 +187,10 @@
         display: block;
       }
       .circles-slider {
-        flex: 1;
+        /* shortened: capped width instead of stretching across the row,
+         * still flexible on narrow panels */
+        flex: 1 1 120px;
+        max-width: 170px;
         accent-color: var(--accent);
       }
       .slider-label {
