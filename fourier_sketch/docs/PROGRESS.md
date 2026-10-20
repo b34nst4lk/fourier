@@ -312,3 +312,10 @@ in a follow-up pass (it duplicated the chip's "terms"); the table keeps ONE
 sticky column-header row (top: 0) with scrollable rows. The shared
 .toolbar margin is 100px, clearing the wider fourier chip (the terms chip
 is shorter and clears with room to spare).
+
+CORRECTION (terms layout): the parity commit's CSS replacement aborted
+mid-turn, leaving the two-row-era rules in place — after the title row was
+removed, `thead tr:first-child th { display: flex; ... }` landed on the
+column header itself, and flex-displayed th cells stop being table cells:
+they stack vertically in the row's first column. Fixed by removing the two
+obsolete rules and restoring `.term-table th { position: sticky; top: 0 }.
