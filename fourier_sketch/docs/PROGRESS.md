@@ -254,3 +254,11 @@ via clamp_circles). Still test-only today but NOT removed — dft.inverse and
 terms.position_at — they are required primitives of the toy's written\scoring contract (PLAN §3), annotated as such; they become production code
 in toy phase 2. Trig-FFI centralisation
 parked in PLAN §8 (judgement call, zero-behaviour refactor).
+
+### Minified bundle (2026-10-20)
+
+build-dist.sh now ships esbuild --minify --charset=utf8: inline app JS
+204 KB -> 66 KB; bundle file 242 KB -> 104 KB; over the wire (gzip)
+63 KB -> 47 KB. Verified by the full-stack probe on the MINIFIED bundle:
+boot -> self-start -> sustained ~30fps draws, correct terms DOM. (The
+embedded font block is untouched by minification as a data URI.)

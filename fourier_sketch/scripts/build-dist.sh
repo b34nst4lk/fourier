@@ -22,6 +22,8 @@ npx --yes esbuild .esbuild-entry.mjs \
   --bundle \
   --format=esm \
   --platform=browser \
+  --minify \
+  --charset=utf8 \
   --outfile=.esbuild-bundle.js
 
 python3 - <<'PYEOF'
