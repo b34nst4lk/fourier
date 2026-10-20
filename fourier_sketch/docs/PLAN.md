@@ -38,7 +38,7 @@ versioned. Original grilling names kept: `fourier_sketch` (phase 1),
 | 3 | Sampling | Resample polygon to **512 points**, evenly spaced by **arc length** | Raw dots are unevenly spaced → garbage spectrum |
 | 4 | Term list row format | 3-parameter vector form: **(k, radius, phase)** | Maps 1:1 to epicycles; supports phase-2 puzzle |
 | 5 | Output panel | **Both** animated epicycles and static final frame, toggleable | RAF loop already exists; cheap |
-| 6 | Sketch interactions | **Append-only**: click=add, drag=move, click existing dot=remove; closing segment drawn live | Covers 95% of "manipulate the line"; data model extensible |
+| 6 | Sketch interactions | **Append-only**: click=add, drag=move, right-click=delete nearest within grab radius; closing segment drawn live. (Original wording had left-click-on-dot=remove; implementation locked RIGHT-CLICK at build time — one pointer gesture owns one action) | Covers 95% of "manipulate the line"; data model extensible |
 | 7 | Panel 1 rendering | **SVG via Lustre** elements | Dot counts are dozens, not hundreds; interactions declarative |
 | 8 | Recompute timing | **Live on every mousemove**, unthrottled at locked scale | The app's whole educational point; pipeline is ~ms |
 | 9 | Panel 3 interactivity | **Read-only**, sorted by **amplitude descending**, live-updating | Sliders/toggles stay parked with phase 2 |
@@ -77,8 +77,9 @@ versioned. Original grilling names kept: `fourier_sketch` (phase 1),
 | `src/terms.gleam` | sort by amplitude, slice top-N, format rows | ✓ unit |
 | `src/sketch.gleam` | panel-1 state model: add/move/delete, undo stack, gates, presets | ✓ unit + properties |
 | `src/store.gleam` | versioned localStorage save/load via FFI | ✓ round-trip on JS |
-| `src/animation.gleam` | time→chain pose (pure): given terms+time, positions of circles & pen tip | ✓ unit |
 | `src/render.gleam` | model↔canvas bridge: top-N target slicing, slider clamp, FFI sync; drawing is JS (smoke) | ✓ unit (pure parts) |
+| `src/spark.gleam` | integer-path sine sparkline per term (decision #16) | ✓ unit |
+| `src/util.gleam` | shared numeric helpers (`pi`, `indices`) extracted from 4–5 copies | — |
 | `src/app.gleam` | Lustre app: Model, Msg, update, view (2×2 grid, empty states) | smoke checklist |
 | `src/fourier_sketch_ffi.mjs` | canvas ops, RAF, localStorage | smoke checklist |
 | `src/fourier_sketch/bench.gleam` | perf bench entry (phase 7) | budget report |
@@ -105,7 +106,7 @@ versioned. Original grilling names kept: `fourier_sketch` (phase 1),
 ## 4. UI spec
 
 - 2×2 CSS grid; `min ~900px` breakpoints: bottom row may wrap below on narrow
-  screens. Dark-only palette (traces glow on dark); colors hardcoded.
+  screens. Parchment-cartography palette (rethemed 2026-10-20 — see decision #15); colors hardcoded in index.html.
 - Panel 1: SVG `<circle>` per dot + single closed `<path>`; hover affordance +
   delete affordance (`✕` or alt-click, decided at implementation); cursor hints.
 - Panel 2 toolbar: play/pause, final-frame toggle, circles slider (4–256)
@@ -113,8 +114,9 @@ versioned. Original grilling names kept: `fourier_sketch` (phase 1),
 - Panel 3: table columns `k | radius | phase | waveform`; amplitude-descending
   sort; slider-cut rows dimmed; all computed terms shown (up to 256).
 - Empty states: panels 2–3 rendered as quiet hints until ≥3 dots exist.
-- Autosave: on every model mutation, `localStorage["fourier_sketch/v1"]`;
-  schema version byte; corrupt/absent → presets fallback.
+- Autosave: on every model mutation, `localStorage["fourier_sketch"]` (the
+  schema version lives INSIDE the payload as `"v":1`, not in the key);
+  corrupt/absent → presets fallback.
 
 ## 5. Quality gates
 
@@ -153,6 +155,7 @@ cannot leak:
 | Finding | Due | Detail |
 |---------|-----|--------|
 | DFT twiddle table | ✅ RESOLVED phase 4 | Measure-first done: naive per-(k,m) exp_i = **7.7 ms avg / 7.2 ms min** at 60 dots → 512 samples → 512 terms (96% of the 8 ms budget *before* rendering — confirmed over-budget once render time lands). Fix shipped: one twiddle table w[m] = e^{−2πim/N} (N trig calls) + multiplicative rotation per k: **4.5 ms avg / 3.4 ms min** (bench: `gleam run -m fourier_sketch/bench --target javascript`). Inverse DFT left naive — test-only path |
+| Trig/sqrt FFI shims re-declared in 4 modules (cos/sin against the same FFI file); centralise in src/math_ffi.gleam | parked (judgement call) | Module-local externals are idiomatic, each shim is 4 lines, and moving them touches 4 tested modules for zero behaviour change — revisit if a 5th module needs trig |
 | Resampler monotonic walk | phase 4 (same bench) | `walk` restarts from edge 0 per sample → O(n·edges); targets ascend so a persistent-index walk is O(n+E); `edge_len` also computed twice. With the twiddle table landed, total pipeline sits at 44–56% of budget — * ACCEPTED DEBT at ship (final bench 3.9 ms avg / 3.45 min): revisit only if real-browser smoke shows budget pressure |
 | Real README | phase 7 | usage, bench numbers vs budget, smoke-test checklist |
 | Hex metadata licence | ✅ RESOLVED phase 7 | MIT confirmed in README + gleam.toml (user holds final veto — one-line change if contested) |

@@ -2,7 +2,8 @@
 
 Two Gleam/Lustre toys sharing one math core (signed-k 1D complex DFT,
 arc-length resampler, amplitude-sorted term tables) and one design language
-(dark-only, glowing traces, 2×2 panel grids — see `fourier_sketch/docs/PLAN.md`).
+(parchment cartography: sepia ink on aged paper, serif small-caps,
+2×2 panel grids — see `fourier_sketch/docs/PLAN.md`).
 
 | toy | what it is | live |
 |-----|------------|------|
