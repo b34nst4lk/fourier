@@ -112,4 +112,6 @@ of record lives in `docs/PLAN.md`, phase-tracked in `docs/PROGRESS.md`.
 
 ## License
 
-MIT.
+MIT. The brand ("f-sketch") is set in Sacramento (c) Astigmatic — SIL Open
+Font License 1.1, latin subset embedded in the bundle; full licence text:
+`docs/Sacramento-OFL.txt`.

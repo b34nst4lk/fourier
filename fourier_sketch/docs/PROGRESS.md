@@ -214,3 +214,14 @@ changes (fresh observation refreshes visibility). Harness: +2 contracts
 browser-faithful first (unique handles + per-tick drain) — the single-slot
 stub returning undefined caused false pump refusals in the harness only.
 79/79 + format ✓. Redeployed; live serves the fix.
+
+### Brand + title font (2026-10-20)
+
+Page titled "f-sketch" (title + on-page header above the sketch panel),
+set in Sacramento — researched pick: monoline script whose letterforms read
+like ONE continuous pen curve with circular bowls = the epicycle metaphor.
+Runner-up Great Vibes rejected (high contrast, "invitation" register).
+Font: latin subset woff2 (23.7 KB), base64-embedded in index.html so the
+single-file rule holds; bundle 216→248 KB. OFL 1.1 licence text shipped at
+docs/Sacramento-OFL.txt (embedding/redistribution permitted; README notes
+it). Layout: body now flex-column (title band + grid as flex child).
