@@ -331,27 +331,26 @@
       <details class="about">
         <summary>how it works</summary>
         <div class="about-card">
-          <div class="about-heading">what the fourier transform does</div>
+          <div class="about-heading">the fourier transform</div>
           <p>
-            Your closed drawing is resampled to 512 points, evenly spaced by
-            arc length, then decomposed into a sum of rotating circles — one
-            per term. Each term is <em>(k, radius, phase)</em>:
-            <em>k</em> counts laps per period (negative = clockwise spin),
-            <em>radius</em> is the circle's size, <em>phase</em> is where the
-            pen starts on it.
+            It is a recipe-finder for waves. Hand it something complicated —
+            a squiggle, a sound, a picture of your drawing — and it answers:
+            "made from these simple round-and-round waves, in these amounts,
+            starting at these positions."
           </p>
           <p>
-            Sorted by amplitude, the biggest circles carry the shape and tiny
-            ones add detail — the <em>circles</em> slider keeps only the
-            top-N. Truncate the sum and the drawing becomes a wobble; the
-            last few circles are where sharp corners live. The pen tip is the
-            sum of the whole chain: every circle spins at k laps per period,
-            and its tip draws your curve.
+            Think of a smoothie. Sipping it, you cannot tell what went in;
+            the Fourier transform is like peeking at the recipe card: two
+            parts apple, one part strawberry. Or a chord of music: many notes
+            sound at once, and the transform names every note and how loud it
+            is. It also goes backwards — add the waves back together and you
+            get the original thing again, exactly.
           </p>
-          <p class="about-sub">
-            The big outer circle never spins — it is the average position of
-            your shape. The final-frame view draws the complete closed
-            trace in one pass.
+          <p>
+            The surprising part: <em>every</em> repeating wave, however
+            squiggly, is just a bunch of smooth circles added up. The circles
+            on the right are your drawing's ingredients, biggest first —
+            that's simply what your shape is made of.
           </p>
         </div>
       </details>
