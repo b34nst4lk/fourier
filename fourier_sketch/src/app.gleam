@@ -444,9 +444,9 @@ fn toolbar(sk: Sketch) -> Element(Msg) {
       [event.on_click(ClearAll), attr.disabled(sketch.dot_count(sk) == 0)],
       [html.text("clear")],
     ),
-    html.button([event.on_click(LoadStar)], [html.text("â\u{2605} star")]),
-    html.button([event.on_click(LoadHeart)], [html.text("â\u{2665} heart")]),
-    html.button([event.on_click(LoadWobble)], [html.text("â\u{25CB} wobble")]),
+    html.button([event.on_click(LoadStar)], [html.text("\u{2605} star")]),
+    html.button([event.on_click(LoadHeart)], [html.text("\u{2665} heart")]),
+    html.button([event.on_click(LoadWobble)], [html.text("\u{25CB} wobble")]),
   ])
 }
 
