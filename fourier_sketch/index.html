@@ -315,7 +315,9 @@
         opacity: 0.32;
       }
       .spark {
-        width: 108px;
+        /* 1:1 with the 36×16 viewBox the paths are drawn in — the diagram
+           reads at the same scale as the neighbouring text (was 108px: 3×) */
+        width: 36px;
         height: 16px;
         /* obey the same text-flow alignment + row rhythm as the cells */
         display: inline-block;
