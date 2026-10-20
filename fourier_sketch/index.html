@@ -308,6 +308,7 @@
       .term-table td {
         padding: 2px 10px;
         border-top: 1px solid var(--parchment-dark);
+        text-align: left;
         white-space: nowrap;
       }
       .term-table tr.cut {
@@ -316,7 +317,9 @@
       .spark {
         width: 108px;
         height: 16px;
-        display: block;
+        /* obey the same text-flow alignment + row rhythm as the cells */
+        display: inline-block;
+        vertical-align: middle;
       }
       /* waveforms drawn in water-wash, like rivers on the map */
       .spark path {
