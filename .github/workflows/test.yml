@@ -3,13 +3,19 @@ name: test
 on:
   push:
     branches:
-      - master
       - main
   pull_request:
 
 jobs:
   test:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        project: [fourier_sketch, fourier_toy]
+    defaults:
+      run:
+        working-directory: ${{ matrix.project }}
     steps:
       - uses: actions/checkout@v7
       - uses: erlef/setup-beam@v1
@@ -17,9 +23,8 @@ jobs:
           otp-version: "29"
           gleam-version: "1.19.2"
           rebar3-version: "3"
-          # elixir-version: "1"
       - run: gleam deps download
-      # Dev truth is the browser: run the same target we build and test
-      # locally (no Erlang in this project's runtime story).
+      # House truth is the JavaScript target everywhere
+      # (fourier_sketch/docs/PLAN.md §2).
       - run: gleam test --target javascript
       - run: gleam format --check src test
