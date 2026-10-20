@@ -13,9 +13,9 @@ import terms.{type Term}
 pub const canvas_id = "fourier-canvas"
 
 /// The circles slider bounds (decision #12).
-pub const min_circles = 4
+const min_circles = 4
 
-pub const max_circles = 256
+const max_circles = 256
 
 /// Slice the amplitude-sorted terms to the top `count` and flatten to plain
 /// tuples for the FFI: each becomes a [k, radius, phase] JS array.

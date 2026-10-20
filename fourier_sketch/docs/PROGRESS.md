@@ -243,5 +243,14 @@ wording corrected. Two review claims REFUTED by verification:
 complex.sub is alive (fourier_toy dep-smoke calls it — "no reference
 anywhere" scanned one repo only) and resample.gleam has no fn_.
 conjugate/magnitude_squared kept + documented as puzzle core surface
-(review's own "keep as documented surface" option). Trig-FFI centralisation
+(review's own "keep as documented surface" option).
+
+CORRECTION (same day, tightening pass): the user's rule — code with no
+production callers is removed — applied to the core: complex.sub/conjugate/
+magnitude_squared DELETED (no production consumer in either repo; sub had
+exactly one caller, the toy dep-smoke, which now asserts coordinate-wise
+tolerances instead). render.min/max_circles also made private (used only
+via clamp_circles). Still test-only today but NOT removed — dft.inverse and
+terms.position_at — they are required primitives of the toy's written\scoring contract (PLAN §3), annotated as such; they become production code
+in toy phase 2. Trig-FFI centralisation
 parked in PLAN §8 (judgement call, zero-behaviour refactor).

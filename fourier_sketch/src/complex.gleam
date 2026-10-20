@@ -4,12 +4,6 @@
 //// Trig and sqrt come through FFI (Erlang `math` / JS `Math`) because
 //// gleam_stdlib 1.0 ships neither.
 ////
-//// Surface note: this module is the SHARED core the sibling fourier_toy
-//// consumes (its dep-smoke exercises add/mul/scale/exp_i/sub/to_xy). Some
-//// fns have no caller inside this repo today — keep them as documented core
-//// surface, not dead code:
-////   - conjugate: phase-conjugation (mirrored spectra) for the puzzle
-////   - magnitude_squared: mean-square scoring workhorse for the puzzle
 
 pub type Complex {
   Complex(re: Float, im: Float)
@@ -47,10 +41,6 @@ pub fn add(a: Complex, b: Complex) -> Complex {
   Complex({ a.re +. b.re }, { a.im +. b.im })
 }
 
-pub fn sub(a: Complex, b: Complex) -> Complex {
-  Complex({ a.re -. b.re }, { a.im -. b.im })
-}
-
 pub fn mul(a: Complex, b: Complex) -> Complex {
   Complex(
     { a.re *. b.re } -. { a.im *. b.im },
@@ -62,16 +52,8 @@ pub fn scale(c: Complex, s: Float) -> Complex {
   Complex({ c.re *. s }, { c.im *. s })
 }
 
-pub fn conjugate(c: Complex) -> Complex {
-  Complex(c.re, -1.0 *. c.im)
-}
-
 pub fn magnitude(c: Complex) -> Float {
   sqrt({ c.re *. c.re } +. { c.im *. c.im })
-}
-
-pub fn magnitude_squared(c: Complex) -> Float {
-  { c.re *. c.re } +. { c.im *. c.im }
 }
 
 /// Principal argument in (-pi, pi].

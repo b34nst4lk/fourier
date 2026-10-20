@@ -4,6 +4,7 @@
 
 import complex
 import dft
+import gleam/float
 import gleam/list
 import gleeunit
 import gleeunit/should
@@ -31,14 +32,10 @@ pub fn dep_smoke_terms_pipeline_test() {
   // The chain pose at t=0 with the FULL term set reproduces the start of the
   // path — every term is exp(0)·c_k summed, i.e. the first resampled point.
   // (Radius/phase round-trips through polar/argument cost a few ulps, so
-  // assert with a tolerance, not exact equality.)
+  // assert coordinate-wise with a tolerance, not exact equality.)
   let pose = terms.position_at(computed, 0.0)
-  let err =
-    complex.magnitude(complex.sub(
-      complex.from_xy(pose.0, pose.1),
-      complex.from_xy(1.0, 0.0),
-    ))
-  should.be_true(err <. 0.000_000_001)
+  should.be_true(float.absolute_value({ pose.0 -. 1.0 }) <. 0.000_000_001)
+  should.be_true(float.absolute_value(pose.1) <. 0.000_000_001)
 }
 
 pub fn dep_smoke_dft_signed_k_test() {
