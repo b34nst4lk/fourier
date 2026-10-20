@@ -39,10 +39,11 @@ buttons or `Ctrl/Cmd+Z` / `Ctrl+Shift+Z` (also `Ctrl+Y`) for undo/redo,
 to the first — the transform wants a closed loop. Your sketch autosaves.
 
 **Fourier (top-right):** the epicycle animation loops once per period
-(~4 s). `pause/play` freezes it; `final frame` shows the complete closed
-trace. The `circles` slider (4–256) truncates the sum to the top-N terms by
-radius — drop it low and watch the drawing become a wobble, raise it and the
-corners snap back in. That slider is the whole lesson.
+(~4 s). `pause/play` is one boolean toggle: on, the chain animates; off, it
+shows the complete closed trace (final frame). The `circles` slider (4–256)
+truncates the sum to the top-N terms by radius — drop it low and watch the
+drawing become a wobble, raise it and the corners snap back in. That slider
+is the whole lesson.
 
 **Terms (bottom):** every circle the DFT produced, amplitude-descending:
 `k` (laps per period, negative = clockwise), `radius`, `phase` (radians),
@@ -102,7 +103,8 @@ of record lives in `docs/PLAN.md`, phase-tracked in `docs/PROGRESS.md`.
 - [ ] `Ctrl+Z` / `Ctrl+Shift+Z` mirror the toolbar buttons
 - [ ] Clear, undo restores; spam-click 20× — nothing crashes
 - [ ] Slider scrub 4 → 256 → 4 while dragging: no crash, dimming follows
-- [ ] `final frame` shows the complete closed trace; `pause` freezes it
+- [ ] `pause/play`: off shows the complete closed trace (final frame), on
+  animates the chain
 - [ ] Refresh mid-session: sketch restored from autosave
 - [ ] DevTools: `localStorage.setItem('fourier_sketch', '{oops')`, refresh —
       clean empty state, presets still work

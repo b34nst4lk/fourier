@@ -5,6 +5,7 @@
 //// sketch (state), store (persistence), and later dft/terms. The pointer
 //// decoders are the one place that bridges events to pure messages.
 
+import gleam/bool
 import gleam/dynamic/decode
 import gleam/float
 import gleam/int
@@ -37,8 +38,7 @@ pub type Msg {
   LoadHeart
   LoadWobble
   SetCircles(Int)
-  ToggleFinal
-  TogglePlaying
+  ToggleAnimate
   Ignored
 }
 
@@ -48,8 +48,7 @@ pub type Model {
     drag: Option(Int),
     terms: List(terms.Term),
     circles: Int,
-    show_final: Bool,
-    playing: Bool,
+    animate: Bool,
   )
 }
 
@@ -81,8 +80,7 @@ pub fn init(_: Nil) -> #(Model, Effect(Msg)) {
       drag: None,
       terms: pipeline(sk),
       circles: 64,
-      show_final: False,
-      playing: True,
+      animate: True,
     )
   #(model, effect.batch([canvas_sync(model), keys_effect()]))
 }
@@ -165,12 +163,8 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
       let m = Model(..model, circles: render.clamp_circles(n))
       #(m, canvas_sync(m))
     }
-    ToggleFinal -> {
-      let m = Model(..model, show_final: !model.show_final)
-      #(m, canvas_sync(m))
-    }
-    TogglePlaying -> {
-      let m = Model(..model, playing: !model.playing)
+    ToggleAnimate -> {
+      let m = Model(..model, animate: !model.animate)
       #(m, canvas_sync(m))
     }
   }
@@ -201,8 +195,7 @@ fn drag_commit(
       drag: drag,
       terms: pipeline(sk),
       circles: model.circles,
-      show_final: model.show_final,
-      playing: model.playing,
+      animate: model.animate,
     )
   #(m, effect.batch([autosave(sk), canvas_sync(m)]))
 }
@@ -213,8 +206,8 @@ fn canvas_sync(model: Model) -> Effect(Msg) {
   effect.from(fn(_dispatch) {
     render.sync(
       render.build_targets(model.terms, model.circles),
-      model.show_final,
-      model.playing,
+      bool.negate(model.animate),
+      model.animate,
     )
   })
 }
@@ -339,26 +332,13 @@ fn fourier_toolbar(model: Model) -> Element(Msg) {
   html.div([attr.class("toolbar")], [
     html.button(
       [
-        event.on_click(TogglePlaying),
-        attr.disabled(model.show_final),
-        attr.classes([#("active", model.playing && !model.show_final)]),
+        event.on_click(ToggleAnimate),
+        attr.classes([#("active", model.animate)]),
       ],
       [
-        html.text(case model.playing {
+        html.text(case model.animate {
           True -> "pause"
           False -> "play"
-        }),
-      ],
-    ),
-    html.button(
-      [
-        event.on_click(ToggleFinal),
-        attr.classes([#("active", model.show_final)]),
-      ],
-      [
-        html.text(case model.show_final {
-          True -> "animate"
-          False -> "final frame"
         }),
       ],
     ),

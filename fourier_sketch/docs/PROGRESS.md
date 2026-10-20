@@ -262,3 +262,11 @@ build-dist.sh now ships esbuild --minify --charset=utf8: inline app JS
 63 KB -> 47 KB. Verified by the full-stack probe on the MINIFIED bundle:
 boot -> self-start -> sustained ~30fps draws, correct terms DOM. (The
 embedded font block is untouched by minification as a data URI.)
+
+### UI simplification (2026-10-20) — one animate toggle
+
+The two mode buttons (pause/play + animate/final frame) became ONE boolean:
+Model.animate. playing = animate; final-frame = not animate — the static
+mode now shows the complete closed trace (the thermally-idle state). Toolbar
+button label: pause when animating, play when static. API notes learned:
+gleam_stdlib 1.x has no unary `not` and bool.not is bool.negate.
