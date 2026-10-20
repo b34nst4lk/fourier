@@ -197,3 +197,20 @@ self-start→~30fps draws with batched ops. Redeployed (live 200).
   (no remote existed) — first real runs found toy-side format drift only.
   NOTE: local `gleam format --check … | tail` swallows exit codes — check
   exit status directly.
+
+### Clear-and-redraw render bug (2026-10-20) — fixed, deployed
+
+Report: after `clear`, new shapes (preset or custom) never rendered. Root
+cause chain: clear ⇒ sketch <3 dots ⇒ the canvas ELEMENT unmounts (placeholder
+swaps in) ⇒ the IO created at first boot fires isIntersecting:false for the
+detached element ⇒ anim.visible=false; when the new shape mounts a NEW canvas
+element, canvas_boot rebound canvas/ctx but never re-observed the IO →
+visible stuck false ⇒ sync set dirty forever, pump/frame permanently gated
+⇒ no rendering. Fix (3 small edits, src only): unmount boot nulls
+canvas/ctx and idles the loop (bonus: no more detached-canvas painting);
+frame() gains a ctx guard; boot re-observes the IO whenever the element
+changes (fresh observation refreshes visibility). Harness: +2 contracts
+(unmount idles; remount resumes ≥10 draws) = 11/11; harness rAF made
+browser-faithful first (unique handles + per-tick drain) — the single-slot
+stub returning undefined caused false pump refusals in the harness only.
+79/79 + format ✓. Redeployed; live serves the fix.

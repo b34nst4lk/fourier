@@ -43,25 +43,34 @@ ctxStub.__defineSetter__("strokeStyle", () => {});
 ctxStub.__defineSetter__("fillStyle", () => {});
 
 const CSS = 500; // typical phone panel CSS px
-const el = {
+const mkEl = () => ({
   width: 0,
   height: 0,
   getBoundingClientRect: () => ({ width: CSS, height: CSS, left: 0, top: 0 }),
   getContext: () => ctxStub,
-};
-let canvas_in_dom = true; // simulates Lustre running sync effects pre-attach
+});
+const el = mkEl();
+let els = [el]; // element generations — a remount hands boot a fresh element
+let gen = 0;
+let canvas_in_dom = true; // simulates Lustre mounting/unmounting the canvas
 globalThis.document = {
-  getElementById: () => (canvas_in_dom ? el : null),
+  getElementById: () => (canvas_in_dom ? els[gen] : null),
 };
 globalThis.window = {
   devicePixelRatio: 3,
   addEventListener: () => {},
   localStorage: { getItem: () => null, setItem: () => {} },
 };
-let raf_cb = null;
+// browser-faithful rAF: returns a unique handle, multiple callbacks may be
+// pending (an app frame and a boot retry can coexist in one tick)
+let raf_q = [];
+let raf_handle = 0;
 globalThis.requestAnimationFrame = (cb) => {
-  raf_cb = cb;
+  raf_handle++;
+  raf_q.push(cb);
+  return raf_handle;
 };
+globalThis.cancelAnimationFrame = () => {};
 
 // IntersectionObserver stub — captures the instance so the verify section can
 // fire visibility transitions manually (harmless before the fix exists).
@@ -107,8 +116,9 @@ let sim_now = 0; // monotonic simulated clock — drive() must not regress it,
 function drive(frames) {
   for (let i = 0; i < frames; i++) {
     sim_now += 1000 / 60;
-    // loop may legitimately be dead (pre-fix boot ordering) — tolerate that
-    if (typeof raf_cb === "function") raf_cb(sim_now);
+    const q = raf_q;
+    raf_q = []; // callbacks scheduled this tick run NEXT tick (browser-faithful)
+    for (const cb of q) cb(sim_now);
   }
 }
 const ms = (fn) => {
@@ -328,6 +338,33 @@ Math.sin = real_sin;
 verify(
   `sync w/ unchanged terms: rebuild skipped (0 trig, was ${rebuilt_twice})`,
   rebuilt_twice === 0,
+);
+
+// ---- remount contract (clear bug) -----------------------------------------
+// clear unmounts the canvas (<3 dots ⇒ placeholder). The browser IO fires
+// isIntersecting:false on the detached element. A new shape remounts a NEW
+// canvas element; boot must rebind canvas/ctx, re-observe with the IO, and
+// the loop must resume — with no help from beyond the normal sync flow.
+canvas_in_dom = false; // clear → canvas unmounts
+io_instance.cb([{ isIntersecting: false }]); // detach notification (browser behavior)
+ffi.canvas_boot("fourier-canvas"); // the app's sync calls boot first (context: null)
+ffi.canvas_sync(new GleamishList([]), false, true); // clear pushes empty targets
+reset();
+drive(60);
+verify(
+  "unmounted canvas: loop idles, 0 draws (was painting to detached canvas)",
+  (ops.clearRect || 0) === 0,
+);
+canvas_in_dom = true; // new shape ⇒ ≥3 dots ⇒ canvas REMOUNTS fresh
+gen = 1;
+els.push(mkEl());
+ffi.canvas_boot("fourier-canvas"); // boot+sync, as the app's sync does
+ffi.canvas_sync(make_terms(64), false, true);
+reset();
+drive(120);
+verify(
+  "remount: loop resumes on the new canvas (≥10 draws)",
+  (ops.clearRect || 0) >= 10,
 );
 
 console.log(failures === 0 ? "\nALL VERIFICATIONS PASS" : `\n${failures} FAILURES`);

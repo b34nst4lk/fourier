@@ -124,11 +124,12 @@ function terms_equal(a, b) {
 export function canvas_boot(id) {
   const el = document.getElementById(id);
   if (!el) {
-    // Lustre can run the sync effect before the view is attached (reproduced:
-    // the init effect looked up fourier-canvas while the panel was still
-    // unmounted, even with a restored sketch). Retry on the next frame until
-    // the canvas exists — one getElementById per frame, self-terminating when
-    // found, and restartable through every later sync's boot call.
+    // Unmount case: below 3 dots the view swaps in a placeholder and the
+    // canvas leaves the DOM. Idle the loop (no painting to a detached canvas)
+    // and keep one retry per frame so a later REMOUNT is caught on the next
+    // sync-free frame — one getElementById per frame, self-terminating.
+    anim.canvas = null;
+    anim.ctx = null;
     if (boot_retry === null) {
       boot_retry = requestAnimationFrame(() => {
         boot_retry = null;
@@ -143,6 +144,7 @@ export function canvas_boot(id) {
   const h = Math.max(1, Math.floor(rect.height));
   const refit =
     anim.canvas !== el || anim.w !== w || anim.h !== h || anim.dpr !== dpr;
+  const element_changed = anim.canvas !== el;
   anim.canvas = el;
   anim.ctx = el.getContext("2d");
   if (refit) {
@@ -152,6 +154,17 @@ export function canvas_boot(id) {
     el.width = Math.floor(w * dpr);
     el.height = Math.floor(h * dpr);
     anim.dirty = true; // backing store changed: repaint once
+  }
+  if (element_changed) {
+    // The IO observes the ORIGINAL element only; after an unmount it fired
+    // isIntersecting:false and would never observe the replacement. Rebind
+    // it to the new element (observe() queues a fresh intersection report)
+    // and reset the gate until that report lands.
+    anim.visible = true;
+    if (anim.io) {
+      anim.io.disconnect();
+      anim.io.observe(el);
+    }
   }
   if (!anim.started) {
     anim.started = true;
@@ -212,8 +225,9 @@ function frame(now) {
   anim.raf = null;
   // The RAF chain is kept alive only while there is work: playing advances t
   // each capped frame; anything else waits for a dirty flag from canvas_sync,
-  // resize, or visibility changes (all routed through pump()).
-  if (!anim.visible) return;
+  // resize, or visibility changes (all routed through pump()). No ctx means
+  // the canvas is unmounted — stay idle until boot rebinds it.
+  if (!anim.visible || !anim.ctx) return;
   if ((!anim.playing || anim.final) && !anim.dirty) return;
   anim.raf = requestAnimationFrame(frame);
 
