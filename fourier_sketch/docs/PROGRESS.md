@@ -319,3 +319,12 @@ removed, `thead tr:first-child th { display: flex; ... }` landed on the
 column header itself, and flex-displayed th cells stop being table cells:
 they stack vertically in the row's first column. Fixed by removing the two
 obsolete rules and restoring `.term-table th { position: sticky; top: 0 }.
+
+### Speed slider (2026-10-20)
+
+render.clamp_speed/speed_factor (25..100 % of max pace, TDD'd) + SetSpeed +
+speed_decoder; the FFI's 5th sync arg carries a fraction of SPEED — the
+frame gate is untouched, only dt*SPEED*speedFactor scales the per-draw
+pen advance. Model.speed (percent) survives presets/undo via the spread.
+FFI note: canvas_sync guards speedFactor != null so the old 4-arg harness
+contracts still hold.

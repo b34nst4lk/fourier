@@ -32,6 +32,23 @@ pub fn build_targets(
 /// k values are bounded by ±N/2 ≤ 256, so this value is unambiguous.
 pub const no_highlight = 999_999
 
+/// Speed slider bounds, as percents of the animation's max speed
+/// (SPEED in the FFI): 100% = the designed pace, 25% = slowest.
+pub const min_speed_percent = 25
+
+pub const max_speed_percent = 100
+
+/// Clamp the speed slider into [min_speed_percent, max_speed_percent].
+pub fn clamp_speed(n: Int) -> Int {
+  int.max(min_speed_percent, int.min(max_speed_percent, n))
+}
+
+/// The FFI advances the pen by dt * SPEED * speed_factor each drawn frame —
+/// the frame rate is untouched, only the distance moved per frame is.
+pub fn speed_factor(percent: Int) -> Float {
+  int.to_float(percent) /. 100.0
+}
+
 /// Clamp the circles slider into [min_circles, max_circles].
 pub fn clamp_circles(n: Int) -> Int {
   int.max(min_circles, int.min(max_circles, n))
@@ -46,9 +63,10 @@ pub fn sync(
   show_final: Bool,
   playing: Bool,
   highlight_k: Int,
+  speed_factor: Float,
 ) -> Nil {
   boot(canvas_id)
-  ffi_sync(targets, show_final, playing, highlight_k)
+  ffi_sync(targets, show_final, playing, highlight_k, speed_factor)
 }
 
 @external(javascript, "./fourier_sketch_ffi.mjs", "canvas_sync")
@@ -57,6 +75,7 @@ fn ffi_sync(
   show_final: Bool,
   playing: Bool,
   highlight_k: Int,
+  speed_factor: Float,
 ) -> Nil
 
 /// Offer a CSV file for download (browser-native blob anchor).

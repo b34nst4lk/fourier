@@ -31,3 +31,23 @@ pub fn clamp_circles_test() {
   should.equal(render.clamp_circles(1), 4)
   should.equal(render.clamp_circles(300), 256)
 }
+
+// ---- speed slider (RED first) ----------------------------------------------
+
+pub fn clamp_speed_bounds_test() {
+  render.clamp_speed(10)
+  |> should.equal(25)
+  render.clamp_speed(60)
+  |> should.equal(60)
+  render.clamp_speed(300)
+  |> should.equal(100)
+}
+
+pub fn speed_factor_is_fraction_of_max_test() {
+  render.speed_factor(100)
+  |> should.equal(1.0)
+  render.speed_factor(25)
+  |> should.equal(0.25)
+  render.speed_factor(50)
+  |> should.equal(0.5)
+}

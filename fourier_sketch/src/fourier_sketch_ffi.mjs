@@ -99,6 +99,7 @@ const anim = {
   io: null, // IntersectionObserver, bound in canvas_boot
   centers: [], // per-draw chain centers, allocated once in draw()
   highlight: null, // selected term's k, or null
+  speedFactor: 1.0, // pen advance as a fraction of SPEED (0.25..1)
 };
 
 let boot_retry = null; // pending self-re-boot while the canvas is unmounted
@@ -189,7 +190,7 @@ export function canvas_boot(id) {
   }
 }
 
-export function canvas_sync(terms, final, playing, highlight) {
+export function canvas_sync(terms, final, playing, highlight, speedFactor) {
   // Lustre hands over a Gleam List of tuples: iterable, but NOT a JS array —
   // no .length, no index access (draw() crashes with a RangeError otherwise,
   // every frame). Normalize once at the boundary; everything below sees plain
@@ -203,6 +204,7 @@ export function canvas_sync(terms, final, playing, highlight) {
   anim.final = final;
   anim.playing = playing;
   anim.highlight = highlight === 999_999 ? null : highlight;
+  if (speedFactor != null) anim.speedFactor = speedFactor;
   // final frame should show the complete closed trace immediately
   if (final) anim.t = 1.0;
   anim.dirty = true;
@@ -242,7 +244,9 @@ function frame(now) {
     const first = anim.last === null;
     const dt = first ? 0 : Math.min((now - anim.last) / 1000, 0.05);
     if (first || now - anim.lastDraw >= FRAME_MS) {
-      if (!first) anim.t = (anim.t + dt * SPEED) % 1;
+      // FPS stays capped; only the per-frame distance scales with the
+      // speed factor
+      if (!first) anim.t = (anim.t + dt * SPEED * anim.speedFactor) % 1;
       anim.lastDraw = now;
       anim.last = now;
       anim.dirty = true;

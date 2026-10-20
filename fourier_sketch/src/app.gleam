@@ -38,6 +38,7 @@ pub type Msg {
   LoadHeart
   LoadWobble
   SetCircles(Int)
+  SetSpeed(Int)
   ToggleAnimate
   SelectTerm(Int)
   ExportCsv
@@ -52,6 +53,7 @@ pub type Model {
     circles: Int,
     animate: Bool,
     selected: Option(Int),
+    speed: Int,
   )
 }
 
@@ -85,6 +87,7 @@ pub fn init(_: Nil) -> #(Model, Effect(Msg)) {
       circles: 64,
       animate: True,
       selected: None,
+      speed: 100,
     )
   #(model, effect.batch([canvas_sync(model), keys_effect()]))
 }
@@ -163,6 +166,10 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
     LoadHeart -> preset(model, sketch.heart())
     LoadWobble -> preset(model, sketch.wobble())
     Ignored -> #(model, effect.none())
+    SetSpeed(n) -> {
+      let m = Model(..model, speed: render.clamp_speed(n))
+      #(m, canvas_sync(m))
+    }
     SetCircles(n) -> {
       let n = render.clamp_circles(n)
       // the selection survives only while its term sits inside the cut
@@ -232,6 +239,7 @@ fn drag_commit(
       drag: drag,
       terms: pipeline(sk),
       circles: model.circles,
+      speed: model.speed,
       animate: model.animate,
       selected: model.selected,
     )
@@ -250,6 +258,7 @@ fn canvas_sync(model: Model) -> Effect(Msg) {
         Some(k) -> k
         None -> render.no_highlight
       },
+      render.speed_factor(model.speed),
     )
   })
 }
@@ -400,6 +409,18 @@ fn fourier_toolbar(model: Model) -> Element(Msg) {
     html.span([attr.class("count-label")], [
       html.text(int.to_string(model.circles)),
     ]),
+    html.span([attr.class("slider-label")], [html.text("speed")]),
+    html.input([
+      attr.type_("range"),
+      attr.attribute("min", "25"),
+      attr.attribute("max", "100"),
+      attr.attribute("value", int.to_string(model.speed)),
+      attr.class("speed-slider"),
+      event.on("input", speed_decoder()),
+    ]),
+    html.span([attr.class("count-label")], [
+      html.text(int.to_string(model.speed) <> "%"),
+    ]),
   ])
 }
 
@@ -533,6 +554,16 @@ fn circles_decoder() -> decode.Decoder(Msg) {
     let v = event_value(data, -1.0)
     case v >=. 0.0 {
       True -> Ok(SetCircles(float.round(v)))
+      False -> Error(Ignored)
+    }
+  })
+}
+
+fn speed_decoder() -> decode.Decoder(Msg) {
+  decode.new_primitive_decoder("speed-slider", fn(data) {
+    let v = event_value(data, -1.0)
+    case v >=. 0.0 {
+      True -> Ok(SetSpeed(float.round(v)))
       False -> Error(Ignored)
     }
   })
