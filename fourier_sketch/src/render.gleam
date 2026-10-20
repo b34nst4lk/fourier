@@ -34,7 +34,7 @@ pub fn clamp_circles(n: Int) -> Int {
 }
 
 @external(javascript, "./fourier_sketch_ffi.mjs", "canvas_boot")
-pub fn boot(id: String) -> Nil
+fn boot(id: String) -> Nil
 
 /// Push current render state to the FFI animation loop. Cheap — floats only.
 pub fn sync(

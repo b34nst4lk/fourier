@@ -3,6 +3,13 @@
 ////
 //// Trig and sqrt come through FFI (Erlang `math` / JS `Math`) because
 //// gleam_stdlib 1.0 ships neither.
+////
+//// Surface note: this module is the SHARED core the sibling fourier_toy
+//// consumes (its dep-smoke exercises add/mul/scale/exp_i/sub/to_xy). Some
+//// fns have no caller inside this repo today — keep them as documented core
+//// surface, not dead code:
+////   - conjugate: phase-conjugation (mirrored spectra) for the puzzle
+////   - magnitude_squared: mean-square scoring workhorse for the puzzle
 
 pub type Complex {
   Complex(re: Float, im: Float)

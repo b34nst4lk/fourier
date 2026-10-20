@@ -14,14 +14,7 @@
 import complex
 import gleam/int
 import gleam/list
-
-const pi = 3.141_592_653_589_793
-
-/// Index sequence [0, 1, .., n-1] — gleam_stdlib 1.0 has no list.range.
-fn indices(n: Int) -> List(Int) {
-  list.repeat(Nil, n)
-  |> list.index_map(fn(_, i) { i })
-}
+import util.{indices, pi}
 
 // ---- forward DFT -----------------------------------------------------------
 // Performance (bench: fourier_sketch/bench, decision #8 live recompute):
@@ -37,21 +30,21 @@ pub fn forward(
   samples: List(#(Float, Float)),
 ) -> List(#(Int, complex.Complex)) {
   let n = list.length(samples)
-  let fn_ = int.to_float(n)
+  let nf = int.to_float(n)
   let pcx = list.map(samples, fn(p) { complex.from_xy(p.0, p.1) })
   let half = n / 2
   twiddle_table(n)
   |> list.index_map(fn(wk, k) {
-    let sum = go_sum(pcx, wk, complex.zero(), complex.Complex(1.0, 0.0))
+    let sum = rotate_sum(pcx, wk, complex.zero(), complex.Complex(1.0, 0.0))
     let signed = case k > half {
       True -> k - n
       False -> k
     }
-    #(signed, complex.scale(sum, 1.0 /. fn_))
+    #(signed, complex.scale(sum, 1.0 /. nf))
   })
 }
 
-fn go_sum(
+fn rotate_sum(
   ps: List(complex.Complex),
   wk: complex.Complex,
   acc: complex.Complex,
@@ -60,7 +53,7 @@ fn go_sum(
   case ps {
     [] -> acc
     [p, ..rest] ->
-      go_sum(
+      rotate_sum(
         rest,
         wk,
         complex.add(acc, complex.mul(p, tw)),
@@ -71,9 +64,9 @@ fn go_sum(
 
 /// w[m] = e^{−2πim/N} for m in 0..N-1 — N trig calls, shared by every k.
 fn twiddle_table(n: Int) -> List(complex.Complex) {
-  let fn_ = int.to_float(n)
+  let nf = int.to_float(n)
   indices(n)
-  |> list.map(fn(m) { complex.exp_i({ -2.0 *. pi *. int.to_float(m) } /. fn_) })
+  |> list.map(fn(m) { complex.exp_i({ -2.0 *. pi *. int.to_float(m) } /. nf) })
 }
 
 /// Inverse DFT: signed-k terms -> reconstruction of the path sampled at
@@ -84,12 +77,12 @@ pub fn inverse(
   terms: List(#(Int, complex.Complex)),
   n: Int,
 ) -> List(#(Float, Float)) {
-  let fn_ = int.to_float(n)
+  let nf = int.to_float(n)
   indices(n)
   |> list.map(fn(m) {
     let s =
       list.fold(terms, complex.zero(), fn(acc, t) {
-        let base = { 2.0 *. pi *. int.to_float(t.0) } /. fn_
+        let base = { 2.0 *. pi *. int.to_float(t.0) } /. nf
         complex.add(
           acc,
           complex.mul(t.1, complex.exp_i({ base *. int.to_float(m) })),

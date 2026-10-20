@@ -14,6 +14,7 @@ import gleam/list
 import gleam/order
 import resample
 import sketch.{type Dot}
+import util.{pi}
 
 pub type Term {
   Term(k: Int, radius: Float, phase: Float)
@@ -54,6 +55,8 @@ fn by_amplitude(a: Term, b: Term) -> order.Order {
 
 /// The epicycle chain tip at period time t in 0..1:
 /// sum of radius * e^{i(2 pi k t + phase)} — exactly what the canvas draws.
+/// Public for the test suite and the sibling smoke — the app itself draws
+/// the chain analytically in JS and never calls this.
 pub fn position_at(terms: List(Term), t: Float) -> Dot {
   let sum =
     list.fold(terms, complex.zero(), fn(acc, term) {
@@ -68,5 +71,3 @@ fn term_at(term: Term, t: Float) -> complex.Complex {
     { 2.0 *. pi *. int.to_float(term.k) *. t } +. term.phase,
   )
 }
-
-const pi = 3.141_592_653_589_793

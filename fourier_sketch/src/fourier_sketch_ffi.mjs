@@ -96,6 +96,8 @@ const anim = {
   raf: null, // pending RAF handle (null = loop disengaged)
   dirty: true,
   visible: true,
+  io: null, // IntersectionObserver, bound in canvas_boot
+  centers: [], // per-draw chain centers, allocated once in draw()
 };
 
 let boot_retry = null; // pending self-re-boot while the canvas is unmounted

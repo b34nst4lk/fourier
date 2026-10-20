@@ -12,7 +12,7 @@ import gleam/dynamic/decode
 import gleam/json
 import sketch.{type Dot}
 
-pub const schema_version = 1
+const schema_version = 1
 
 const storage_key = "fourier_sketch"
 

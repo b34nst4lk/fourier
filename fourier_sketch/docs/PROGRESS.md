@@ -225,3 +225,23 @@ Font: latin subset woff2 (23.7 KB), base64-embedded in index.html so the
 single-file rule holds; bundle 216→248 KB. OFL 1.1 licence text shipped at
 docs/Sacramento-OFL.txt (embedding/redistribution permitted; README notes
 it). Layout: body now flex-column (title band + grid as flex child).
+
+### Whole-codebase review pass (2026-10-20) — CODE_REVIEW.md artifact processed + removed
+
+A whole-code review landed in docs (untracked). Every claim was verified
+against the code before acting. Verified-correct and acted upon: visibility
+tightening (render.boot, store.schema_version, spark.amplitude/mid —
+Snapshot left pub: exposed by the pub Sketch constructor, review's
+"make private" would not compile; comment corrected instead), duplicated
+`indices` (5) + `pi` (4) collapsed into new src/util.gleam (test copy kept
+for test-independence), fn_→nf + go_sum→rotate_sum renames in dft, anim
+state shape declared fully in the FFI (io/centers), position_at annotated,
+PLAN module map reconciled (animation.gleam removed — folded into terms
+long ago; spark/util added), PLAN #6 records the right-click delete
+decision, §4 storage-key + theme wording corrected, root README theme
+wording corrected. Two review claims REFUTED by verification:
+complex.sub is alive (fourier_toy dep-smoke calls it — "no reference
+anywhere" scanned one repo only) and resample.gleam has no fn_.
+conjugate/magnitude_squared kept + documented as puzzle core surface
+(review's own "keep as documented surface" option). Trig-FFI centralisation
+parked in PLAN §8 (judgement call, zero-behaviour refactor).

@@ -13,14 +13,15 @@
 
 import gleam/int
 import gleam/list
+import util.{indices, pi}
 
 pub type Dot =
   #(Float, Float)
 
 /// What an undo entry remembers: the dots to restore, plus the redo stack as
 /// it was before the action (so cancel_grab can put it back untouched).
-/// Public for the app layer's convenience, but only sketch.gleam should
-/// construct one — the semantics below are module-internal.
+/// Public because the pub `Sketch` constructor exposes the undo field — only
+/// sketch.gleam constructs one; construction stays module-internal.
 pub type Snapshot {
   Snapshot(dots: List(Dot), redo_stack: List(List(Dot)))
 }
@@ -208,8 +209,6 @@ pub fn nearest_dot(
 // They double as test fixtures for the math core.
 // ---------------------------------------------------------------------------
 
-const pi = 3.141_592_653_589_793
-
 @external(erlang, "math", "cos")
 @external(javascript, "./fourier_sketch_ffi.mjs", "cos")
 fn cos(x: Float) -> Float
@@ -217,12 +216,6 @@ fn cos(x: Float) -> Float
 @external(erlang, "math", "sin")
 @external(javascript, "./fourier_sketch_ffi.mjs", "sin")
 fn sin(x: Float) -> Float
-
-/// Index sequence [0, 1, .., n-1] — gleam_stdlib 1.0 has no list.range.
-fn indices(n: Int) -> List(Int) {
-  list.repeat(Nil, n)
-  |> list.index_map(fn(_, i) { i })
-}
 
 /// 5-point star: 10 vertices alternating outer/inner radius.
 pub fn star() -> List(Dot) {

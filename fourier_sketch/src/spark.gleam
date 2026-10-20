@@ -18,6 +18,7 @@ import gleam/int
 import gleam/list
 import gleam/string
 import terms.{type Term}
+import util.{indices}
 
 @external(erlang, "math", "cos")
 @external(javascript, "./fourier_sketch_ffi.mjs", "cos")
@@ -27,9 +28,9 @@ pub const columns = 36
 
 pub const box_height = 16
 
-pub const amplitude = 6
+const amplitude = 6
 
-pub const mid = 8
+const mid = 8
 
 const two_pi = 6.283_185_307_179_586
 
@@ -71,9 +72,4 @@ pub fn format_float2(x: Float) -> String {
   <> int.to_string({ v / 100 })
   <> "."
   <> string.pad_start(int.to_string({ v % 100 }), 2, "0")
-}
-
-fn indices(n: Int) -> List(Int) {
-  list.repeat(Nil, n)
-  |> list.index_map(fn(_, i) { i })
 }

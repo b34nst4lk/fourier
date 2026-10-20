@@ -9,16 +9,11 @@
 
 import gleam/int
 import gleam/list
+import util.{indices}
 
 @external(erlang, "math", "sqrt")
 @external(javascript, "./fourier_sketch_ffi.mjs", "sqrt")
 fn sqrt(x: Float) -> Float
-
-/// Index sequence [0, 1, .., n-1] — gleam_stdlib 1.0 has no list.range.
-fn indices(n: Int) -> List(Int) {
-  list.repeat(Nil, n)
-  |> list.index_map(fn(_, i) { i })
-}
 
 /// An edge of the polygon: two consecutive vertices (already closed).
 type Edge =
