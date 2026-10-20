@@ -1,0 +1,179 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>fourier_sketch</title>
+    <style>
+      :root {
+        color-scheme: dark;
+      }
+      body {
+        margin: 0;
+        background: #0e1116;
+        color: #c9d1d9;
+        font-family: ui-monospace, "SF Mono", Menlo, monospace;
+        font-size: 14px;
+      }
+      .app {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        grid-template-rows: 1.15fr 0.9fr;
+        gap: 10px;
+        height: 100vh;
+        box-sizing: border-box;
+        padding: 10px;
+      }
+      .panel {
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        border: 1px solid #1f2630;
+        border-radius: 10px;
+        background: #12161d;
+        overflow: hidden;
+      }
+      .terms {
+        grid-column: 1 / 3;
+      }
+      .panel-label {
+        position: absolute;
+        top: 9px;
+        left: 12px;
+        font-size: 11px;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: #4b5666;
+        user-select: none;
+        z-index: 2;
+      }
+      .toolbar {
+        display: flex;
+        gap: 6px;
+        padding: 6px 10px;
+        margin-left: 74px;
+      }
+      .toolbar button {
+        background: #161b22;
+        border: 1px solid #263040;
+        color: #c9d1d9;
+        border-radius: 6px;
+        padding: 3px 10px;
+        font: inherit;
+        font-size: 12px;
+        cursor: pointer;
+      }
+      .toolbar button:disabled {
+        opacity: 0.35;
+        cursor: not-allowed;
+      }
+      .sketch-svg {
+        flex: 1;
+        width: 100%;
+        display: block;
+        cursor: crosshair;
+        user-select: none;
+        -webkit-user-select: none;
+      }
+      .sketch-bg {
+        fill: #12161d;
+      }
+      .sketch-path {
+        fill: none;
+        stroke: #5cc3ff;
+        stroke-width: 0.4;
+        stroke-linejoin: round;
+      }
+      .dot {
+        fill: #ffd166;
+        stroke: #0e1116;
+        stroke-width: 0.15;
+        cursor: grab;
+      }
+      .placeholder {
+        margin: auto;
+        padding: 48px;
+        color: #4b5666;
+        font-size: 13px;
+        letter-spacing: 0.02em;
+      }
+
+      .fourier-body {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+      }
+      .fourier-canvas {
+        flex: 1;
+        width: 100%;
+        min-height: 0;
+        display: block;
+      }
+      .toolbar button.active {
+        border-color: #5cc3ff;
+        color: #5cc3ff;
+      }
+      .circles-slider {
+        flex: 1;
+        accent-color: #5cc3ff;
+      }
+      .slider-label {
+        align-self: center;
+        color: #4b5666;
+        font-size: 12px;
+      }
+      .count-label {
+        align-self: center;
+        min-width: 3ch;
+        text-align: right;
+        color: #5cc3ff;
+      }
+
+      .terms-scroll {
+        flex: 1;
+        overflow-y: auto;
+      }
+      .term-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 12px;
+      }
+      .term-table th {
+        position: sticky;
+        top: 0;
+        background: #12161d;
+        color: #4b5666;
+        text-align: left;
+        padding: 4px 10px;
+        font-weight: normal;
+        z-index: 1;
+      }
+      .term-table td {
+        padding: 2px 10px;
+        border-top: 1px solid #1a202a;
+        white-space: nowrap;
+      }
+      .term-table tr.cut {
+        opacity: 0.32;
+      }
+      .spark {
+        width: 108px;
+        height: 16px;
+        display: block;
+      }
+      .spark path {
+        fill: none;
+        stroke: #5eead4;
+        stroke-width: 1;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module">
+      import { main } from "/build/dev/javascript/fourier_sketch/fourier_sketch.mjs";
+      main();
+    </script>
+  </body>
+</html>
