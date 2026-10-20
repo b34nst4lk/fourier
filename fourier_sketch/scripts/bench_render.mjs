@@ -54,6 +54,7 @@ let els = [el]; // element generations — a remount hands boot a fresh element
 let gen = 0;
 let canvas_in_dom = true; // simulates Lustre mounting/unmounting the canvas
 globalThis.document = {
+  body: { getAttribute: () => null }, // palette probe: light palette
   getElementById: () => (canvas_in_dom ? els[gen] : null),
 };
 globalThis.window = {

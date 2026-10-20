@@ -254,8 +254,29 @@ function frame(now) {
   }
 }
 
+// canvas palette follows the body's data-theme attribute (read at draw time —
+// the theme toggle lives in the static shell and never touches the app):
+// lamplit dark = cream ink washes on dark parchment, brighter route-red.
+function palette() {
+  const dark = document.body.getAttribute("data-theme") === "dark";
+  return dark
+    ? {
+        circles: "rgba(234, 217, 180, 0.12)",
+        links: "rgba(234, 217, 180, 0.35)",
+        trace: "#d05848",
+        pen: "#d9a92f",
+      }
+    : {
+        circles: "rgba(70, 53, 31, 0.25)",
+        links: "rgba(70, 53, 31, 0.55)",
+        trace: "#a4372a",
+        pen: "#d9a92f",
+      };
+}
+
 function draw() {
   const ctx = anim.ctx;
+  const pal = palette();
   const w = anim.w;
   const h = anim.h;
   ctx.setTransform(anim.dpr, 0, 0, anim.dpr, 0, 0);
@@ -290,7 +311,7 @@ function draw() {
 
   // all circles share one stroke style: ONE beginPath+stroke for the whole
   // chain (moveTo avoids connecting chords between arcs) — warm ink wash
-  ctx.strokeStyle = "rgba(70, 53, 31, 0.25)";
+  ctx.strokeStyle = pal.circles;
   ctx.beginPath();
   for (let i = 0; i < n; i++) {
     const r = anim.terms[i][1] * scale;
@@ -305,7 +326,7 @@ function draw() {
   ctx.stroke();
 
   // all links share one stroke style: ONE beginPath+stroke
-  ctx.strokeStyle = "rgba(70, 53, 31, 0.55)";
+  ctx.strokeStyle = pal.links;
   ctx.beginPath();
   ctx.moveTo(sx(centers[0][0]), sy(centers[0][1]));
   for (let i = 1; i <= n; i++) {
@@ -316,7 +337,7 @@ function draw() {
 
   // trace: routes are drawn in red-brick ink on a cartographer's map
   const idx = Math.max(1, Math.floor(t * STEPS));
-  ctx.strokeStyle = "#a4372a";
+  ctx.strokeStyle = pal.trace;
   ctx.lineWidth = 2;
   ctx.beginPath();
   ctx.moveTo(sx(anim.path[0][0]), sy(anim.path[0][1]));
@@ -326,7 +347,7 @@ function draw() {
   ctx.stroke();
 
   // pen tip (chain end = last center) — a gold coin marker
-  ctx.fillStyle = "#d9a92f";
+  ctx.fillStyle = pal.pen;
   ctx.beginPath();
   ctx.arc(sx(cx), sy(cy), 3, 0, 2 * Math.PI);
   ctx.fill();

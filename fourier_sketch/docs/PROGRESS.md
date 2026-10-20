@@ -270,3 +270,14 @@ Model.animate. playing = animate; final-frame = not animate — the static
 mode now shows the complete closed trace (the thermally-idle state). Toolbar
 button label: pause when animating, play when static. API notes learned:
 gleam_stdlib 1.x has no unary `not` and bool.not is bool.negate.
+
+### Dark mode (2026-10-20)
+
+body[data-theme] flips a full variable override: lamplit-parchment dark
+(warm brown-black page/panels #1b1510/#251d12, cream ink #ead9b4, accents
+brightened to contrast; gold coin + families kept). Shadows/hover/glow are
+variables now (--shadow/--hover/--glow). Toggle: "night|day" chip beside the
+about chip (corner-tools group); choice stored at f-sketch-theme
+localStorage key; unset = follows prefers-color-scheme. Canvas FFI reads the
+attribute at draw time (palette()) — the toggle never touches the app code.
+Gates: 79/79, 11/11 contracts, probe-verified dark draw loop. Bundle 112→116K.

@@ -31,11 +31,31 @@
         --danger: #a4372a;
         --coin: #d9a92f;
         --water: #82a7ba;
+        --shadow: rgba(70, 53, 31, 0.35);
+        --hover: #faf3e0;
+        --glow: #e3d6b4;
+      }
+      /* dark mode: the lamplit manuscript — same parchment family, night ink.
+         Cream ink on dark warm paper; accents brightened just to contrast. */
+      body[data-theme="dark"] {
+        color-scheme: dark;
+        --ink: #ead9b4;
+        --ink-faint: #a08b62;
+        --parchment: #251d12;
+        --parchment-dark: #332818;
+        --page: #1b1510;
+        --accent: #c9973f;
+        --danger: #d05848;
+        --coin: #d9a92f;
+        --water: #86adbf;
+        --shadow: rgba(0, 0, 0, 0.45);
+        --hover: #302817;
+        --glow: #241b13;
       }
       body {
         margin: 0;
         background: var(--page)
-          radial-gradient(ellipse at 50% 30%, #e3d6b4 0%, var(--page) 70%);
+          radial-gradient(ellipse at 50% 30%, var(--glow) 0%, var(--page) 70%);
         background-attachment: fixed;
         color: var(--ink);
         font-family: "Iowan Old Style", Georgia, "Times New Roman", serif;
@@ -56,17 +76,21 @@
         flex-direction: column;
         position: relative;
       }
-      /* collapsible explainer: chip in the title band's top-right corner;
-         the card floats over the grid when open — panels never reflow */
-      .about {
+      /* corner tools: the explainer chip + theme toggle in the title band's
+         top-right corner; the card floats over the grid — panels never reflow */
+      .corner-tools {
         position: absolute;
         top: 8px;
         right: 0;
         z-index: 5;
+        display: flex;
+        align-items: center;
+        gap: 8px;
       }
-      .about summary {
+      .about summary,
+      .theme-toggle {
         list-style: none;
-        cursor: pointer;
+        font: inherit;
         font-size: 12px;
         font-variant-caps: small-caps;
         letter-spacing: 0.18em;
@@ -75,13 +99,15 @@
         border: 1.5px solid var(--ink);
         border-radius: 6px;
         padding: 4px 14px;
-        box-shadow: 0 2px 0 rgba(70, 53, 31, 0.35);
+        box-shadow: 0 2px 0 var(--shadow);
         transition: transform 0.05s ease;
+        cursor: pointer;
       }
       .about summary::-webkit-details-marker {
         display: none;
       }
-      .about summary:active {
+      .about summary:active,
+      .theme-toggle:active {
         transform: translateY(1px);
         box-shadow: none;
       }
@@ -91,13 +117,13 @@
       }
       .about-card {
         position: absolute;
-        top: 34px;
+        top: 38px;
         right: 0;
         width: min(400px, 92vw);
         background: var(--parchment);
         border: 2px solid var(--ink);
         border-radius: 10px;
-        box-shadow: 0 10px 40px rgba(70, 53, 31, 0.35),
+        box-shadow: 0 10px 40px var(--shadow),
           inset 0 0 0 5px var(--parchment-dark);
         padding: 18px 24px 16px;
         color: var(--ink);
@@ -150,7 +176,7 @@
         border: 1.5px solid var(--ink);
         border-radius: 10px;
         background: var(--parchment);
-        box-shadow: 0 2px 0 rgba(70, 53, 31, 0.35);
+        box-shadow: 0 2px 0 var(--shadow);
         overflow: hidden;
       }
       .terms {
@@ -187,11 +213,11 @@
         font: inherit;
         font-size: 12px;
         cursor: pointer;
-        box-shadow: 0 2px 0 rgba(70, 53, 31, 0.35);
+        box-shadow: 0 2px 0 var(--shadow);
         transition: transform 0.05s ease;
       }
       .toolbar button:hover:not(:disabled) {
-        background: #faf3e0;
+        background: var(--hover);
       }
       .toolbar button:active:not(:disabled) {
         transform: translateY(1px);
@@ -333,7 +359,9 @@
   </head>
   <body>
     <div class="sheet">
-      <details class="about">
+      <div class="corner-tools">
+        <button id="theme-toggle" class="theme-toggle" type="button">dark</button>
+        <details class="about">
         <summary>how it works</summary>
         <div class="about-card">
           <div class="about-heading">the fourier transform</div>
@@ -358,12 +386,43 @@
           </p>
         </div>
       </details>
+      </div>
       <div class="page-title">f-sketch</div>
       <div id="app"></div>
     </div>
     <script type="module">
       import { main } from "/build/dev/javascript/fourier_sketch/fourier_sketch.mjs";
       main();
+    </script>
+    <script>
+      // theme: stored choice beats system preference; the FFI reads the
+      // body attribute at draw time, so no wiring into the app is needed
+      (function () {
+        var KEY = "f-sketch-theme";
+        var body = document.body;
+        var btn = document.getElementById("theme-toggle");
+        var sys = window.matchMedia("(prefers-color-scheme: dark)");
+        var stored = null;
+        try { stored = localStorage.getItem(KEY); } catch (e) {}
+        function dark() {
+          var v = body.getAttribute("data-theme") === "dark";
+          btn.textContent = v ? "day" : "night";
+        }
+        function apply(v, save) {
+          body.setAttribute("data-theme", v ? "dark" : "light");
+          if (save) { try { localStorage.setItem(KEY, v ? "dark" : "light"); } catch (e) {} }
+          dark();
+        }
+        apply(stored === null ? sys.matches : stored === "dark", false);
+        if (stored === null) {
+          sys.addEventListener
+            ? sys.addEventListener("change", function (e) { apply(e.matches, false); })
+            : null;
+        }
+        btn.addEventListener("click", function () {
+          apply(body.getAttribute("data-theme") !== "dark", true);
+        });
+      })();
     </script>
   </body>
 </html>
