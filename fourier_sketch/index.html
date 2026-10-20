@@ -40,6 +40,14 @@
         box-sizing: border-box;
         padding: 10px;
       }
+      /* large screens: ~10% side margins — panels fill edge-to-edge of the
+         content area between them */
+      @media (min-width: 1100px) {
+        .app {
+          padding-left: 10%;
+          padding-right: 10%;
+        }
+      }
       .panel {
         position: relative;
         display: flex;
