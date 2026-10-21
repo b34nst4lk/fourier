@@ -17,10 +17,14 @@ both repos; docs of record live in each repo's `docs/PLAN.md` +
 - Theme/visual language: parchment cartography (see fourier_sketch
   index.html variables; dark mode = lamplit variant). Both toys should
   share the visual family.
-- Deliver/deploy: single-file rule — `fourier_sketch/scripts/build-dist.sh`
-  emits one self-contained `dist/index.html` (esbuild `--minify`); deploying
-  means copying that file to `~/hermes-users/jacksim/public/blog/toys/…`.
-  Verify the live URL after deploy.
+- Deliver/deploy: single-file rule — building a toy emits one self-contained
+  `dist/index.html` (esbuild `--minify`). PUBLISHING runs through the blog
+  repo (`~/…/projects/blog/`): `make deploy` reads the toys manifest
+  (`content/toys/*.md` front matter), executes each toy's `deploy` command in
+  its `repo` checkout, and copies the artifact into hugo's output tree
+  (`public/toys/<slug>/index.html`). The toy repos do NOT deploy by hand —
+  the blog pipeline is the single deploy path (regeneration-safe: the rsync
+  has no `--delete`). Verify the live URL after deploy.
 - Gleam version note: stdlib 1.x — bool negation is `bool.negate` (no unary
   `not`), Gleam Lists are iterables (no `.length`/index access from JS),
   floats keep `.0` on whole numbers in `float.to_string`.

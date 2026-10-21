@@ -328,3 +328,16 @@ frame gate is untouched, only dt*SPEED*speedFactor scales the per-draw
 pen advance. Model.speed (percent) survives presets/undo via the spread.
 FFI note: canvas_sync guards speedFactor != null so the old 4-arg harness
 contracts still hold.
+
+### Publish wiring (2026-10-20) — site build owns toy deploys now
+
+jacks.im's hugo source (~/…/projects/blog/, now a private git repo:
+b34nst4lk/blog) gained a toys section: `/toys` cards page (photobooks-style)
+driven by `content/toys/*.md` front matter (per-toy markdown files: title,
+github, deploy command, repo path, shipped flag, artifact path; content =
+the blurb). `blog make deploy` = hugo + build-toys.sh (executes shipped
+toys' deploy commands in their checkouts, copies artifacts into
+public/toys/<slug>/) + rsync — one gated command publishing site + toys.
+/toys/fourier-sketch/ serves the identical single-file app at the same URL.
+The toy repo no longer deploys by hand; fourier_toy's card shows "in
+progress" (github-only) until its shipped flag flips.
