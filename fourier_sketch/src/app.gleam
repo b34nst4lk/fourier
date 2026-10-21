@@ -329,7 +329,7 @@ pub fn view(model: Model) -> Element(Msg) {
     },
     html.div([attr.class("panel"), attr.class("terms")], [
       html.div([attr.class("panel-label")], [html.text("terms")]),
-      html.div([attr.class("toolbar")], [
+      html.div([attr.class("toolbar terms-toolbar")], [
         html.button(
           [
             attr.class("export-btn"),
