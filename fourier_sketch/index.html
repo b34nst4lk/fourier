@@ -201,8 +201,16 @@
         display: flex;
         gap: 6px;
         padding: 6px 10px;
-        /* clear the absolute "fourier" label chip fully */
+        /* clear the absolute label chips */
+        margin-left: 78px;
+      }
+      /* the fourier chip is wider — its toolbar needs more clearance */
+      .fourier-toolbar {
         margin-left: 100px;
+      }
+      /* the terms toolbar holds a single chip, parked at the panel's right */
+      .terms-toolbar {
+        justify-content: flex-end;
       }
       .toolbar button {
         background: var(--parchment);
