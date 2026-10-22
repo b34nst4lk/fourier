@@ -375,8 +375,8 @@ function draw() {
   }
   ctx.stroke();
 
-  // trace: a comet tail while playing — the trailing ~30% of the lap drawn
-  // in alpha-stepped chunks (tip brightest, tail fading to nothing), whose
+  // trace: a comet tail while playing — the trailing ~98% of the lap drawn
+  // in alpha-stepped chunks (tip brightest, tail fading to nothing just behind the pen's own start), whose
   // wrap at the loop point is continuous instead of blanking. Final frame
   // still draws the whole trace at full alpha.
   const idx = Math.max(1, Math.floor(t * STEPS));
@@ -390,8 +390,8 @@ function draw() {
     }
     ctx.stroke();
   } else {
-    const TAIL = Math.floor(STEPS * 0.3);
-    const CHUNKS = 12;
+    const TAIL = Math.floor(STEPS * 0.98);
+    const CHUNKS = 24;
     const at = (j) => anim.path[((j % STEPS) + STEPS) % STEPS];
     for (let c = 0; c < CHUNKS; c++) {
       const a0 = idx - TAIL + Math.floor((TAIL * c) / CHUNKS);
