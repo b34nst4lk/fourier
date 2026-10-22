@@ -145,7 +145,11 @@ approximate a target shape, scored by pointwise path distance over the period.
 - Scoring: sample both curves at the same phase points; mean/RMS distance,
   normalized.
 - Wants from `fourier_sketch`: the math core package (complex, resample, dft,
-  terms), plus a shareable JSON export format (parked until now).
+  terms), plus the shareable sketch encoding — which now EXISTS
+  (2026-10-21): `fourier_sketch/src/sketch_share.gleam`, URL
+  query-parameter style `?v=1&sk=` with integer hundredth-grid pairs
+  (`sketch_share.from_query` returns dots); the toy implements the import
+  side in its phase 2.
 
 ## 8. Parked review findings (tracked)
 

@@ -381,3 +381,20 @@ this repo before `blog make deploy` — the pipeline builds the pinned
 github ref, so uncommitted local work is invisible to the site (verified
 en route: the deploy correctly served the old artifact until the push
 landed).
+
+### Sharable sketches (2026-10-21) — challenge 3
+
+`sketch_share.gleam`: URL query-parameter encoding (user ruling — not
+JSON): `?v=1&sk=<pairs>` — semicolon-separated pairs, comma-split, integer
+hundredths of the 0..100 grid; version-keyed (v=1), strict decode, grid
+clamp. TDD 9 tests RED→GREEN (two test-authoring slips fixed en route:
+Gleam pipe-vs-`<>` precedence, float `.0` text — both test-side).
+Vectors: share link (location + query) + bare query code; boot import
+REPLACES + autosaves (low stakes, user ruling) and the query is CONSUMED
+via history.replaceState so refreshes serve the recipient's own sketch —
+probe-verified end to end (1-dot autosave → query-loaded diamond terms).
+UI: one "share" dialog (link textarea + copy chip with copied state, code
+textarea, paste box + load + bad-paste note) — Lustre view + FFI
+share_url/read/consume/clipboard_copy(+execCommand fallback)/event_text.
+PLAN §7's parked share-format shelf is retired (the format of record for
+the toy's future target import).
