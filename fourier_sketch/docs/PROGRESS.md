@@ -398,3 +398,7 @@ textarea, paste box + load + bad-paste note) — Lustre view + FFI
 share_url/read/consume/clipboard_copy(+execCommand fallback)/event_text.
 PLAN §7's parked share-format shelf is retired (the format of record for
 the toy's future target import).
+
+### Comet tail (2026-10-22)
+
+The playing-mode trace is now a comet tail: the trailing ~30% of the lap drawn in 12 alpha-stepped chunks (tip alpha 1, oldest ~0.05, gamma 1.2) — the wrap at the loop point is continuous (the tail just trails; nothing blanks). Final-frame mode keeps the full trace at full alpha. Costs +11 stroke calls per draw; contracts unaffected (cleanRect cadence asserted).
