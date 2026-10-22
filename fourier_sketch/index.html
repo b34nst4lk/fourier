@@ -157,14 +157,9 @@
         margin: 18px 0 6px;
         color: var(--ink);
       }
-      .about-eq {
-        font-family: ui-monospace, "SF Mono", Menlo, monospace;
-        font-size: 12.5px;
-        background: var(--parchment-dark);
-        border-radius: 6px;
-        padding: 8px 12px;
-        margin: 6px 0 10px;
-        white-space: pre-wrap;
+      math {
+        font-size: 15px;
+        color: var(--ink);
       }
       .about-table {
         border-collapse: collapse;
@@ -488,25 +483,79 @@
 
         <h2>the equation, and its three dials</h2>
         <p>
-          Each term row in the table is one circle, and its whole
-          contribution at time <em>t</em> is one line:
+          Fix notation: the sketch is resampled to <em>N</em> = 512 points
+          <em>p</em><sub>m</sub>. The transform — curve to list — reads:
         </p>
-        <pre class="about-eq">pen_offset(t) = radius · e^( i · ( 2π·k·t + phase ) )</pre>
+        <math display="block">
+          <msub><mi>c</mi><mi>k</mi></msub>
+          <mo>=</mo>
+          <mfrac><mn>1</mn><mi>N</mi></mfrac>
+          <munderover>
+            <mo>∑</mo>
+            <mrow><mi>m</mi><mo>=</mo><mn>0</mn></mrow>
+            <mrow><mi>N</mi><mo>−</mo><mn>1</mn></mrow>
+          </munderover>
+          <msub><mi>p</mi><mi>m</mi></msub>
+          <msup><mi>e</mi><mrow><mo>−</mo><mn>2</mn><mi>π</mi><mi>i</mi><mi>k</mi><mi>m</mi><mo>/</mo><mi>N</mi></mrow></msup>
+        </math>
         <p>
-          The total angle <em>2π·k·t + phase</em> is where the arm points.
-          Three dials, one per column:
+          Each coefficient <em>c</em><sub>k</sub> is one circle, written as a
+          size and a starting angle — the three dials, one per column in the
+          table:
+        </p>
+        <math display="block">
+          <msub><mi>c</mi><mi>k</mi></msub>
+          <mo>=</mo>
+          <msub><mi>r</mi><mi>k</mi></msub>
+          <mo>⋅</mo>
+          <msup><mi>e</mi><mrow><mi>i</mi><msub><mi>φ</mi><mi>k</mi></msub></mrow></msup>
+          <mo>,</mo>
+          <mspace width="0.6em"/>
+          <msub><mi>r</mi><mi>k</mi></msub>
+          <mo>=</mo>
+          <mrow><mo>|</mo><msub><mi>c</mi><mi>k</mi></msub><mo>|</mo></mrow>
+          <mo>,</mo>
+          <mspace width="0.6em"/>
+          <msub><mi>φ</mi><mi>k</mi></msub>
+          <mo>=</mo>
+          <mi mathvariant="normal">arg</mi>
+          <mo>⁡</mo><mrow><mo>(</mo><msub><mi>c</mi><mi>k</mi></msub><mo>)</mo></mrow>
+        </math>
+        <p>
+          <em>r</em><sub>k</sub> is the size dial: how big the circle is, i.e.
+          how much of the shape this frequency owns; the table is sorted by
+          it. <em>k</em> is the speed-and-direction dial: at time <em>t</em>
+          the arm has turned <em>2π·k·t</em> radians, so <em>k</em> is how
+          many full laps it completes in one period; the sign only flips the
+          spin. <em>φ</em><sub>k</sub> is the starting-angle dial: at
+          <em>t</em> = 0 the arm points at exactly <em>φ</em>. Two terms with
+          the same radius and k but different phases draw the same circle
+          with the pen at different places on it — phase is how the sum knows
+          where around the shape each wave should be.
         </p>
         <p>
-          <em>radius</em> — the size dial: how big the circle is, i.e. how
-          much of the shape this frequency owns; the table is sorted by it.
-          <em>k</em> — the speed-and-direction dial: at time <em>t</em> the
-          arm has turned <em>2π·k·t</em> radians, so <em>k</em> is how many
-          full laps it completes in one period; the sign only flips the spin.
-          <em>phase</em> — the starting-angle dial: at <em>t</em> = 0 the arm
-          points at exactly <em>phase</em>. Two terms with the same radius
-          and k but different phases draw the same circle with the pen at
-          different places on it — phase is how the sum knows where around
-          the shape each wave should be.
+          So each term's arm at time <em>t</em>, and the whole drawing as
+          their sum:
+        </p>
+        <math display="block">
+          <msub><mi>r</mi><mi>k</mi></msub>
+          <mo>⋅</mo>
+          <msup><mi>e</mi><mrow><mi>i</mi><mo stretchy="false">(</mo><mn>2</mn><mi>π</mi><mi>k</mi><mi>t</mi><mo>+</mo><msub><mi>φ</mi><mi>k</mi></msub><mo stretchy="false">)</mo></mrow></msup>
+        </math>
+        <math display="block">
+          <mi>P</mi><mo>⁡</mo><mrow><mo>(</mo><mi>t</mi><mo>)</mo></mrow>
+          <mo>=</mo>
+          <munder><mo>∑</mo><mi>k</mi></munder>
+          <msub><mi>r</mi><mi>k</mi></msub>
+          <mo>⋅</mo>
+          <msup><mi>e</mi><mrow><mi>i</mi><mo stretchy="false">(</mo><mn>2</mn><mi>π</mi><mi>k</mi><mi>t</mi><mo>+</mo><msub><mi>φ</mi><mi>k</mi></msub><mo stretchy="false">)</mo></mrow></msup>
+        </math>
+        <p>
+          The pen tip is the endpoint of the chain built from that sum, and
+          over one period it red draws your curve. The sum-and-list pair is
+          the round trip: the sum rebuilds the curve exactly; keeping only
+          the largest <em>r</em><sub>k</sub> is the truncation the circles
+          slider performs.
         </p>
 
         <h2>watch an arm move (real numbers)</h2>
