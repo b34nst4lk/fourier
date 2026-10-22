@@ -47,6 +47,13 @@ is the whole lesson. The `speed` slider (25–100%) scales the pen's
 per-frame advance (the frame rate never changes): slide down for
 slow-motion, up for the designed pace.
 
+**Sharing:** the `share` chip gives you a link
+(`jacks.im/toys/fourier-sketch/?v=1&sk=…`) and a compact code — both carry
+your drawing. Anyone opening the link gets your sketch loaded on boot (it
+replaces their autosaved sketch — low stakes). The same chip's "load" box
+accepts a pasted link or code. The encoding is URL query-style, versioned
+(`v=1`), coordinates as integers on the 0.01 grid.
+
 **Terms (bottom):** every circle the DFT produced, amplitude-descending:
 `k` (laps per period, negative = clockwise), `radius`, `phase` (radians),
 and a sparkline of the term's sine projection (cycles = |k|, shift = phase).
@@ -109,6 +116,8 @@ of record lives in `docs/PLAN.md`, phase-tracked in `docs/PROGRESS.md`.
   animates the chain
 - [ ] `speed` slider: 100% is the designed pace; 25% slow-motion — smooth
   at both ends.
+- [ ] share: the link loads your drawing on a fresh browser profile; the
+  load box accepts a pasted link/code (bad paste shows the note)
 - [ ] Refresh mid-session: sketch restored from autosave
 - [ ] DevTools: `localStorage.setItem('fourier_sketch', '{oops')`, refresh —
       clean empty state, presets still work
