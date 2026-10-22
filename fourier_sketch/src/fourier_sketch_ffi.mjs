@@ -36,15 +36,24 @@ export function store_set(key, value) {
 // preserveAspectRatio), so the conversion accounts for letterbox offsets.
 // The element is looked up by id — decoders may receive sanitized events,
 // so we never trust event.currentTarget.
+function client_point(e) {
+  // pointer-events carry clientX/Y directly; touch events carry them on
+  // the (first) changed/touch item
+  if (e.changedTouches && e.changedTouches[0]) return e.changedTouches[0];
+  if (e.touches && e.touches[0]) return e.touches[0];
+  return e;
+}
+
 export function event_point(event, svg_id, otherwise) {
   try {
+    const t = client_point(event);
     const svg = document.getElementById(svg_id);
     const rect = svg.getBoundingClientRect();
     const scale = Math.min(rect.width, rect.height) / 100;
     const ox = (rect.width - scale * 100) / 2;
     const oy = (rect.height - scale * 100) / 2;
-    const x = (event.clientX - rect.left - ox) / scale;
-    const y = (event.clientY - rect.top - oy) / scale;
+    const x = (t.clientX - rect.left - ox) / scale;
+    const y = (t.clientY - rect.top - oy) / scale;
     return [x, y];
   } catch {
     return otherwise;

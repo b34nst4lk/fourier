@@ -362,6 +362,24 @@ fn up_decoder() -> decode.Decoder(Msg) {
   decode.new_primitive_decoder("up", fn(_) { Ok(SketchUp) })
 }
 
+fn touch_down_decoder() -> decode.Decoder(Msg) {
+  touch_point_decoder(fn(x, y) { SketchDown(0, x, y) })
+}
+
+fn touch_move_decoder() -> decode.Decoder(Msg) {
+  touch_point_decoder(fn(x, y) { SketchMove(x, y) })
+}
+
+fn touch_point_decoder(build: fn(Float, Float) -> Msg) -> decode.Decoder(Msg) {
+  decode.new_primitive_decoder("touch", fn(data) {
+    let point = event_point(data, svg_id, #(point_sentinel_x, point_sentinel_x))
+    case point.0 == point_sentinel_x {
+      True -> Error(Ignored)
+      False -> Ok(build(point.0, point.1))
+    }
+  })
+}
+
 fn ignored_decoder() -> decode.Decoder(Msg) {
   decode.new_primitive_decoder("ignored", fn(_) { Ok(Ignored) })
 }
@@ -541,6 +559,10 @@ fn sketch_panel(model: Model) -> Element(Msg) {
         event.on("mousemove", move_decoder()),
         event.on("mouseup", up_decoder()),
         event.on("mouseleave", up_decoder()),
+        event.on("touchstart", touch_down_decoder()),
+        event.prevent_default(event.on("touchmove", touch_move_decoder())),
+        event.on("touchend", up_decoder()),
+        event.on("touchcancel", up_decoder()),
         event.prevent_default(event.on("contextmenu", ignored_decoder())),
       ],
       list.flatten([
@@ -642,10 +664,14 @@ fn paste_decoder() -> decode.Decoder(Msg) {
 }
 
 fn dots_elems(dots: List(Dot)) -> List(Element(Msg)) {
+  let n = list.length(dots)
   dots
-  |> list.index_map(fn(d, _i) {
+  |> list.index_map(fn(d, i) {
     svg.circle([
-      attr.class("dot"),
+      attr.classes([
+        #("dot", True),
+        #("dot-last", n - 1 == i),
+      ]),
       attr.attribute("cx", float.to_string(d.0)),
       attr.attribute("cy", float.to_string(d.1)),
       attr.attribute("r", "1.4"),

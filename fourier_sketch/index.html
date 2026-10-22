@@ -375,6 +375,8 @@
         cursor: crosshair;
         user-select: none;
         -webkit-user-select: none;
+        /* drawing surface: no native scrolling from inside the panel */
+        touch-action: none;
       }
       .sketch-bg {
         fill: var(--parchment);
@@ -392,6 +394,10 @@
         stroke: var(--parchment);
         stroke-width: 0.15;
         cursor: grab;
+      }
+      /* the loop's closing dot (connects back to the first dot) */
+      .dot-last {
+        fill: var(--danger);
       }
       .placeholder {
         margin: auto;
