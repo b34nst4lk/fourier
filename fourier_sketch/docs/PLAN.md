@@ -42,12 +42,12 @@ versioned. Original grilling names kept: `fourier_sketch` (phase 1),
 | 7 | Panel 1 rendering | **SVG via Lustre** elements | Dot counts are dozens, not hundreds; interactions declarative |
 | 8 | Recompute timing | **Live on every mousemove**, unthrottled at locked scale | The app's whole educational point; pipeline is ~ms |
 | 9 | Panel 3 interactivity | **Read-only**, sorted by **amplitude descending**, live-updating | Sliders/toggles stay parked with phase 2 |
-| 10 | Sketch QoL | clear-all + **undo/redo** + **seed presets** (star, heart, wobbly circle) | Presets double as test fixtures |
+| 10 | Sketch QoL | **clear-all** + **undo/redo** + **seed presets** (star, heart). *Wobble dropped 2026-10-22 by user; the fixture stays in sketch.gleam for the test suite* | Presets double as test fixtures |
 | 11 | Degenerate state | **Gate at ≥3 dots**; panels 2–3 show empty states below it | No degenerate-math artifacts |
 | 12 | Term-count control | **Circles slider 4–256** in panel 2; renders top-N terms by amplitude | Truncation is the core intuition-builder |
 | 13 | Stress testing | **A+B**: property tests + measured perf budget. Optional tier C demoted to a manual **visual smoke-test checklist** | No Playwright; no new toolchain |
 | 14 | Persistence | **localStorage autosave** (versioned schema), presets as corrupt-restore fallback | Refresh survival for free; export parked |
-| 15 | Layout | **2×2 grid**: sketch TL, output TR, term table across bottom row; **parchment cartography theme** (was dark-only; rethemed 2026-10-20 with the user's direction: adopt the visual language of projects/cartographer's solo build — sepia ink on aged paper, serif small-caps, hard offset shadows; rationale: one house look for the toys) | All three panels react live; equal siblings |
+| 15 | Layout | **2×2 grid**: sketch TL, output TR, term table across bottom row; **parchment cartography theme** (rethemed 2026-10-20: the visual language of projects/cartographer — sepia ink on aged paper, serif small-caps, hard offset shadows); **≤760px stacks vertically** (sketch / fourier / terms each ~44svh, page scrolls, side margins dropped) | All three panels react live; equal siblings |
 | 16 | Sparklines | Per-row sine sparkline = term's **x-projection**: peak=radius, cycles=\|k\|, shift=phase; sign of k stays in the k column; rows below the slider cut render dimmed | Cheap, honest, educational |
 | 17 | Process | **TDD**: red→green for all logic-carrying code; render/FFI layers are thin translators covered by the smoke checklist | Honest application, not dogma |
 | 18 | Commit policy | Commits are made **per phase**, matching docs/PROGRESS.md | History explains itself |

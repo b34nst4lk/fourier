@@ -35,8 +35,10 @@ The bundle's module import is path-relative, so it works at any mount depth.
 **Sketch (top-left):** click = add a dot, drag a dot = move it (one undo step
 no matter how long the drag), right-click = delete the nearest dot, toolbar
 buttons or `Ctrl/Cmd+Z` / `Ctrl+Shift+Z` (also `Ctrl+Y`) for undo/redo,
-`clear` to start over, ★/♥/○ load seed presets. The last dot always connects
+`clear` to start over, ★/♥ load seed presets. The last dot always connects
 to the first — the transform wants a closed loop. Your sketch autosaves.
+On small screens (≤760px) the panels stack vertically and the page
+scrolls; side margins are dropped.
 
 **Fourier (top-right):** the epicycle animation loops once per period
 (~4 s). `pause/play` is one boolean toggle: on, the chain animates; off, it
@@ -54,7 +56,7 @@ replaces their autosaved sketch — low stakes). The same chip's "load" box
 accepts a pasted link or code. The encoding is URL query-style, versioned
 (`v=1`), coordinates as integers on the 0.01 grid.
 
-**Terms (bottom):** every circle the DFT produced, amplitude-descending:
+**Terms (bottom):** the top 256 circles (the slider's cap), amplitude-descending:
 `k` (laps per period, negative = clockwise), `radius`, `phase` (radians),
 and a sparkline of the term's sine projection (cycles = |k|, shift = phase).
 Rows the slider has cut render dimmed, so table and animation stay in sync.

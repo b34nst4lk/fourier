@@ -686,6 +686,34 @@
       </div>
     </div>
 
+      /* small screens: stack the widgets, let the page scroll, drop the
+         side margins */
+      @media (max-width: 760px) {
+        body {
+          height: auto;
+          min-height: 100vh;
+          min-height: 100svh;
+          overflow-y: auto;
+        }
+        .sheet {
+          width: calc(100% - 12px);
+          margin: 6px auto;
+          flex: none;
+        }
+        .app {
+          flex: none;
+          grid-template-columns: 1fr;
+          grid-template-rows: 44vh 44vh 44vh;
+          grid-template-rows: 44svh 44svh 44svh;
+        }
+        .toolbar {
+          flex-wrap: wrap;
+        }
+        .about-page {
+          padding: 16px 8px;
+        }
+      }
+
     <script type="module">
       import { main } from "/build/dev/javascript/fourier_sketch/fourier_sketch.mjs";
       main();

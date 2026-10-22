@@ -38,7 +38,6 @@ pub type Msg {
   RedoMsg
   LoadStar
   LoadHeart
-  LoadWobble
   SetCircles(Int)
   SetSpeed(Int)
   ToggleAnimate
@@ -81,7 +80,7 @@ const sample_count = 512
 
 /// Keep every signed term the DFT produces (truncation happens at render
 /// time once the circles slider exists in phase 5).
-const max_terms = 1024
+const max_terms = 256
 
 // -- lifecycle ---------------------------------------------------------------
 
@@ -190,7 +189,6 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
     RedoMsg -> commit(model, sketch.redo)
     LoadStar -> preset(model, sketch.star())
     LoadHeart -> preset(model, sketch.heart())
-    LoadWobble -> preset(model, sketch.wobble())
     Ignored -> #(model, effect.none())
     SetSpeed(n) -> {
       let m = Model(..model, speed: render.clamp_speed(n))
@@ -579,7 +577,6 @@ fn toolbar(sk: Sketch) -> Element(Msg) {
     ),
     html.button([event.on_click(LoadStar)], [html.text("\u{2605} star")]),
     html.button([event.on_click(LoadHeart)], [html.text("\u{2665} heart")]),
-    html.button([event.on_click(LoadWobble)], [html.text("\u{25CB} wobble")]),
     html.button([event.on_click(ShareOpen)], [html.text("share")]),
   ])
 }
