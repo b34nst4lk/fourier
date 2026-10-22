@@ -87,8 +87,7 @@
         align-items: center;
         gap: 8px;
       }
-      .about summary,
-      .theme-toggle {
+      .corner-chip {
         list-style: none;
         font: inherit;
         font-size: 12px;
@@ -103,22 +102,38 @@
         transition: transform 0.05s ease;
         cursor: pointer;
       }
-      .about summary::-webkit-details-marker {
-        display: none;
-      }
-      .about summary:active,
-      .theme-toggle:active {
+      .corner-chip:active {
         transform: translateY(1px);
         box-shadow: none;
       }
-      .about[open] summary {
-        border-color: var(--accent);
-        color: var(--accent);
+      /* the about page: a full-screen SPA overlay, parchment-styled */
+      .about-page {
+        position: fixed;
+        inset: 0;
+        z-index: 9;
+        overflow-y: auto;
+        background: var(--page)
+          radial-gradient(ellipse at 50% 30%, var(--glow) 0%, var(--page) 70%);
+        padding: 24px 10%;
       }
-      .about-card {
-        position: absolute;
-        top: 38px;
-        right: 0;
+      .about-sheet {
+        max-width: 720px;
+        margin: 0 auto;
+        background: var(--parchment);
+        border: 2px solid var(--ink);
+        border-radius: 10px;
+        box-shadow: 0 10px 40px var(--shadow),
+          inset 0 0 0 5px var(--parchment-dark);
+        padding: 20px 28px 18px;
+        color: var(--ink);
+      }
+      .about-top {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 12px;
+      }
+      /* (the card body rules below now style the sheet) */
         width: min(400px, 92vw);
         background: var(--parchment);
         border: 2px solid var(--ink);
@@ -135,12 +150,76 @@
         margin: 0 0 8px;
         color: var(--ink);
       }
-      .about-card p {
+      .about-sheet h2 {
+        font-variant-caps: small-caps;
+        letter-spacing: 0.16em;
+        font-size: 14px;
+        margin: 18px 0 6px;
+        color: var(--ink);
+      }
+      .about-eq {
+        font-family: ui-monospace, "SF Mono", Menlo, monospace;
+        font-size: 12.5px;
+        background: var(--parchment-dark);
+        border-radius: 6px;
+        padding: 8px 12px;
+        margin: 6px 0 10px;
+        white-space: pre-wrap;
+      }
+      .about-table {
+        border-collapse: collapse;
+        margin: 6px 0 10px;
+        font-size: 12.5px;
+      }
+      .about-table th,
+      .about-table td {
+        border: 1px solid var(--parchment-dark);
+        padding: 3px 10px;
+        text-align: left;
+      }
+      .about-table th {
+        color: var(--ink-faint);
+        font-variant-caps: small-caps;
+      }
+      .chain-digram {
+        width: 100%;
+        max-width: 480px;
+        display: block;
+        margin: 6px 0 10px;
+      }
+      .chain-digram .d-c {
+        fill: none;
+        stroke: var(--ink-faint);
+        stroke-width: 1.2;
+      }
+      .chain-digram .d-c2 {
+        fill: none;
+        stroke: var(--accent);
+        stroke-width: 1.4;
+      }
+      .chain-digram .d-arm {
+        stroke: var(--ink);
+        stroke-width: 1.2;
+      }
+      .chain-digram .d-dot {
+        fill: var(--ink-faint);
+        stroke: none;
+      }
+      .chain-digram .d-pen {
+        fill: var(--coin);
+        stroke: none;
+      }
+      .chain-digram text {
+        fill: var(--ink-faint);
+        font-size: 11px;
+        font-family: inherit;
+      }
+      .about-sheet p {
         margin: 0 0 8px;
         font-size: 13.5px;
         line-height: 1.55;
       }
-      .about-card .about-sub {
+      .about-sheet .about-sub {
         color: var(--ink-faint);
         font-style: italic;
         font-size: 12.5px;
@@ -383,36 +462,126 @@
   <body>
     <div class="sheet">
       <div class="corner-tools">
-        <button id="theme-toggle" class="theme-toggle" type="button">dark</button>
-        <details class="about">
-        <summary>how it works</summary>
-        <div class="about-card">
-          <div class="about-heading">the fourier transform</div>
-          <p>
-            Complicated curves are sums of simple ones. Any repeating wave —
-            a sound, a signal, the outline of a drawing — can be written as a
-            set of circles spinning at different speeds, each with its own
-            size and starting angle.
-          </p>
-          <p>
-            The transform answers the reverse question: given the curve, which
-            circles make it up? It takes the curve in and returns the list:
-            every circle's size, speed, and starting angle. It's the same idea
-            as splitting white light into its colors.
-          </p>
-          <p>
-            The circle sizes drop off fast: the first few do most of the work,
-            the rest fill in detail. That's how sound and image tools can keep
-            only the important ones and still be right. On this page, the
-            circles on the right are your drawing's ingredients, biggest
-            first, and the pen at their tip traces the curve they add up to.
-          </p>
-        </div>
-      </details>
+        <button id="theme-toggle" class="corner-chip" type="button">night</button>
+        <button id="about-open" class="corner-chip" type="button">about</button>
       </div>
       <div class="page-title">f-sketch</div>
       <div id="app"></div>
     </div>
+    <div id="about-page" class="about-page" hidden>
+      <div class="about-sheet">
+        <div class="about-top">
+          <span class="about-heading">the fourier transform</span>
+          <button id="about-close" class="corner-chip" type="button">&larr; back</button>
+        </div>
+
+        <h2>what it is</h2>
+        <p>
+          Complicated curves are sums of simple ones. Any repeating wave — a
+          sound, a signal, the outline of a drawing — can be written as a set
+          of circles spinning at different speeds, each with its own size and
+          starting angle. The Fourier transform answers the reverse question:
+          given the curve, which circles make it up? It takes the curve in
+          and returns the list. It's the same idea as splitting white light
+          into its colors. That list is what the Terms table shows.
+        </p>
+
+        <h2>the equation, and its three dials</h2>
+        <p>
+          Each term row in the table is one circle, and its whole
+          contribution at time <em>t</em> is one line:
+        </p>
+        <pre class="about-eq">pen_offset(t) = radius · e^( i · ( 2π·k·t + phase ) )</pre>
+        <p>
+          The total angle <em>2π·k·t + phase</em> is where the arm points.
+          Three dials, one per column:
+        </p>
+        <p>
+          <em>radius</em> — the size dial: how big the circle is, i.e. how
+          much of the shape this frequency owns; the table is sorted by it.
+          <em>k</em> — the speed-and-direction dial: at time <em>t</em> the
+          arm has turned <em>2π·k·t</em> radians, so <em>k</em> is how many
+          full laps it completes in one period; the sign only flips the spin.
+          <em>phase</em> — the starting-angle dial: at <em>t</em> = 0 the arm
+          points at exactly <em>phase</em>. Two terms with the same radius
+          and k but different phases draw the same circle with the pen at
+          different places on it — phase is how the sum knows where around
+          the shape each wave should be.
+        </p>
+
+        <h2>watch an arm move (real numbers)</h2>
+        <p>
+          From the diamond preset: <em>k</em>=+1, radius 36.5, phase = −π.
+          The arm angle <em>2πkt + phase</em> over one period:
+        </p>
+        <table class="about-table">
+          <tr><th>t</th><th>arm angle</th><th>where it points</th></tr>
+          <tr><td>0.00</td><td>−π</td><td>left</td></tr>
+          <tr><td>0.25</td><td>−π/2</td><td>a quarter turn on</td></tr>
+          <tr><td>0.50</td><td>0</td><td>right — half a lap</td></tr>
+          <tr><td>0.75</td><td>+π/2</td><td>three quarters</td></tr>
+          <tr><td>1.00</td><td>+π</td><td>back where it started: one full lap</td></tr>
+        </table>
+        <p>
+          And its neighbour in the same table: <em>k</em>=−3, radius 4.1 —
+          three laps, spun the other way. Small amplitudes, fast laps: that
+          is where the sharp corners of the shape live.
+        </p>
+
+        <h2>the chain, and why the big circle never spins</h2>
+        <div class="about-figure">
+          <svg viewBox="0 0 420 240" class="chain-digram">
+            <circle cx="90" cy="120" r="70" class="d-c"/>
+            <circle cx="90" cy="120" r="2.5" class="d-dot"/>
+            <line x1="90" y1="120" x2="170" y2="120" class="d-arm"/>
+            <circle cx="170" cy="120" r="34" class="d-c"/>
+            <line x1="170" y1="120" x2="212" y2="120" class="d-arm"/>
+            <circle cx="212" cy="120" r="9" class="d-c2"/>
+            <line x1="212" y1="120" x2="240" y2="106" class="d-arm"/>
+            <circle cx="240" cy="106" r="3.5" class="d-pen"/>
+            <text x="90" y="212">k=0 · r=70.7 · never spins — moves the chain</text>
+            <text x="170" y="60">k=1 · r=36.5 · one lap per period</text>
+            <text x="216" y="168">k=−3 · r=4.1</text>
+            <text x="233" y="92">pen tip</text>
+          </svg>
+        </div>
+        <p>
+          Each term's circle hangs where the previous arm ends. The top row,
+          <em>k</em>=0, is the average position of your shape: its arm is
+          frozen at its phase forever, and it carries the entire chain to the
+          right place. Drop it and the same curve appears translated to the
+          canvas corner — breaking the match with the sketch panel. Keeping
+          it is the quiet teacher: the one circle that never spins is where
+          your shape lives.
+        </p>
+
+        <h2>truncation is the lesson</h2>
+        <p>
+          Circle sizes drop off fast: the first few do most of the work. The
+          <em>circles</em> slider keeps only the top-N by radius — the wobble
+          you see at low counts is the curve's essential shape; the last few
+          tiny circles are its fine detail. This is the same bargain sound
+          and image tools live on: keep the important frequencies, drop the
+          texture you won't notice.
+        </p>
+
+        <h2>using this page</h2>
+        <p>
+          The <em>pause/play</em> toggle: off draws the complete closed trace
+          in one pass (final frame), on animates the chain. The
+          <em>speed</em> slider scales the pen's per-frame advance — the frame
+          rate never changes. Click a row in <em>Terms</em>: the row and its
+          circle highlight together, so you can see exactly which ring each
+          row owns; the <em>export csv</em> chip downloads the whole table.
+          Your sketch autosaves; the presets load seed shapes.
+        </p>
+        <p class="about-sub">
+          Source: github.com/b34nst4lk/fourier — this page is a single
+          self-contained file, no server, no backend, no network.
+        </p>
+      </div>
+    </div>
+
     <script type="module">
       import { main } from "/build/dev/javascript/fourier_sketch/fourier_sketch.mjs";
       main();
@@ -446,6 +615,17 @@
           apply(body.getAttribute("data-theme") !== "dark", true);
         });
       })();
+
+      // about page: chip opens, back button and Escape close
+      var page = document.getElementById("about-page");
+      var openBtn = document.getElementById("about-open");
+      var closeBtn = document.getElementById("about-close");
+      function showAbout(v) { page.hidden = !v; if (v) page.scrollTop = 0; }
+      openBtn.addEventListener("click", function () { showAbout(true); });
+      closeBtn.addEventListener("click", function () { showAbout(false); });
+      window.addEventListener("keydown", function (e) {
+        if (e.key === "Escape") showAbout(false);
+      });
     </script>
   </body>
 </html>
