@@ -531,6 +531,11 @@
         .toolbar {
           flex-wrap: wrap;
         }
+        /* the terms panel spans 1/3 on desktop — on one column that would
+           recreate an implicit second track; pin it to the single column */
+        .terms {
+          grid-column: 1;
+        }
         .about-page {
           padding: 16px 8px;
         }
