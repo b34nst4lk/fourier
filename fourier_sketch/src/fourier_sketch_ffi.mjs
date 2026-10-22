@@ -375,16 +375,39 @@ function draw() {
   }
   ctx.stroke();
 
-  // trace: routes are drawn in red-brick ink on a cartographer's map
+  // trace: a comet tail while playing — the trailing ~30% of the lap drawn
+  // in alpha-stepped chunks (tip brightest, tail fading to nothing), whose
+  // wrap at the loop point is continuous instead of blanking. Final frame
+  // still draws the whole trace at full alpha.
   const idx = Math.max(1, Math.floor(t * STEPS));
   ctx.strokeStyle = pal.trace;
   ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.moveTo(sx(anim.path[0][0]), sy(anim.path[0][1]));
-  for (let i = 1; i <= idx; i++) {
-    ctx.lineTo(sx(anim.path[i][0]), sy(anim.path[i][1]));
+  if (anim.final) {
+    ctx.beginPath();
+    ctx.moveTo(sx(anim.path[0][0]), sy(anim.path[0][1]));
+    for (let i = 1; i <= STEPS; i++) {
+      ctx.lineTo(sx(anim.path[i][0]), sy(anim.path[i][1]));
+    }
+    ctx.stroke();
+  } else {
+    const TAIL = Math.floor(STEPS * 0.3);
+    const CHUNKS = 12;
+    const at = (j) => anim.path[((j % STEPS) + STEPS) % STEPS];
+    for (let c = 0; c < CHUNKS; c++) {
+      const a0 = idx - TAIL + Math.floor((TAIL * c) / CHUNKS);
+      const a1 = idx - TAIL + Math.floor((TAIL * (c + 1)) / CHUNKS);
+      ctx.globalAlpha = Math.pow((c + 1) / CHUNKS, 1.2);
+      ctx.beginPath();
+      const head = at(a0);
+      ctx.moveTo(sx(head[0]), sy(head[1]));
+      for (let j = a0 + 1; j <= a1; j++) {
+        const p = at(j);
+        ctx.lineTo(sx(p[0]), sy(p[1]));
+      }
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
   }
-  ctx.stroke();
 
   // pen tip (chain end = last center) — a gold coin marker
   ctx.fillStyle = pal.pen;
