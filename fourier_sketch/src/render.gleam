@@ -5,6 +5,7 @@
 //// The FFI animation loop owns its own clock — Gleam pushes state on every
 //// sync-worthy model change, the loop pulls per frame.
 
+import gleam/dynamic/decode
 import gleam/int
 import gleam/list
 import terms.{type Term}
@@ -77,6 +78,26 @@ fn ffi_sync(
   highlight_k: Int,
   speed_factor: Float,
 ) -> Nil
+
+/// The share link: the app's URL plus the versioned sketch query.
+@external(javascript, "./fourier_sketch_ffi.mjs", "share_url")
+pub fn share_url(query: String) -> String
+
+/// The boot-time share query, or the empty string.
+@external(javascript, "./fourier_sketch_ffi.mjs", "read_shared_query")
+pub fn read_shared_query() -> String
+
+/// Consume (strip) the share query after a successful boot load.
+@external(javascript, "./fourier_sketch_ffi.mjs", "consume_shared_query")
+pub fn consume_shared_query() -> Nil
+
+/// Best-effort clipboard copy; on_done reports success.
+@external(javascript, "./fourier_sketch_ffi.mjs", "clipboard_copy")
+pub fn copy_text(text: String, on_done: fn(Bool) -> a) -> a
+
+/// Read an input element's current string value.
+@external(javascript, "./fourier_sketch_ffi.mjs", "event_text")
+pub fn event_text(event: decode.Dynamic, otherwise: String) -> String
 
 /// Offer a CSV file for download (browser-native blob anchor).
 @external(javascript, "./fourier_sketch_ffi.mjs", "download_csv")

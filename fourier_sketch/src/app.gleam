@@ -21,6 +21,8 @@ import lustre/element/svg
 import lustre/event
 import render
 import sketch.{type Dot, type Sketch}
+import sketch_share
+
 import spark
 import store
 import terms
@@ -42,6 +44,12 @@ pub type Msg {
   ToggleAnimate
   SelectTerm(Int)
   ExportCsv
+  ShareOpen
+  ShareClose
+  CopyShare
+  CopyDone(Bool)
+  PasteSet(String)
+  PasteLoad
   Ignored
 }
 
@@ -54,6 +62,10 @@ pub type Model {
     animate: Bool,
     selected: Option(Int),
     speed: Int,
+    share_open: Bool,
+    share_copied: Bool,
+    paste: String,
+    paste_bad: Bool,
   )
 }
 
@@ -74,9 +86,19 @@ const max_terms = 1024
 // -- lifecycle ---------------------------------------------------------------
 
 pub fn init(_: Nil) -> #(Model, Effect(Msg)) {
-  let dots = case store.store_load() {
-    Ok(dots) -> dots
-    Error(_) -> []
+  // an incoming share link beats the local autosave (replace + autosave —
+  // low stakes by ruling); the shared query is consumed so refreshes serve
+  // the recipient's own saved sketch afterwards
+  let dots = case sketch_share.from_query(render.read_shared_query()) {
+    Ok(shared) -> {
+      render.consume_shared_query()
+      shared
+    }
+    Error(_) ->
+      case store.store_load() {
+        Ok(dots) -> dots
+        Error(_) -> []
+      }
   }
   let sk = sketch.start(dots)
   let model =
@@ -88,8 +110,12 @@ pub fn init(_: Nil) -> #(Model, Effect(Msg)) {
       animate: True,
       selected: None,
       speed: 100,
+      share_open: False,
+      share_copied: False,
+      paste: "",
+      paste_bad: False,
     )
-  #(model, effect.batch([canvas_sync(model), keys_effect()]))
+  #(model, effect.batch([autosave(sk), canvas_sync(model), keys_effect()]))
 }
 
 /// Global Ctrl/Cmd+Z undo, Ctrl+Shift+Z / Ctrl+Y redo — once, at boot, via a
@@ -211,6 +237,25 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
         render.download_csv("f-sketch-terms.csv", terms.to_csv(model.terms))
       }),
     )
+    ShareOpen -> #(
+      Model(..model, share_open: True, share_copied: False),
+      effect.none(),
+    )
+    ShareClose -> #(
+      Model(..model, share_open: False, paste: "", paste_bad: False),
+      effect.none(),
+    )
+    CopyShare -> #(model, copy_share_effect(model))
+    CopyDone(ok) -> #(Model(..model, share_copied: ok), effect.none())
+    PasteSet(v) -> #(Model(..model, paste: v, paste_bad: False), effect.none())
+    PasteLoad ->
+      case sketch_share.from_query(model.paste) {
+        Ok(dots) -> {
+          let #(m, eff) = commit(model, fn(sk) { sketch.load_dots(sk, dots) })
+          #(Model(..m, share_open: False, paste: "", paste_bad: False), eff)
+        }
+        Error(_) -> #(Model(..model, paste_bad: True), effect.none())
+      }
   }
 }
 
@@ -242,6 +287,10 @@ fn drag_commit(
       speed: model.speed,
       animate: model.animate,
       selected: model.selected,
+      share_open: model.share_open,
+      share_copied: model.share_copied,
+      paste: model.paste,
+      paste_bad: model.paste_bad,
     )
   #(m, effect.batch([autosave(sk), canvas_sync(m)]))
 }
@@ -260,6 +309,18 @@ fn canvas_sync(model: Model) -> Effect(Msg) {
       },
       render.speed_factor(model.speed),
     )
+  })
+}
+
+fn share_query(model: Model) -> String {
+  sketch_share.to_query(sketch.dots(model.sketch))
+}
+
+fn copy_share_effect(model: Model) -> Effect(Msg) {
+  effect.from(fn(dispatch) {
+    render.copy_text(render.share_url(share_query(model)), fn(ok) {
+      dispatch(CopyDone(ok))
+    })
   })
 }
 
@@ -316,7 +377,7 @@ pub fn view(model: Model) -> Element(Msg) {
   let sk = model.sketch
   let ready = sketch.gate_ready(sk)
   html.div([attr.class("app")], [
-    sketch_panel(sk),
+    sketch_panel(model),
     case ready {
       True -> fourier_panel(model)
       False ->
@@ -464,10 +525,15 @@ fn term_rows(model: Model) -> List(Element(Msg)) {
   })
 }
 
-fn sketch_panel(sk: Sketch) -> Element(Msg) {
+fn sketch_panel(model: Model) -> Element(Msg) {
+  let sk = model.sketch
   html.div([attr.class("panel")], [
     html.div([attr.class("panel-label")], [html.text("sketch")]),
     toolbar(sk),
+    case model.share_open {
+      True -> share_dialog(model)
+      False -> html.div([], [])
+    },
     svg.svg(
       [
         attr.attribute("id", svg_id),
@@ -514,7 +580,68 @@ fn toolbar(sk: Sketch) -> Element(Msg) {
     html.button([event.on_click(LoadStar)], [html.text("\u{2605} star")]),
     html.button([event.on_click(LoadHeart)], [html.text("\u{2665} heart")]),
     html.button([event.on_click(LoadWobble)], [html.text("\u{25CB} wobble")]),
+    html.button([event.on_click(ShareOpen)], [html.text("share")]),
   ])
+}
+
+fn share_dialog(model: Model) -> Element(Msg) {
+  let link = render.share_url(share_query(model))
+  let code = share_query(model)
+  html.div([attr.class("share-dialog")], [
+    html.div([attr.class("share-sheet")], [
+      html.div([attr.class("share-top")], [
+        html.span([attr.class("about-heading")], [
+          html.text("share / load a sketch"),
+        ]),
+        html.button([attr.class("corner-chip"), event.on_click(ShareClose)], [
+          html.text("x"),
+        ]),
+      ]),
+      html.div([attr.class("share-label")], [
+        html.text("link — anyone opening it sees your drawing"),
+      ]),
+      html.div([attr.class("share-row")], [
+        html.textarea([attr.readonly(True), attr.class("share-box")], link),
+        html.button([attr.class("corner-chip"), event.on_click(CopyShare)], [
+          html.text(case model.share_copied {
+            True -> "copied"
+            False -> "copy"
+          }),
+        ]),
+      ]),
+      html.div([attr.class("share-label")], [html.text("code")]),
+      html.textarea([attr.readonly(True), attr.class("share-box")], code),
+      html.div([attr.class("share-label")], [
+        html.text("load from a link or code"),
+      ]),
+      html.div([attr.class("share-row")], [
+        html.textarea(
+          [
+            attr.class("share-box"),
+            attr.placeholder("paste a share link or the code here"),
+            event.on("input", paste_decoder()),
+          ],
+          model.paste,
+        ),
+        html.button([attr.class("corner-chip"), event.on_click(PasteLoad)], [
+          html.text("load"),
+        ]),
+      ]),
+      case model.paste_bad {
+        True ->
+          html.div([attr.class("paste-note")], [
+            html.text("couldn't read that — paste a share link or the code"),
+          ])
+        False -> html.div([], [])
+      },
+    ]),
+  ])
+}
+
+fn paste_decoder() -> decode.Decoder(Msg) {
+  decode.new_primitive_decoder("paste-box", fn(data) {
+    Ok(PasteSet(render.event_text(data, "")))
+  })
 }
 
 fn dots_elems(dots: List(Dot)) -> List(Element(Msg)) {

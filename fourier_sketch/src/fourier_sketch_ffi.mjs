@@ -384,6 +384,84 @@ function draw() {
   ctx.fill();
 }
 
+// Share codec helper: round a float to the nearest int (for the ×100 grid).
+export function round_int(x) {
+  return Math.round(x);
+}
+
+// ---- sketch sharing --------------------------------------------------------
+// The share link is the app's URL plus the query payload `?v=1&sk=…` built
+// in Gleam (sketch_share).
+
+export function share_url(query) {
+  try {
+    return window.location.origin + window.location.pathname + "?" + query;
+  } catch {
+    return "";
+  }
+}
+
+// Boot-time read: the incoming share query, or "" (the app parses it).
+export function read_shared_query() {
+  try {
+    const q = window.location.search;
+    return q ? q.substring(1) : "";
+  } catch {
+    return "";
+  }
+}
+
+// Consuming: strip the query after a successful boot-load, so refreshes
+// serve the recipient's own autosaved sketch instead of re-importing.
+export function consume_shared_query() {
+  try {
+    window.history.replaceState({}, "", window.location.pathname);
+  } catch {}
+}
+
+// Best-effort clipboard: async Clipboard API first, execCommand fallback.
+// `done(ok)` fires exactly once either way.
+export function clipboard_copy(text, done) {
+  let fired = false;
+  const finish = (ok) => {
+    if (!fired) {
+      fired = true;
+      try { done(ok); } catch {}
+    }
+  };
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(
+      () => finish(true),
+      () => finish(fallback_copy(text)),
+    );
+  } else {
+    finish(fallback_copy(text));
+  }
+}
+
+function fallback_copy(text) {
+  try {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand("copy");
+    ta.remove();
+    return ok;
+  } catch {
+    return false;
+  }
+}
+
+// Textarea/other input: read the element's current string value.
+export function event_text(event, otherwise) {
+  try {
+    return event.target.value;
+  } catch {
+    return otherwise;
+  }
+}
+
 // Slider inputs: read event.target.value as a number (sentinel on failure).
 export function event_value(event, otherwise) {
   try {
