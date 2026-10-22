@@ -23,11 +23,12 @@ both repos; docs of record live in each repo's `docs/PLAN.md` +
   (`content/toys/*.md` front matter), executes each toy's `deploy` command in
   its `repo` checkout, and copies the artifact into hugo's output tree
   (`public/toys/<slug>/index.html`). Every shipped toy pins a `version` ref
-  (branch/tag/sha) in the manifest — the pipeline fetches it and builds in a
-  throwaway worktree, so deploys build COMMITTED state only; dirty repos
-  abort the publish. The blog's own deploys are gated on its tree being
-  committed and print the deployed HEAD sha. Verify the live URL after
-  deploy.
+  (branch/tag/sha) in the manifest — the pipeline SHALLOW-CLONES the toy's
+  github remote at exactly that ref into a throwaway temp dir, builds there,
+  and moves the artifact out: fully hermetic deploys driven by the remote.
+  Local checkouts are irrelevant to publishing; the blog's own deploys are
+  gated on its tree being committed and print the deployed HEAD sha.
+  Verify the live URL after deploy.
 - Gleam version note: stdlib 1.x — bool negation is `bool.negate` (no unary
   `not`), Gleam Lists are iterables (no `.length`/index access from JS),
   floats keep `.0` on whole numbers in `float.to_string`.

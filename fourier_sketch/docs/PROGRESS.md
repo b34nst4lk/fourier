@@ -352,3 +352,17 @@ is never mutated), copies the artifact out at a recorded short sha, and
 aborts (keeping the worktree) on build failure. The blog's own deploys are
 gated on a committed tree and stamp the deployed HEAD sha in the log.
 Deploys therefore equal committed-and-CI-checked state, reproducibly.
+
+### Hermetic publish (2026-10-21) — supersedes the worktree flow
+
+The blog pipeline went fully remote-driven: instead of fetching in the local
+fourier checkout and building in a git worktree, build-toys.sh now shallow-
+clones github.com/b34nst4lk/fourier at the manifest's pinned `version`
+(depth 1, blob:none filter), runs the toy's `deploy` command inside the
+clone, and MOVES dist/index.html into the blog's public/toys/<slug>/. The
+manifest's local `repo:` field is gone; the only inputs are the remote URL,
+the pinned ref, and the command. One real-clone snag fixed en route: the
+primary clone path must NOT use `--no-checkout` (the working tree would be
+empty and `deploy` would fail) — --no-checkout stays only in the sha-fetch
+fallback, which checks FETCH_HEAD out explicitly. Deploys are now 100%
+driven by what is pushed to github.
