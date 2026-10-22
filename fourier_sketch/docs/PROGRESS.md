@@ -341,3 +341,14 @@ public/toys/<slug>/) + rsync — one gated command publishing site + toys.
 /toys/fourier-sketch/ serves the identical single-file app at the same URL.
 The toy repo no longer deploys by hand; fourier_toy's card shows "in
 progress" (github-only) until its shipped flag flips.
+
+### Versioned publishes (2026-10-21)
+
+The blog pipeline now always fetches a pinned ref: each shipped toy's
+manifest carries `version:` (branch/tag/sha; fourier-sketch pins main).
+build-toys.sh gates on the toy checkout being clean, fetches, resolves
+origin/<ref> first, builds in a throwaway `git worktree` (the working tree
+is never mutated), copies the artifact out at a recorded short sha, and
+aborts (keeping the worktree) on build failure. The blog's own deploys are
+gated on a committed tree and stamp the deployed HEAD sha in the log.
+Deploys therefore equal committed-and-CI-checked state, reproducibly.
