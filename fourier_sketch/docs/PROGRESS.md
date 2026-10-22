@@ -366,3 +366,18 @@ primary clone path must NOT use `--no-checkout` (the working tree would be
 empty and `deploy` would fail) — --no-checkout stays only in the sha-fetch
 fallback, which checks FETCH_HEAD out explicitly. Deploys are now 100%
 driven by what is pushed to github.
+
+### About page (2026-10-21)
+
+The "how it works" details card became a full-screen in-app about page
+(SPA view in the static shell — no app-code changes): chip at the corner
+opens it, "back" and Escape close it; both themes carried via the same
+variables. Content: the transform concept, the annotated reconstruction
+equation with the three dials (k/radius/phase), an arm-sweep table with the
+diamond preset's real numbers, an inline-SVG chain schematic (k=0 centroid
+circle + k=1 + k=−3 + pen), the truncation story, and the app controls.
+Bundle 116 -> 128 KB. Publishing note: toy changes must be COMMITTED to
+this repo before `blog make deploy` — the pipeline builds the pinned
+github ref, so uncommitted local work is invisible to the site (verified
+en route: the deploy correctly served the old artifact until the push
+landed).
