@@ -1,59 +1,28 @@
 // Dial-experiment engine: renders one puzzle — the dashed target + the solid
-// current overlay, four stepper rows, live aggregate match. Pure prototype:
-// no persistence, no reveal, no per-dial hints (aggregate only, per ruling).
+// current overlay, steppers for the puzzle's dialed slots, live aggregate
+// match. Shapes come from SHAPES (star, flower); each shape carries its own
+// target trace, terms, centroid, normalizer and radius scale. Pure
+// prototype: no persistence, no reveal, no per-dial hints (aggregate only).
 import * as P from '../proto.js';
 
-const TGT = P.TARGET.split(' ').map((s) => s.split(',').map(Number));
-const TARGET_PATH =
-  'M' + P.TARGET.replace(/ /g, 'L').replace(/,/g, ' ') + 'Z';
 const K_MIN = -16;
 const K_MAX = 16;
-const R_UNIT = P.MAX_R / 100; // one radius-percent, in sketch units
-const R_MAX = 200 * R_UNIT;
-const R_EPS = 1e-9;
 const SOLVED_AT = 95;
 
 const KIND = { k: 'k', p: 'phase', r: 'radius', x: 'fixed' };
 
-function startState(patches) {
-  return P.TERMS.map((t, i) => {
+function startState(S, patches) {
+  return S.terms.map((t, i) => {
     const s = { ...t };
     for (const [k, v] of Object.entries(patches[i] || {})) {
-      if (k === 'rPct') s.r = v * R_UNIT;
+      if (k === 'rPct') s.r = v * (S.maxR / 100);
       else s[k] = v;
     }
     return s;
   });
 }
 
-function synthesize(st) {
-  const pts = new Array(P.N);
-  for (let i = 0; i < P.N; i++) {
-    const t = i / P.N;
-    let x = P.CENTROID[0];
-    let y = P.CENTROID[1];
-    for (let j = 0; j < st.length; j++) {
-      const s = st[j];
-      const a = 2 * Math.PI * s.k * t + (s.phaseDeg * Math.PI) / 180;
-      x += s.r * Math.cos(a);
-      y += s.r * Math.sin(a);
-    }
-    pts[i] = [x, y];
-  }
-  return pts;
-}
-
-function matchPct(st) {
-  const cur = synthesize(st);
-  let acc = 0;
-  for (let i = 0; i < P.N; i++) {
-    const dx = cur[i][0] - TGT[i][0];
-    const dy = cur[i][1] - TGT[i][1];
-    acc += dx * dx + dy * dy;
-  }
-  return Math.max(0, (1 - Math.sqrt(acc / P.N) / P.RMS_POLAR) * 100);
-}
-
+// t runs 0..1 uniformly; the k=0 centroid rides in every synthesis.
 function pathFor(pts) {
   let d = '';
   for (let i = 0; i < pts.length; i++)
@@ -63,24 +32,34 @@ function pathFor(pts) {
 
 const fmtK = (k) => (k < 0 ? '−' : '+') + Math.abs(k);
 const fmtPhase = (d) => Math.round(d) + '°';
-const fmtR = (r) => Math.round(r / R_UNIT) + '%';
-const fmtVal = (kind, s) =>
-  kind === 'k'
-    ? 'k ' + fmtK(s.k)
-    : kind === 'phase'
-      ? fmtPhase(s.phaseDeg)
-      : fmtR(s.r);
-
-const subFor = (kind, s) =>
-  kind === 'k'
-    ? `locked: r ${fmtR(s.r)} · φ ${fmtPhase(s.phaseDeg)}`
-    : kind === 'phase'
-      ? `locked: k ${fmtK(s.k)} · r ${fmtR(s.r)}`
-      : `locked: k ${fmtK(s.k)} · φ ${fmtPhase(s.phaseDeg)}`;
 
 export function boot(root, pz) {
-  const init = startState(pz.patches);
+  const S = P.SHAPES[pz.shape || 'star'];
+  const R_UNIT = S.maxR / 100;
+  const R_MAX = 200 * R_UNIT;
+  const R_EPS = 1e-9;
+  const fmtR = (r) => Math.round(r / R_UNIT) + '%';
+
+  const TGT = S.target.split(' ').map((s) => s.split(',').map(Number));
+  const TARGET_PATH =
+    'M' + S.target.replace(/ /g, 'L').replace(/,/g, ' ') + 'Z';
+
+  const init = startState(S, pz.patches);
   let st = init.map((s) => ({ ...s }));
+
+  const fmtVal = (kind, s) =>
+    kind === 'k'
+      ? 'k ' + fmtK(s.k)
+      : kind === 'phase'
+        ? fmtPhase(s.phaseDeg)
+        : fmtR(s.r);
+
+  const subFor = (kind, s) =>
+    kind === 'k'
+      ? `locked: r ${fmtR(s.r)} · φ ${fmtPhase(s.phaseDeg)}`
+      : kind === 'phase'
+        ? `locked: k ${fmtK(s.k)} · r ${fmtR(s.r)}`
+        : `locked: k ${fmtK(s.k)} · φ ${fmtPhase(s.phaseDeg)}`;
 
   root.innerHTML = `
     <div class="bar">
@@ -147,6 +126,46 @@ export function boot(root, pz) {
   const atMax = (kind, s) =>
     (kind === 'k' && s.k >= K_MAX) || (kind === 'radius' && s.r >= R_MAX - R_EPS);
 
+  function currentPathD() {
+    let d = '';
+    for (let i = 0; i < 512; i++) {
+      const t = i / 512;
+      let x = S.centroid[0];
+      let y = S.centroid[1];
+      for (let j = 0; j < st.length; j++) {
+        const s = st[j];
+        const a = 2 * Math.PI * s.k * t + (s.phaseDeg * Math.PI) / 180;
+        x += s.r * Math.cos(a);
+        y += s.r * Math.sin(a);
+      }
+      d += (i ? 'L' : 'M') + x.toFixed(2) + ' ' + y.toFixed(2);
+    }
+    return d + 'Z';
+  }
+
+  function matchPct() {
+    const cur = [];
+    for (let i = 0; i < 512; i++) {
+      const t = i / 512;
+      let x = S.centroid[0];
+      let y = S.centroid[1];
+      for (let j = 0; j < st.length; j++) {
+        const s = st[j];
+        const a = 2 * Math.PI * s.k * t + (s.phaseDeg * Math.PI) / 180;
+        x += s.r * Math.cos(a);
+        y += s.r * Math.sin(a);
+      }
+      cur.push([x, y]);
+    }
+    let acc = 0;
+    for (let i = 0; i < 512; i++) {
+      const dx = cur[i][0] - TGT[i][0];
+      const dy = cur[i][1] - TGT[i][1];
+      acc += dx * dx + dy * dy;
+    }
+    return Math.max(0, (1 - Math.sqrt(acc / 512) / S.rmsPolar) * 100);
+  }
+
   function render() {
     dialChars.forEach((ch, i) => {
       cells[i].textContent =
@@ -158,8 +177,8 @@ export function boot(root, pz) {
       const d = +b.dataset.d;
       b.disabled = d < 0 ? atMin(kind, st[i]) : atMax(kind, st[i]);
     });
-    curPath.setAttribute('d', pathFor(synthesize(st)));
-    const m = matchPct(st);
+    curPath.setAttribute('d', currentPathD());
+    const m = matchPct();
     scoreB.textContent = m.toFixed(1) + '%';
     scoreSpan.classList.toggle('solved', m >= SOLVED_AT);
   }

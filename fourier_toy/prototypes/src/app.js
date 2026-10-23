@@ -56,6 +56,13 @@ const PUZZLES = {
     desc: 'term 1 phase · term 2 radius · term 3 k · term 4 fixed',
     patches: [{ phaseDeg: 0 }, { rPct: 8 }, { k: 8 }, {}],
   },
+  p7: {
+    title: 'P7 · flower · one dial each, k on term 3',
+    shape: 'flower',
+    dials: 'prkx',
+    desc: 'the P6 arrangement on a 6-petal flower — petal modes k±5/±7',
+    patches: [{ phaseDeg: 90 }, { rPct: 72 }, { k: 5 }, {}],
+  },
 };
 
 const root = document.getElementById('app');
@@ -68,18 +75,19 @@ function home() {
     )
     .join('');
   root.innerHTML = `
-    <p class="intro">Dial experiments against the sketch's star. The puzzle
-    terms are the star's <em>real</em> top-4 fourier coefficients
-    (k = +1, −4, +6, −14; the k=0 centroid is fixed and never shown as a dial).
+    <p class="intro">Dial experiments against two targets: the sketch's star
+    and a 6-petal flower. The puzzle terms are each shape's <em>real</em> top-4
+    fourier coefficients (the k=0 centroid is fixed and never shown as a dial).
     Match the dashed target by closing the solid red line.</p>
     ${cards}
-    <p class="note">match = RMS pointwise distance to the traced star, normalized
-    like the plan says (target's RMS polar radius) · solved at ≥ 95% · a fully
-    solved board tops out at ≈ 97.7% (the 4-term reconstruction never fully
-    equals the traced star) · steppers: k ±1, phase ±5°, radius ±2% ·
-    a wrong k on the dominant term shows 0 — the metric gives a wrong frequency
-    no partial credit; the same wrong k on a small term is graded gently ·
-    generated from fourier_sketch's star preset, no hand-copied numbers.</p>`;
+    <p class="note">match = RMS pointwise distance to the target trace, normalized
+    by the target's RMS polar radius · solved at ≥ 95% · the star's board tops
+    out at ≈ 97.7% (the traced star is not exactly a 4-term curve); the flower
+    is an exact 4-term shape and tops at 100% · steppers: k ±1, phase ±5°,
+    radius ±2% of the shape's biggest true radius · a wrong k on a shape's
+    dominant term shows 0 — no partial credit; the same wrong k on a small
+    term is graded gently · generated from fourier_sketch's pipeline, no
+    hand-copied numbers.</p>`;
 }
 
 function route() {
