@@ -71,10 +71,10 @@ const PUZZLES = {
     patches: [{ phaseDeg: 345 }, { rPct: 72 }, { k: -4 }, {}],
   },
   p9: {
-    title: 'P9 · one dial each, k on term 3',
-    shape: 'sk9',
+    title: 'P9 · quaver · one dial each, k on term 3',
+    shape: 'quaver',
     dials: 'prkx',
-    desc: 'the P6 arrangement on a fresh sketch drawing',
+    desc: 'the P6 arrangement on a quaver — an eighth note with its flag',
     patches: [{ phaseDeg: 355 }, { rPct: 73 }, { k: -5 }, {}],
   },
 };
@@ -90,10 +90,10 @@ function home() {
     .join('');
   root.innerHTML = `
     <p class="intro">Dial experiments against four targets: the sketch's star,
-    a 6-petal flower, a fish drawn from its terms, and a fresh sketch
-    drawing. The puzzle terms are each shape's <em>real</em> fourier
-    coefficients (the k=0 centroid is fixed and never shown as a dial). Match
-    the dashed target by closing the solid red line.</p>
+    a 6-petal flower, a fish drawn from its terms, and a quaver (♪). The
+    puzzle terms are each shape's <em>real</em> fourier coefficients (the
+    k=0 centroid is fixed and never shown as a dial). Match the dashed target
+    by closing the solid red line.</p>
     ${cards}
     <p class="note">match = RMS pointwise distance to the target trace, normalized
     by the target's RMS polar radius · solved at ≥ 95% · the star's board tops
