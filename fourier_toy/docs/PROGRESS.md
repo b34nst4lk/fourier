@@ -38,3 +38,29 @@ phase is committed. Sibling convention: see `../fourier_sketch/docs/PROGRESS.md`
   ../fourier_sketch resolves unchanged inside the monorepo.
 - CI: shared root workflow, JS-target truth; first real run caught format
   drift in this repo's test file — fixed.
+
+## Prototype round (2026-10-23, branch `prototype`)
+
+Four dial experiments against the sketch's star, deployed as one hash-routed
+page (prototypes/), built single-file like the sibling. Rulings that shaped
+it: (Q1) steppers, not sliders — k ±1 (signed, −16..16), phase ±5°, radius
+±2% of MAX_R; (Q2) top panel = one overlay (dashed ghost target + solid
+route-red current), not side-by-side; (Q3) feedback = aggregate only — one
+match % (RMS pointwise / target RMS polar radius, the plan §7 metric), no
+per-dial hints; solved at ≥ 95%.
+
+Data integrity: proto.js is GENERATED from fourier_sketch's compiled pipeline
+(star 10 dots → 512 resample → DFT → top-4: k=+1 r=27.57, k=−4 r=6.59, k=+6
+r=2.93, k=−14 r=0.54; centroid (50,50) fixed in every synthesis; phases all
+270°). Star of the process: an intermediate hand-written proto.js carried
+fabricated coordinates (32768-saturation sentinels) — caught before any
+commit by the out-of-span gate, regenerated from the script, and the gate is
+now permanent. Verified: all four initial states below the solve gate
+(−41.4 / −39.0 / 67.1 / −44.1%), truth = 97.69% (truncation-bound: a solved
+board tops out there, not 100%), and the bundled artifact passes 16/16 jsdom
+checks (routing, wrap, floor-disable, fixed slot, reset, match values vs
+ground truth).
+
+Finding for the feel session: under the pointwise metric the k lever is
+all-or-nothing — a wrong frequency shows 0% match (clamped); only the
+overlay's gap carries the partial-credit signal.
