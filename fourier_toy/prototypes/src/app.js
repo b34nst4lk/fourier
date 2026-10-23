@@ -77,6 +77,13 @@ const PUZZLES = {
     desc: 'the P6 arrangement on a quaver — an eighth note with its flag',
     patches: [{ phaseDeg: 355 }, { rPct: 73 }, { k: -5 }, {}],
   },
+  p10: {
+    title: 'P10 · flower · all four dialed',
+    shape: 'flower',
+    dials: 'prkr',
+    desc: 'two radius dials: a fat one on term 2 (38%), a micro trim on term 4 (5%)',
+    patches: [{ phaseDeg: 90 }, { rPct: 72 }, { k: 5 }, { rPct: 16 }],
+  },
 };
 
 const root = document.getElementById('app');

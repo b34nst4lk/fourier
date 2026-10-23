@@ -200,6 +200,17 @@ const p9patches = [
 const m9 = Math.max(0, matchRaw(quaverSynth, quaverC0[0], quaverC0[1], quaverRms, withPatches(quaverDial, quaverDial[0].r, p9patches).concat(quaverExtras)));
 if (m9 >= 95) throw new Error('P9 initial solved: ' + m9);
 console.log('P9 initial    :', m9.toFixed(1) + '%  patches =', JSON.stringify(p9patches));
+// P10 = flower with all four dialed (prkr): two radius levers at very
+// different amplitudes — macro start 72%, micro trim 16% (truth 5.46%)
+const p10patches = [
+  { phaseDeg: (flowerSpec[0].phaseDeg + 90) % 360 },
+  { rPct: 72 },
+  { k: flowerSpec[2].k - 2 },
+  { rPct: 16 },
+];
+const m10 = Math.max(0, matchRaw(flowerSynth, 50, 50, flowerRms, withPatches(flowerSpec, flowerMax, p10patches)));
+if (m10 >= 95) throw new Error('P10 initial solved: ' + m10);
+console.log('P10 initial   :', m10.toFixed(1) + '%  patches =', JSON.stringify(p10patches));
 
 // ---- emit ----
 const emit = (terms, pts, cx, cy, rms, maxR) => ({
