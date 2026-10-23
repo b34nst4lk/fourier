@@ -402,3 +402,13 @@ the toy's future target import).
 ### Comet tail (2026-10-22)
 
 The playing-mode trace is now a comet tail: the trailing ~30% of the lap drawn in 12 alpha-stepped chunks (tip alpha 1, oldest ~0.05, gamma 1.2) — the wrap at the loop point is continuous (the tail just trails; nothing blanks). Final-frame mode keeps the full trace at full alpha. Costs +11 stroke calls per draw; contracts unaffected (cleanRect cadence asserted).
+
+### Analytics (2026-10-21)
+
+The blog injects the site's GA tag into every built toy page at
+deploy (scripts/inject-analytics.py — idempotent; the id's single source is
+hugo's [services.googleAnalytics]). The toy stays offline-capable; the
+about page wording now says so honestly. Also: hugo 0.161 ignores the
+legacy googleAnalytics key config — the id must sit in
+config/_default/hugo.toml services; the production-env fragment file did
+not merge.
