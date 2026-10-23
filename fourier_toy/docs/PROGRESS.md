@@ -83,3 +83,51 @@ gleam test 14/14; jsdom artifact smoke 16/16 (routing, deterministic
 starts, dial-home solve paths, solved badge, reset, theme toggle, micro
 radius home). Boundaries: gleam lists cross the FFI as cons iterables —
 every list normalizes with Array.from; tuples are arrays.
+
+## v2 blank-board fix — second visual check (2026-10-23, branch `prototype`)
+
+Symptom: cold-loading straight onto a board (deep link like `#p6`) left the
+canvas blank; the dials/score ran fine. First probe during the check: a
+try/catch around draw() with stack logging (the probe was removed again —
+it swallowed errors that gates should catch; the loop is draw-safe with
+normalized inputs, and the sibling's production loop has no such guard).
+
+Root cause, verified in Lustre's runtime source
+(`lustre/src/lustre/runtime/client/runtime.ffi.mjs`, constructor):
+`this.#handleEffects(effects)` runs BEFORE `this.#render()` — init effects
+fire before the first render mounts the canvas. Same for hashchange: effects
+run synchronously while renders are RAF-deferred. So `sync_effect`'s pushes
+arrived with no `#toy-board` in the DOM, and the FFI's old
+`if (!anim.ctx && !ensure_boot()) return;` guard DROPPED the payload — a
+later boot bound the canvas but had nothing to draw. The interrupted
+`boot_retry` half-fix (armed on the working tree when the session paused)
+booted the canvas but could not re-deliver the dropped shape/terms — the
+board stayed blank.
+
+Fix (the sibling's proven production pattern): payload stashes
+UNCONDITIONALLY, boot is orthogonal. `canvas_shape`/`canvas_terms` always
+assign + rebuild + dirty; `ensure_boot()` only binds canvas/ctx, with
+element-change detection (backing-store dims reset on rebind so a fresh
+300×150 canvas cannot survive a same-size rebind) and a single
+self-terminating per-frame retry while no element exists. A late boot just
+starts painting the stashed payload. The retry also covers a REMOUNT
+(reconciler replaces the element); the artifact smoke shows the reconciler
+in fact PRESERVES the canvas across board→board swaps, so the rebind path
+is defensive robustness, not load-bearing.
+
+New committed gates (the previous session's jsdom smokes were ad-hoc and
+deleted — a deleted gate is not a gate):
+- `scripts/boot_contract.mjs` (pure Node, zero deps, house bench pattern):
+  16 checks over the boot/payload contract — cold-load pre-mount sync,
+  dial repaint, element-swap rebind, home→board stash survival, headless
+  upright. RED first (8/16 on the broken tree), then GREEN (16/16).
+- `scripts/artifact_smoke.mjs` (jsdom + manual RAF queue + op-counting
+  canvas stubs; evals the exact dist bundle as a classic script — esbuild
+  emits no ESM syntax for this entry): 23 checks — cold-load paint
+  (regression), score vs core-computed ground truth on every board, phase
+  wrap, radius floor + disable, dial-home solve badge (star tops at
+  97.7%), reset, theme mirror, home↔board routing, fixed-slot hiding,
+  reconciler element preservation. jsdom has no layout engine: the canvas
+  rect is stubbed to 300×300 or every circle hits the sub-pixel skip.
+Gates: gleam test 14/14; gleam format --check; boot contract 16/16;
+artifact smoke 23/23; dist byte-reproducible from the tree.

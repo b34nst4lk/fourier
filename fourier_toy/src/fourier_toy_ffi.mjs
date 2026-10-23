@@ -118,15 +118,44 @@ function terms_equal(a, b) {
   return true;
 }
 
+let boot_retry = null;
+
+// Bind the board canvas, booting LATE when Lustre hasn't mounted it yet.
+// Why late boots happen: the Lustre runtime runs init effects before its
+// first render (runtime/client/runtime.ffi.mjs: #handleEffects precedes
+// #render), and hashchange syncs run before the RAF-deferred render — so a
+// sync can arrive while no canvas is in the DOM. Callers stash their
+// payload unconditionally; this only binds + fits + pumps, so a late boot
+// simply starts painting the stashed payload (sibling pattern — the
+// proven fourier_sketch_ffi flow).
 function ensure_boot() {
   const el = document.getElementById("toy-board");
-  if (!el) return false;
-  anim.canvas = el;
+  if (!el) {
+    // schedule at most one pending retry per frame (self-terminating:
+    // the retry chain stops the moment an element is found)
+    if (boot_retry === null) {
+      boot_retry = requestAnimationFrame(() => {
+        boot_retry = null;
+        ensure_boot();
+      });
+    }
+    return;
+  }
+  if (anim.canvas === el && anim.ctx) return; // bound to this live element
+  // fresh or remounted element: reset the tracked dims so fit() rewrites
+  // the backing store even when the CSS size is unchanged (a new canvas
+  // ships 300×150; a same-size rebind must not skip el.width/height)
+  if (anim.canvas !== el) {
+    anim.canvas = el;
+    anim.w = 0;
+    anim.h = 0;
+    anim.dpr = 0;
+  }
   try {
     anim.ctx = el.getContext("2d");
   } catch (err) {
-    // headless test environments without 2D contexts: the app stays upright,
-    // the loop stays idle (dials/score/theme run purely in the DOM)
+    // headless test environments without 2D contexts: the app stays
+    // upright, the loop stays idle (dials/score/theme run purely in the DOM)
     anim.ctx = null;
   }
   if (anim.ctx) {
@@ -137,39 +166,41 @@ function ensure_boot() {
     }
     pump();
   }
-  return anim.ctx !== null;
 }
 
 export function canvas_shape(centroid, target, extras) {
-  if (!anim.ctx && !ensure_boot()) return;
+  // The payload stashes UNCONDITIONALLY — a pre-mount sync (see
+  // ensure_boot) must survive until the canvas exists. Boot is orthogonal.
   // gleam lists arrive as cons iterables: normalize to arrays
   const centroidArr = [centroid[0], centroid[1]];
   const targetArr = Array.from(target, (p) => [p[0], p[1]]);
   const extrasArr = Array.from(extras, (t) => [t[0], t[1], t[2]]);
   const key = JSON.stringify(centroidArr) + JSON.stringify(targetArr) + JSON.stringify(extrasArr);
-  if (anim.shapeKey === key) return;
-  anim.shapeKey = key;
-  anim.shape = { centroid: centroidArr, target: targetArr, extras: extrasArr };
-  anim.extrasSum = [0, 0];
-  for (const t of extras) {
-    const a = (t[2] * Math.PI) / 180;
-    anim.extrasSum[0] += t[1] * Math.cos(a);
-    anim.extrasSum[1] += t[1] * Math.sin(a);
+  if (anim.shapeKey !== key) {
+    anim.shapeKey = key;
+    anim.shape = { centroid: centroidArr, target: targetArr, extras: extrasArr };
+    anim.extrasSum = [0, 0];
+    for (const t of extrasArr) {
+      const a = (t[2] * Math.PI) / 180;
+      anim.extrasSum[0] += t[1] * Math.cos(a);
+      anim.extrasSum[1] += t[1] * Math.sin(a);
+    }
+    rebuild();
   }
-  rebuild();
   anim.dirty = true;
-  pump();
+  ensure_boot();
 }
 
 export function canvas_terms(dial) {
-  if (!anim.ctx && !ensure_boot()) return;
-  // dial rows arrive as tuples #(k, r, phase_deg) — index, don't record-access
+  // dial rows arrive as tuples #(k, r, phase_deg) — index, don't record-access.
+  // Same unconditional-stash rule as canvas_shape: payload first, boot after.
   const flat = Array.from(dial, (t) => [t[0], t[1], t[2]]);
-  if (terms_equal(flat, anim.dial)) return;
-  anim.dial = flat;
-  rebuild();
-  anim.dirty = true;
-  pump();
+  if (!terms_equal(flat, anim.dial)) {
+    anim.dial = flat;
+    rebuild();
+    anim.dirty = true;
+  }
+  ensure_boot();
 }
 
 export function canvas_theme(dark) {
