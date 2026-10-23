@@ -431,3 +431,20 @@ boundary with the sentinel mapping localised in render (no_highlight
 (8) the range decoders share one body via a build fn; (10) Sketch is now a
 pub opaque type — Snapshot is private, module-internal undo shape;
 (11) the dead centers fallback simplified. 9/12/13 kept as designed.
+
+### Render handoff processed (2026-10-22) — artifact removed
+
+The panel-2 focused review (RENDER_HANDOFF.md) was verified (bench
+reproduced its numbers: 188.8 ops/frame, 34 μs JS at 64 terms) and applied:
+(1) comet chunks 24 → 12 — the grilled compromise (option 2: ~9% fade steps,
+banding-safe at the 98% tail; the trade = call overhead vs smoothness
+noted — strokes save command overhead, not fill pixels); (2) the palette
+is two module constants + a cached dark flag following body[data-theme] via
+MutationObserver (no per-frame DOM read, no cross-boundary call); (3) the
+selected term's index is cached at sync (anim.hiIdx) — the per-frame
+findIndex is gone; (4) the chain centers live in a flat Float64Array sized
+to the cap — zero per-frame allocations; (5) sub-pixel link arms are
+skipped (the trace cache keeps the geometry). Measured: 163.5 ops/frame
+at 64 terms (was 188.8). The worker/offscreen-architectural lever is
+parked in PLAN §8 with its caveat. The handoff's "leave alone" list and
+its rejections (dirty rects, twiddle rebuild, RAF-timeout gating) stay.

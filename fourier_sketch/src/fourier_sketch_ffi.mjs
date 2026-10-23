@@ -109,6 +109,9 @@ const anim = {
   centers: [], // per-draw chain centers, allocated once in draw()
   highlight: null, // selected term's k, or null
   speedFactor: 1.0, // pen advance as a fraction of SPEED (0.25..1)
+  dark: false, // cached from body[data-theme]; updated by the observer
+  hiIdx: -1, // cached at sync: the selected term's index in terms
+  themeObs: null, // MutationObserver on body[data-theme]
 };
 
 let boot_retry = null; // pending self-re-boot while the canvas is unmounted
@@ -181,6 +184,18 @@ export function canvas_boot(id) {
   }
   if (!anim.started) {
     anim.started = true;
+    if (typeof document !== "undefined" && document.body) {
+      anim.dark = document.body.getAttribute("data-theme") === "dark";
+      if (typeof MutationObserver !== "undefined") {
+        anim.themeObs = new MutationObserver(() => {
+          anim.dark = document.body.getAttribute("data-theme") === "dark";
+        });
+        anim.themeObs.observe(document.body, {
+          attributes: true,
+          attributeFilter: ["data-theme"],
+        });
+      }
+    }
     window.addEventListener("resize", () => {
       canvas_boot(id);
       anim.dirty = true;
@@ -214,6 +229,10 @@ export function canvas_sync(terms, playing, highlight, speedFactor) {
   anim.playing = playing;
   anim.final = !playing;
   anim.highlight = highlight === 999_999 ? null : highlight;
+  anim.hiIdx =
+    anim.highlight == null
+      ? -1
+      : anim.terms.findIndex((row) => row[0] === anim.highlight);
   if (speedFactor != null) anim.speedFactor = speedFactor;
   // final frame should show the complete closed trace immediately
   if (!playing) anim.t = 1.0;
@@ -270,26 +289,29 @@ function frame(now) {
   }
 }
 
-// canvas palette follows the body's data-theme attribute (read at draw time —
-// the theme toggle lives in the static shell and never touches the app):
-// lamplit dark = cream ink washes on dark parchment, brighter route-red.
+// Canvas palette: lamplit dark = cream ink washes on dark parchment, brighter
+// route-red. The STATIC SHELL owns body[data-theme] (its theme toggle); the
+// loop caches the choice at boot and follows it via a MutationObserver —
+// no per-frame DOM reads, no cross-boundary calls.
+const PALETTES = {
+  light: {
+    circles: "rgba(70, 53, 31, 0.25)",
+    links: "rgba(70, 53, 31, 0.55)",
+    trace: "#a4372a",
+    pen: "#d9a92f",
+    highlight: "#96621f",
+  },
+  dark: {
+    circles: "rgba(234, 217, 180, 0.12)",
+    links: "rgba(234, 217, 180, 0.35)",
+    trace: "#d05848",
+    pen: "#d9a92f",
+    highlight: "#e2b45c",
+  },
+};
+
 function palette() {
-  const dark = document.body.getAttribute("data-theme") === "dark";
-  return dark
-    ? {
-        circles: "rgba(234, 217, 180, 0.12)",
-        links: "rgba(234, 217, 180, 0.35)",
-        trace: "#d05848",
-        pen: "#d9a92f",
-        highlight: "#e2b45c",
-      }
-    : {
-        circles: "rgba(70, 53, 31, 0.25)",
-        links: "rgba(70, 53, 31, 0.55)",
-        trace: "#a4372a",
-        pen: "#d9a92f",
-        highlight: "#96621f",
-      };
+  return anim.dark ? PALETTES.dark : PALETTES.light;
 }
 
 function draw() {
@@ -310,11 +332,16 @@ function draw() {
 
   const t = anim.final ? 1.0 : anim.t;
 
-  // chain centers: one pass, shared by circles, links and the pen tip
+  // chain centers: one pass, shared by circles, links and the pen tip —
+  // kept in a flat Float64Array sized to the cap, so steady play allocates
+  // nothing per frame
   const n = anim.terms.length;
+  if (!anim.centers || anim.centers.length < 2 * (n + 1)) {
+    anim.centers = new Float64Array(2 * (n + 1));
+  }
   const centers = anim.centers;
-  centers.length = n + 1;
-  centers[0] = [0, 0];
+  centers[0] = 0;
+  centers[1] = 0;
   let cx = 0;
   let cy = 0;
   for (let i = 0; i < n; i++) {
@@ -322,7 +349,8 @@ function draw() {
     const ang = 2 * Math.PI * term[0] * t + term[2];
     cx += term[1] * Math.cos(ang);
     cy += term[1] * Math.sin(ang);
-    centers[i + 1] = [cx, cy];
+    centers[2 * (i + 1)] = cx;
+    centers[2 * (i + 1) + 1] = cy;
   }
 
   ctx.lineWidth = 1;
@@ -330,19 +358,15 @@ function draw() {
   // all circles share one stroke style: ONE beginPath+stroke for the whole
   // chain (moveTo avoids connecting chords between arcs) — warm ink wash
   // except the selected term's circle, which gets its own bright stroke
-  const hiIdx =
-    anim.highlight != null
-      ? anim.terms.findIndex((row) => row[0] === anim.highlight)
-      : -1;
+  const hiIdx = anim.hiIdx;
   ctx.strokeStyle = pal.circles;
   ctx.beginPath();
   for (let i = 0; i < n; i++) {
     if (i === hiIdx) continue;
     const r = anim.terms[i][1] * scale;
     if (r > 1.2) {
-      const c = centers[i];
-      const X = sx(c[0]);
-      const Y = sy(c[1]);
+      const X = sx(centers[2 * i]);
+      const Y = sy(centers[2 * i + 1]);
       ctx.moveTo(X + r, Y);
       ctx.arc(X, Y, r, 0, 2 * Math.PI);
     }
@@ -351,11 +375,10 @@ function draw() {
 
   // selection highlight: a thicker accent ring around the chosen circle
   if (hiIdx >= 0) {
-    const c = centers[hiIdx];
     const r = anim.terms[hiIdx][1] * scale;
     if (r > 1.2) {
-      const X = sx(c[0]);
-      const Y = sy(c[1]);
+      const X = sx(centers[2 * hiIdx]);
+      const Y = sy(centers[2 * hiIdx + 1]);
       ctx.strokeStyle = pal.highlight;
       ctx.lineWidth = 2;
       ctx.beginPath();
@@ -366,13 +389,15 @@ function draw() {
     }
   }
 
-  // all links share one stroke style: ONE beginPath+stroke
+  // links share one stroke style: ONE beginPath+stroke; sub-pixel arms are
+  // skipped (their drawing is invisible; the trace cache keeps the geometry)
   ctx.strokeStyle = pal.links;
   ctx.beginPath();
-  ctx.moveTo(sx(centers[0][0]), sy(centers[0][1]));
+  ctx.moveTo(sx(centers[0]), sy(centers[1]));
   for (let i = 1; i <= n; i++) {
-    const c = centers[i];
-    ctx.lineTo(sx(c[0]), sy(c[1]));
+    if (anim.terms[i - 1][1] * scale > 1.2) {
+      ctx.lineTo(sx(centers[2 * i]), sy(centers[2 * i + 1]));
+    }
   }
   ctx.stroke();
 
@@ -392,7 +417,7 @@ function draw() {
     ctx.stroke();
   } else {
     const TAIL = Math.floor(STEPS * 0.98);
-    const CHUNKS = 24;
+    const CHUNKS = 12;
     const at = (j) => anim.path[((j % STEPS) + STEPS) % STEPS];
     for (let c = 0; c < CHUNKS; c++) {
       const a0 = idx - TAIL + Math.floor((TAIL * c) / CHUNKS);
