@@ -107,6 +107,33 @@ const fishSynth = synthOf(fishC0[0], fishC0[1], fishAll);
 const fishRms = rmsOf(fishSynth, fishC0[0], fishC0[1]);
 spanOK(fishSynth, 'fish');
 
+// ---- sk9: the sibling app's export CSV for the user's next drawing ----
+// (terms-only fixture, like the fish: the synthesis is the target by
+// definition). k0 = 58.30 at 0.81 rad = the centroid; the top-4 = the
+// puzzle's dialable truth (phases snapped to the 5° dial grid); the other
+// 25 rows = fixed extras baked into target AND current.
+const sk9C0 = [58.30 * Math.cos(0.81), 58.30 * Math.sin(0.81)];
+const sk9Table = [
+  [-1, 17.97, -1.69], [1, 11.30, -0.93], [-3, 4.68, -1.78], [3, 2.83, -2.88],
+  [2, 2.48, -2.74], [4, 1.40, -1.37], [-5, 1.33, 2.94], [5, 1.03, -1.04],
+  [-2, 0.83, 1.00], [-7, 0.61, -0.49], [-6, 0.61, -0.46], [-4, 0.52, 1.14],
+  [-8, 0.41, -2.32], [7, 0.38, 2.46], [-9, 0.37, -2.42], [9, 0.33, -1.68],
+  [8, 0.31, -1.76], [-13, 0.14, -1.69], [-11, 0.13, 0.11], [16, 0.12, -1.69],
+  [12, 0.12, -1.35], [-12, 0.10, -2.12], [-16, 0.09, -2.70], [-20, 0.09, -2.08],
+  [20, 0.08, -2.35], [13, 0.06, -2.01], [10, 0.06, -1.73], [14, 0.06, 2.43],
+  [17, 0.06, -1.42],
+];
+{
+  let prev = Infinity;
+  for (const [, r] of sk9Table) { if (r > prev + 1e-9) throw new Error('sk9 table not amplitude-sorted'); prev = r; }
+}
+const sk9Dial = sk9Table.slice(0, 4).map(([k, r, ph]) => ({ k, r, phaseDeg: snap5(normDeg(ph)) }));
+const sk9Extras = sk9Table.slice(4).map(([k, r, ph]) => ({ k, r, phaseDeg: normDeg(ph) }));
+const sk9All = [...sk9Dial, ...sk9Extras];
+const sk9Synth = synthOf(sk9C0[0], sk9C0[1], sk9All);
+const sk9Rms = rmsOf(sk9Synth, sk9C0[0], sk9C0[1]);
+spanOK(sk9Synth, 'sk9');
+
 // ---- gates ----
 const mStar = matchRaw(starPts, starCx, starCy, starRms, starTop4);
 if (!(mStar > 96.5 && mStar < 98.5)) throw new Error('star truth out of band: ' + mStar.toFixed(2));
@@ -115,11 +142,15 @@ if (mFlower < 99.9) throw new Error('flower truth too low: ' + mFlower.toFixed(2
 const mFish = matchRaw(fishSynth, fishC0[0], fishC0[1], fishRms, fishAll);
 if (mFish < 99.9) throw new Error('fish truth too low: ' + mFish.toFixed(2));
 console.log('fish centroid :', fishC0.map(v => v.toFixed(3)).join(', '));
+const mSk9 = matchRaw(sk9Synth, sk9C0[0], sk9C0[1], sk9Rms, sk9All);
+if (mSk9 < 99.9) throw new Error('sk9 truth too low: ' + mSk9.toFixed(2));
+console.log('sk9 dialable  :', sk9Dial.map(t => `k${t.k>0?'+':''}${t.k}·${t.r}·${t.phaseDeg}°`).join('  '));
+console.log('sk9 centroid  :', sk9C0.map(v => v.toFixed(3)).join(', '));
 
 console.log('star terms    :', starTop4.map(t => `k${t.k>0?'+':''}${t.k}·${t.r}·${t.phaseDeg}°`).join('  '));
 console.log('flower terms  :', flowerSpec.map(t => `k${t.k>0?'+':''}${t.k}·${t.r}·${t.phaseDeg}°`).join('  '));
 console.log('fish dialable :', fishDial.map(t => `k${t.k>0?'+':''}${t.k}·${t.r}·${t.phaseDeg}°`).join('  '));
-console.log('truth match   : star', mStar.toFixed(2) + '% · flower', mFlower.toFixed(3) + '% · fish', mFish.toFixed(3) + '%');
+console.log('truth match   : star', mStar.toFixed(2) + '% · flower', mFlower.toFixed(3) + '% · fish', mFish.toFixed(3) + '% · sk9', mSk9.toFixed(3) + '%');
 
 // star regression: the four shipped initials must stay byte-stable
 const starPatches = [
@@ -157,6 +188,17 @@ const m8 = Math.max(0, matchRaw(fishSynth, fishC0[0], fishC0[1], fishRms, withPa
 if (m8 >= 95) throw new Error('P8 initial solved: ' + m8);
 console.log('P7 initial    :', m7v.toFixed(1) + '%  patches =', JSON.stringify(p7patches));
 console.log('P8 initial    :', m8.toFixed(1) + '%  patches =', JSON.stringify(p8patches));
+// P9 = P6/P7/P8 arrangement (phase, radius, k, fixed) on sk9; radius start
+// 73% (odd parity = can reach the 63%-truth home exactly)
+const p9patches = [
+  { phaseDeg: (sk9Dial[0].phaseDeg + 90) % 360 },
+  { rPct: 73 },
+  { k: sk9Dial[2].k - 2 },
+  {},
+];
+const m9 = Math.max(0, matchRaw(sk9Synth, sk9C0[0], sk9C0[1], sk9Rms, withPatches(sk9Dial, sk9Dial[0].r, p9patches).concat(sk9Extras)));
+if (m9 >= 95) throw new Error('P9 initial solved: ' + m9);
+console.log('P9 initial    :', m9.toFixed(1) + '%  patches =', JSON.stringify(p9patches));
 
 // ---- emit ----
 const emit = (terms, pts, cx, cy, rms, maxR) => ({
@@ -180,6 +222,7 @@ export const SHAPES = ${JSON.stringify({
   star: emit(starTop4, starPts, starCx, starCy, starRms, starMax),
   flower: emit(flowerSpec, flowerSynth, 50, 50, flowerRms, flowerMax),
   fish: { ...emit(fishDial, fishSynth, fishC0[0], fishC0[1], fishRms, fishMax), extras: fishExtras },
+  sk9: { ...emit(sk9Dial, sk9Synth, sk9C0[0], sk9C0[1], sk9Rms, sk9Dial[0].r), extras: sk9Extras },
 })};
 `;
 writeFileSync('prototypes/proto.js', js);
