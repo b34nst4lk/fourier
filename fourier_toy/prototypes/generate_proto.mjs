@@ -78,28 +78,23 @@ const flowerSynth = synthOf(50, 50, flowerSpec);
 const flowerRms = rmsOf(flowerSynth, 50, 50);
 spanOK(flowerSynth, 'flower');
 
-// ---- fish: the sibling app's full 30-row term table for the sk= drawing ----
-// (k0 = the centroid; the top-4 = the puzzle's dialable truth with phases
-// snapped to the 5° dial grid; the remaining 25 rows = fixed extras baked
-// identically into the target AND the current synthesis, so the target reads
-// like the drawn fish while the four dials still solve it exactly.)
-const SK_QUERY = 'v=1&sk=1807,470;7755,6257;7824,655;1553,5911';
-const skDots = Array.from(share.from_query(SK_QUERY)[0]);
-if (skDots.length !== 4) throw new Error('sk decode: expected 4 dots, got ' + skDots.length);
-for (const p of skDots) for (const c of p)
-  if (!(c >= 0 && c <= 100)) throw new Error('sk dot out of grid: ' + c);
-const skDrawnPts = Array.from(resample.resample_closed(fromArray(skDots), N)).map(p => [p[0], p[1]]);
-
-const fishC0 = [58.00 * Math.cos(0.61), 58.00 * Math.sin(0.61)];
+// ---- fish: the sibling app's export CSV (30 rows: k=0 + 29 nonzero) for
+// the user's updated fish drawing. Defined purely by terms: the k0 row
+// (67.05 at 0.70 rad) is the centroid; the TOP-4 rows are the puzzle's
+// dialable truth with phases snapped to the 5° dial grid; the remaining 25
+// rows are fixed extras baked identically into the target AND the current
+// synthesis (no drawing is shared for this one, so the synthesis IS the
+// target by definition — fidelity gate not applicable).
+const fishC0 = [67.05 * Math.cos(0.70), 67.05 * Math.sin(0.70)];
 const fishTable = [
-  [-1, 17.05, 2.56], [1, 16.39, -2.46], [2, 11.18, -1.88], [-2, 11.00, -1.20],
-  [4, 1.72, -0.66], [-4, 1.66, -2.44], [-5, 0.91, -3.04], [6, 0.79, -2.54],
-  [-3, 0.77, -1.87], [-6, 0.75, -0.49], [5, 0.74, 3.11], [8, 0.71, -1.34],
-  [3, 0.70, 1.67], [-8, 0.66, -1.76], [12, 0.32, -2.01], [-12, 0.29, -1.05],
-  [-9, 0.25, -2.42], [9, 0.17, 2.29], [-11, 0.17, 2.78], [-7, 0.15, 2.24],
-  [18, 0.14, -1.48], [14, 0.14, -0.82], [-14, 0.13, -2.37], [-18, 0.12, -1.64],
-  [7, 0.12, -1.49], [-15, 0.12, -2.90], [16, 0.12, -2.66], [11, 0.11, -2.43],
-  [-16, 0.10, -0.30],
+  [-1, 26.07, -1.85], [1, 16.27, 1.61], [-2, 7.51, -0.34], [2, 4.90, -3.13],
+  [3, 2.79, -1.45], [-4, 1.84, 2.32], [4, 1.12, 0.28], [5, 0.78, 2.06],
+  [-6, 0.77, -1.07], [-5, 0.63, 0.65], [-8, 0.27, 1.94], [6, 0.23, -2.36],
+  [-7, 0.22, -2.74], [10, 0.21, 1.26], [9, 0.20, -0.67], [12, 0.17, -1.58],
+  [-3, 0.15, -0.46], [11, 0.14, 2.66], [-13, 0.14, 2.69], [-12, 0.14, -1.70],
+  [17, 0.12, -2.51], [8, 0.12, -2.08], [-15, 0.11, -0.96], [13, 0.11, -0.17],
+  [19, 0.10, 0.86], [-14, 0.09, 1.18], [-11, 0.09, -0.23], [-22, 0.08, 3.07],
+  [-20, 0.07, 0.26],
 ];
 {
   let prev = Infinity;
@@ -119,13 +114,7 @@ const mFlower = matchRaw(flowerSynth, 50, 50, flowerRms, flowerSpec);
 if (mFlower < 99.9) throw new Error('flower truth too low: ' + mFlower.toFixed(2));
 const mFish = matchRaw(fishSynth, fishC0[0], fishC0[1], fishRms, fishAll);
 if (mFish < 99.9) throw new Error('fish truth too low: ' + mFish.toFixed(2));
-// fidelity: the fish target must now read like the drawn bowtie-fish
-const [drawnCx, drawnCy] = centroidOf(skDrawnPts);
-const drawnRms = rmsOf(skDrawnPts, drawnCx, drawnCy);
-const fishFit = matchRaw(skDrawnPts, fishC0[0], fishC0[1], drawnRms, fishAll);
-if (!(fishFit > 95)) throw new Error('fish target too far from drawing: ' + fishFit.toFixed(1) + '%');
-const top4Fit = matchRaw(skDrawnPts, fishC0[0], fishC0[1], drawnRms, fishDial);
-console.log('fish fidelity : target covers', fishFit.toFixed(1) + '% of the drawn trace (top-4 alone: ' + top4Fit.toFixed(1) + '%)');
+console.log('fish centroid :', fishC0.map(v => v.toFixed(3)).join(', '));
 
 console.log('star terms    :', starTop4.map(t => `k${t.k>0?'+':''}${t.k}·${t.r}·${t.phaseDeg}°`).join('  '));
 console.log('flower terms  :', flowerSpec.map(t => `k${t.k>0?'+':''}${t.k}·${t.r}·${t.phaseDeg}°`).join('  '));
@@ -162,6 +151,8 @@ const p8patches = [
   { k: fishDial[2].k - 2 },
   {},
 ];
+// (slot3's patched k can coincide with an extras term's k — the sums add,
+// nothing breaks; the dial-home state has no such coincidence.)
 const m8 = Math.max(0, matchRaw(fishSynth, fishC0[0], fishC0[1], fishRms, withPatches(fishDial, fishMax, p8patches).concat(fishExtras)));
 if (m8 >= 95) throw new Error('P8 initial solved: ' + m8);
 console.log('P7 initial    :', m7v.toFixed(1) + '%  patches =', JSON.stringify(p7patches));
@@ -180,11 +171,10 @@ const js = `// GENERATED (prototypes/generate_proto.mjs; never hand-edit). Three
 // synthesis. star: sketch.star()'s 10 dots -> arc-length resample(512) -> DFT
 // -> top-4 (traced target, board tops ~97.7%). flower: parametric 6-petal
 // rose, theta-uniform DFT, phases snapped, target rebuilt (exact, tops 100%).
-// fish: the sibling app's full 30-row term table for the sk= drawing (k0 =
-// centroid at (47.54, 33.23); top-4 = dialable truth, phases snapped; rows
-// 5..30 = fixed extras baked into target AND current, so the target reads
-// like the drawn fish — it covers ${fishFit.toFixed(1)}% of the drawn trace, where the
-// dialable top-4 alone covers ${top4Fit.toFixed(1)}% — and the dials still solve it exactly).
+// fish: the sibling app's export CSV (30 rows) for the user's updated fish
+// drawing (k0 = the centroid; top-4 = dialable truth, phases snapped to the
+// dial grid; rows 5..30 = fixed extras baked into target AND current, so
+// the dials solve it exactly).
 // Span-gated -2..102 (inside the viewBox -4..104 with stroke margin).
 export const SHAPES = ${JSON.stringify({
   star: emit(starTop4, starPts, starCx, starCy, starRms, starMax),

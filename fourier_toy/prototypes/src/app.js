@@ -67,8 +67,8 @@ const PUZZLES = {
     title: 'P8 · fish · one dial each, k on term 3',
     shape: 'fish',
     dials: 'prkx',
-    desc: 'the P6 arrangement on a fish drawn from its terms — two lobes sharing a waist',
-    patches: [{ phaseDeg: 235 }, { rPct: 72 }, { k: 0 }, {}],
+    desc: 'the P6 arrangement on a fish drawn from its terms',
+    patches: [{ phaseDeg: 345 }, { rPct: 72 }, { k: -4 }, {}],
   },
 };
 
