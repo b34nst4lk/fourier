@@ -131,3 +131,19 @@ deleted — a deleted gate is not a gate):
   rect is stubbed to 300×300 or every circle hits the sub-pixel skip.
 Gates: gleam test 14/14; gleam format --check; boot contract 16/16;
 artifact smoke 23/23; dist byte-reproducible from the tree.
+
+## "Still broken" false alarm — stale deployment (2026-10-23)
+
+Report after the blank-board fix: "prototype 2 is still broken, nothing
+renders on the canvas." The live /toys/fourier-toy-2/ artifact was a STALE
+deployment — served bundle still carried the old payload-drop guard
+(`if(!X.ctx&&!Yo())return`), no retry, no stash: it predated the fix push
+entirely. Confirmed by md5-refuting every candidate build (current tree,
+80d35e3, 4669dc9, prototype_js) and grep-verifying the old markers in the
+served HTML. Redeployed via the blog pipeline (hermetic clone of
+origin/prototype = 21e6419, "artifact published at 21e6419"); live page
+now serves the fixed bundle byte-identically (modulo the GA tag + a
+Cloudflare edge snippet), old guard gone, retry + rebind markers present,
+cf-cache-status DYNAMIC so a plain reload fetches it. Lesson: "still
+broken" against a deployed page → first check WHICH ref the served
+artifact was built from before touching the code.
