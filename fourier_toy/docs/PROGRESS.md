@@ -64,3 +64,22 @@ ground truth).
 Finding for the feel session: under the pointwise metric the k lever is
 all-or-nothing — a wrong frequency shows 0% match (clamped); only the
 overlay's gap carries the partial-credit signal.
+
+## Prototype 2 in Gleam (2026-10-23) — the JS round archived first
+
+The JS experiments froze at tag `prototype-js-v1` and moved to
+`prototype_js/` (deploy wiring superseded). v2 = the toy's own Gleam app:
+TDD'd pure core (`shapes.gleam` fixtures + `puzzle.gleam` dial logic, 14
+gold tests asserting byte-parity with the archived JS numbers — including
+the k0-must-filter lesson: the sketch's terms.compute includes the
+centroid, the JS generator filtered it and v2 had to match), then the
+Lustre shell + a compact canvas/RAF/theme routing FFI ported from the
+sibling's loop with its heat-audit guardrails (30fps cap, DPR≤2, dirty
+gate, rebuild-cache dedupe). Rulings: always-on comet, 50% of sibling max
+speed (0.125 laps/s), dashed target under the comet, extras summed into
+the comet so the illustration matches the score exactly, in-app light/dark
+toggle, PRKR experiment P10 included (all four terms dialed). Verified:
+gleam test 14/14; jsdom artifact smoke 16/16 (routing, deterministic
+starts, dial-home solve paths, solved badge, reset, theme toggle, micro
+radius home). Boundaries: gleam lists cross the FFI as cons iterables —
+every list normalizes with Array.from; tuples are arrays.

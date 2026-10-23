@@ -31,17 +31,17 @@ gives it, so the puzzle is fair by construction and self-checking).
 | 2 | Import player-drawn targets from fourier_sketch | NOT in v1 — needs the parked shareable JSON export format; shelf §7 | PROPOSED |
 | 3 | Term bank composition | Target's own top-M terms by amplitude, ks locked from the target; no decoy zero-radius terms in v1 | PROPOSED |
 | 4 | Bank sizes | Difficulty picker: {3, 6, 10, 16} terms | PROPOSED |
-| 5 | Sliders | Radius: 0 → 2 × (bank's largest true radius), continuous. Phase: 0–360°, degrees (radians never shown) | PROPOSED |
+| 5 | Dials (revised by prototype round, 2026-10-23): WORDLE-STYLE STEPPERS, not sliders — k ±1 (signed, −16..16), phase ±5° (wrap), radius ±2% of the shape's biggest dialable radius | user-ruled |
 | 6 | Initial slider values (the puzzle setup) | Radius: 50% of max; phase: 0° — visible mismatch, one-gesture improvement, never accidentally solved | PROPOSED |
 | 7 | Scoring metric | RMS pointwise distance over the period, normalized by the target's RMS polar radius about the path centroid; displayed as a match % = (1 − score) | PROPOSED (exact normalizer is a TDD §3 contract item) |
 | 8 | Sample count for scoring/curves | N = 512, same as sibling | PROPOSED |
 | 9 | Solved gate | match ≥ 95% → "solved" badge + ground-truth reveal (show true radius/phase per term) | PROPOSED |
 | 10 | Reveal | One button, shows true values and can apply them ("show me the solution") — applies only on explicit press | PROPOSED |
-| 11 | Layout | Two panels: left = SVG overlay (target ghost dashed, reconstruction solid), right = slider bank (per-term k label, radius, phase, readouts); header = preset picker + difficulty + score % | PROPOSED |
+| 11 | Layout (revised by prototype round): WORDLE-NARROW single column — one square board (dashed target + solid comet), stepper rows beneath, match % in the header; overlay-compare per user ruling | user-ruled |
 | 12 | Dark theme + visual family | **Parchment cartography family** (rethemed 2026-10-20 with the sibling — user directed one house look from projects/cartographer; supersedes "dark theme, sibling palette genes") | PROPOSED |
-| 13 | Animation | None in v1 — static overlay compare. RAF/animated play mode = shelf | PROPOSED |
+| 13 | Animation (revised by prototype-2 rulings): ALWAYS-ON comet + epicycle circles on canvas at 50% of the sibling's max speed (0.125 laps/s); no pause toggle for now | user-ruled |
 | 14 | Persistence | None in v1 (no localStorage) — puzzle state is throwaway; best-score/recent-shelf later | PROPOSED |
-| 15 | FFI line | Pure Gleam only: SVG/DOM via Lustre, math via fourier_sketch core. No canvas, no RAF, no storage FFI — the FFI modules of the sibling stay untouched | PROPOSED |
+| 15 | FFI line (revised): Gleam core pure and TDD'd; a compact canvas/RAF/theme/routing FFI is ALLOWED after the user ruled prototype-2 closer-to-final (comet + circles need real-time painting). Model = the sibling's loop patterns (30fps cap, DPR≤2, dirty gate, terms dedupe, rebuild-cache) | user-ruled |
 | 16 | Toolchain | Gleam → JavaScript only; every build/test/run passes `--target javascript` (no Erlang on this box — recorded hard constraint) | locked (environment) |
 | 17 | Math core reuse | Path dependency on `../fourier_sketch`; core modules imported bare (`complex`, `resample`, `dft`, `terms`). Proven linking via scaffold smoke (3/3) | locked (verified) |
 | 18 | Process | TDD red→green for all logic-carrying code (presets fixtures, bank extraction, scoring, puzzle state); view layer = thin translator + smoke checklist | locked (house rule) |
