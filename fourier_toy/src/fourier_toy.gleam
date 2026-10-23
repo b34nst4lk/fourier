@@ -173,11 +173,24 @@ fn home_view() -> Element(Msg) {
   ])
 }
 
-fn bar(dark: Bool) -> Element(Msg) {
+fn bar(dark: Bool, m: Float) -> Element(Msg) {
   html.div([attribute.class("bar")], [
     html.a([attribute.class("back"), attribute.href("#")], [
       html.text("← experiments"),
     ]),
+    html.span(
+      [
+        attribute.classes([
+          #("score", True),
+          #("solved", m >=. 95.0),
+        ]),
+      ],
+      [
+        html.text("Match "),
+        html.span([attribute.class("val")], [html.text(puzzle.fmt1(m) <> "%")]),
+        html.span([attribute.class("ok")], [html.text("solved ✓")]),
+      ],
+    ),
     html.button(
       [attribute.class("theme"), event.on("click", decode.success(ToggleTheme))],
       [
@@ -197,24 +210,20 @@ fn board_view(
   dark: Bool,
 ) -> Element(Msg) {
   html.div([], [
-    bar(dark),
-    html.h2(
-      [
-        attribute.classes([#("pt", True), #("solved", m >=. 95.0)]),
-      ],
-      [
-        html.text(setup.title <> " — Match "),
-        html.span([attribute.class("val")], [html.text(puzzle.fmt1(m) <> "%")]),
-        html.span([attribute.class("ok")], [html.text("solved ✓")]),
-      ],
-    ),
+    bar(dark, m),
+    html.h2([attribute.class("pt")], [
+      html.text(setup.title),
+    ]),
     html.canvas([attribute.class("board"), attribute.id("toy-board")]),
     html.div(
       [attribute.class("rows")],
-      list.index_map(setup.dials, fn(kind, i) {
-        let assert [s, ..] = list.drop(state, i)
-        dial_row(setup, kind, i, s)
-      }),
+      list.index_map(setup.dials, fn(kind, i) { #(i, kind) })
+        |> list.filter(fn(pair) { pair.1 != puzzle.DialFixed })
+        |> list.map(fn(pair) {
+          let #(i, kind) = pair
+          let assert [s, ..] = list.drop(state, i)
+          dial_row(setup, kind, i, s)
+        }),
     ),
     html.button(
       [attribute.class("reset"), event.on("click", decode.success(Reset))],

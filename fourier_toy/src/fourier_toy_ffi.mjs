@@ -163,7 +163,8 @@ export function canvas_shape(centroid, target, extras) {
 
 export function canvas_terms(dial) {
   if (!anim.ctx && !ensure_boot()) return;
-  const flat = Array.from(dial, (t) => [t.k, t.r, t.phase_deg]);
+  // dial rows arrive as tuples #(k, r, phase_deg) — index, don't record-access
+  const flat = Array.from(dial, (t) => [t[0], t[1], t[2]]);
   if (terms_equal(flat, anim.dial)) return;
   anim.dial = flat;
   rebuild();

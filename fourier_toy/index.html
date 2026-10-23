@@ -40,9 +40,12 @@ body {
   background: var(--card); color: var(--ink); cursor: pointer;
 }
 .pt { margin: 0 0 8px; font-size: 1rem; }
-.pt .ok { display: none; color: var(--ok); font-weight: 600; margin-left: 8px; }
-.pt.solved .ok { display: inline; }
-.pt.solved .val { color: var(--ok); }
+.bar { justify-content: space-between; }
+.score { font-size: .95rem; }
+.score .val { font-size: 1.15rem; }
+.score .ok { display: none; color: var(--ok); font-weight: 600; margin-left: 6px; }
+.score.solved .ok { display: inline; }
+.score.solved .val { color: var(--ok); }
 .board {
   display: block;
   width: 100%;
