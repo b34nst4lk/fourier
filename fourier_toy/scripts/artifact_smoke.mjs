@@ -47,6 +47,7 @@ function make_ctx() {
   return {
     ops,
     setLineDash: () => {},
+    setTransform: () => {},
     clearRect: () => {},
     beginPath: () => {},
     closePath: () => {},

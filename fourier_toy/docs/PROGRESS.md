@@ -147,3 +147,40 @@ Cloudflare edge snippet), old guard gone, retry + rebind markers present,
 cf-cache-status DYNAMIC so a plain reload fetches it. Lesson: "still
 broken" against a deployed page → first check WHICH ref the served
 artifact was built from before touching the code.
+
+## v2 visual fixes — three browser reports (2026-10-23)
+
+All three root-caused against the sibling's proven loop and fixed in one
+draw-pass rewrite:
+
+1. **Quarter-size animation**: the toy never applied the DPR transform —
+   the backing store is w·dpr but everything painted in CSS-pixel space,
+   so on 2× screens the whole scene landed in the top-left quarter (the
+   sibling's first draw step is `ctx.setTransform(dpr,…)`; the port had
+   dropped it). Also ported the sibling's letterbox mapping (sketch space
+   0..100 centered by min(w,h), not stretched by w and h independently).
+2. **Pen/comet desync**: the comet's chunk math (`chunk =
+   ceil(span/CHUNKS)`, `s <= start+chunk`) overshot — the last chunk ended
+   at head+3, the comet's bright tip poking 3–4 samples ahead of the pen.
+   Ported the sibling's exact boundaries (last chunk ends AT the sample
+   index). The pen is now the chain tip itself — circles, links, pen and
+   comet all read one chain pass, so they cannot drift apart again.
+3. **Comet ≠ score on quaver** (96.7% match, comet visibly a 4-term
+   curve): the fixed extras were summed as a CONSTANT offset
+   (extrasSum), but the score's synth_trace has every extra rotating at
+   its own k — the comet was a 4-term curve + shift, not the scored
+   synthesis. Extras now chain as real epicycles after the four dials
+   (most sub-pixel and skipped by the 1.2px guard; the visible few draw
+   as faint honest circles) and rebuild() computes the full rotating
+   synthesis — at truth the comet overlays the dashed target exactly.
+
+Mid-fix catch (the contract earning its keep): my own chain-pass edit
+read the previous center's X when accumulating Y (`c[2i]` for `c[2i+1]`)
+— the comet stayed perfect (it reads the trace cache) while the pen went
+garbage; the contract's pen-on-curve check caught it before any deploy.
+
+Contract grown to 21 checks: DPR transform args, pen-on-comet-edge
+(≤1.3px), comet-overlays-target at truth (measured 0.000px),
+pen-on-full-synthesis-curve. Gates: gleam 14/14, format green, boot
+contract 21/21, artifact smoke 23/23 (its canvas stub gained the
+setTransform no-op the new draw requires).

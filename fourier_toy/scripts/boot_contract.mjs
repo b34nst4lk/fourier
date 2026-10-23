@@ -26,10 +26,24 @@ import * as puzzle from "../build/dev/javascript/fourier_toy/fourier_toy/puzzle.
 let registry = null;
 
 function make_ctx() {
-  const ops = { arc: 0, moveTo: 0, lineTo: 0, stroke: 0, clearRect: 0, nan: 0 };
-  const track = (x, y, name) => {
-    ops[name]++;
+  const ops = {
+    arc: 0,
+    moveTo: 0,
+    lineTo: 0,
+    stroke: 0,
+    clearRect: 0,
+    nan: 0,
+    setTransform_args: null, // last setTransform() call (DPR contract)
+    pen: null, // last arc() center = the pen tip (draws end with the pen)
+    segments: [], // one coordinate list per stroke — draw-order structure
+  };
+  let seg = []; // coords accumulated since the last stroke
+  const push = (x, y) => {
+    seg.push([x, y]);
     if (!Number.isFinite(x) || !Number.isFinite(y)) ops.nan++;
+  };
+  const count = (name) => {
+    ops[name]++;
   };
   return {
     ops,
@@ -47,16 +61,31 @@ function make_ctx() {
       return 1;
     },
     set globalAlpha(_) {},
+    setTransform: (a, b, c, d, e, f) => {
+      ops.setTransform_args = [a, b, c, d, e, f];
+    },
     clearRect: () => {
       ops.clearRect++;
     },
     beginPath: () => {},
     closePath: () => {},
-    moveTo: (x, y) => track(x, y, "moveTo"),
-    lineTo: (x, y) => track(x, y, "lineTo"),
-    arc: (x, y, _r) => track(x, y, "arc"),
+    moveTo: (x, y) => {
+      count("moveTo");
+      push(x, y);
+    },
+    lineTo: (x, y) => {
+      count("lineTo");
+      push(x, y);
+    },
+    arc: (x, y, _r) => {
+      count("arc");
+      push(x, y);
+      ops.pen = [x, y];
+    },
     stroke: () => {
       ops.stroke++;
+      ops.segments.push(seg);
+      seg = [];
     },
   };
 }
@@ -246,6 +275,69 @@ console.log("S5 · headless — no 2D context: app upright, no crash");
     threw = err;
   }
   check("no throw with a null context", threw === null, String(threw));
+}
+
+console.log("S6 · quaver at truth — DPR transform, pen/comet lockstep, comet ≡ target");
+{
+  registry = make_el(); // rebind path (previous element was headless)
+  const setup = setup_of("p9"); // quaver: 4 dial terms + 25 rotating extras
+  const shape = puzzle.shape_of(setup.shape);
+  const extras = Array.from(shape.extras, (t) => [t.k, t.r, t.phase_deg]);
+  ffi.canvas_shape(shape.centroid, shape.target, extras);
+  ffi.canvas_terms(Array.from(shape.dial, (s) => [s.k, s.r, s.phase_deg])); // TRUTH
+  tick(); // bind + queue frame
+  tick(34, 3); // draws at t = 0.00625 + k·0.00425
+  const ops = registry.getContext().ops;
+  check(
+    "DPR transform applied (setTransform dpr·identity)",
+    JSON.stringify(ops.setTransform_args) === "[2,0,0,2,0,0]",
+    "got " + JSON.stringify(ops.setTransform_args),
+  );
+  // all geometry checks read the LAST draw only: 16 segments per draw
+  // (target, circles, links, 12 comet chunks, pen)
+  const segs = ops.segments;
+  const d0 = segs.length - 16;
+  const pen = ops.pen;
+  const lastChunk = segs[d0 + 14]; // last comet chunk of the last draw
+  const cometEnd = lastChunk[lastChunk.length - 1];
+  const gap = Math.hypot(pen[0] - cometEnd[0], pen[1] - cometEnd[1]);
+  check(
+    "pen sits on the comet's leading edge (≤ 1.3px)",
+    gap <= 1.3,
+    gap.toFixed(2) + "px",
+  );
+  // at truth the current synthesis IS the target synthesis: the comet must
+  // overlay the dashed target (both are the same 512-sample full-synthesis
+  // curve — extras rotating, not a constant offset)
+  const target = segs[d0];
+  const comet = segs.slice(d0 + 3, d0 + 15).flat();
+  let maxDist = 0;
+  for (const [x, y] of comet) {
+    let best = Infinity;
+    for (const [tx, ty] of target) {
+      const d = Math.hypot(x - tx, y - ty);
+      if (d < best) best = d;
+    }
+    if (best > maxDist) maxDist = best;
+  }
+  check(
+    "comet overlays the dashed target at truth (full synthesis, rotating extras)",
+    comet.length > 100 && maxDist <= 0.5,
+    comet.length + " comet pts, max dist " + maxDist.toFixed(2) + "px",
+  );
+  // the pen must be ON the full-synthesis curve too (chain built from
+  // dial + extras): its distance to the nearest target point is tiny
+  let penDist = Infinity;
+  for (const [tx, ty] of target) {
+    const d = Math.hypot(pen[0] - tx, pen[1] - ty);
+    if (d < penDist) penDist = d;
+  }
+  check(
+    "pen sits on the full-synthesis curve (chain = dial + extras)",
+    penDist <= 0.75,
+    penDist.toFixed(2) + "px",
+  );
+  check("no NaN in the full-synthesis pass", ops.nan === 0, "nan " + ops.nan);
 }
 
 console.log("");

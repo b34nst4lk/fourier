@@ -11,8 +11,10 @@
 //   - No selection highlight; no IntersectionObserver (single above-fold
 //     canvas in a narrow column).
 //   - The comet draws the FULL metric synthesis: the four dialable terms
-//     chained (circles drawn for them) with the fixed extras summed into the
-//     pen position, so the illustration matches what the score measures.
+//     chained first, the fixed extras chained after them as real (mostly
+//     sub-pixel) epicycles — comet, pen and score all share one formula
+//     (shapes.position_at), so the illustration matches what the score
+//     measures at every dial position.
 //   - Theme: the toy owns the toggle, so the caller pushes dark/light
 //     directly (no MutationObserver).
 
@@ -31,7 +33,7 @@ const anim = {
   h: 0,
   dpr: 1,
   shape: null, // {centroid:[cx,cy], target:[[x,y]...], extras:[[k,r,deg]...]}
-  extrasSum: [0, 0],
+  chain: [], // dial rows + extras rows, in draw order (refreshed in rebuild)
   dial: [], // [[k, radius, deg], ...] the four dialable terms
   trace: null, // Float64Array(2*STEPS): full-lap cache of the metric synthesis
   dialKey: null,
@@ -179,12 +181,6 @@ export function canvas_shape(centroid, target, extras) {
   if (anim.shapeKey !== key) {
     anim.shapeKey = key;
     anim.shape = { centroid: centroidArr, target: targetArr, extras: extrasArr };
-    anim.extrasSum = [0, 0];
-    for (const t of extrasArr) {
-      const a = (t[2] * Math.PI) / 180;
-      anim.extrasSum[0] += t[1] * Math.cos(a);
-      anim.extrasSum[1] += t[1] * Math.sin(a);
-    }
     rebuild();
   }
   anim.dirty = true;
@@ -210,46 +206,53 @@ export function canvas_theme(dark) {
   pump();
 }
 
-// rebuild_cache: one lap of the full metric synthesis (dial terms chained
-// + the fixed extras summed in). O(STEPS × terms) — the dedupe pays for
-// itself on every no-op sync, exactly like the sibling.
+// rebuild_cache: one lap of the FULL metric synthesis — the dial terms plus
+// the fixed extras, every term rotating at its own k (exactly the score's
+// shapes.synth_trace — the extras are NOT a constant offset). Also caches
+// the draw-order chain (dials first, extras after) for the epicycle pass.
+// O(STEPS × terms) — the dedupe pays for itself on every no-op sync,
+// exactly like the sibling.
 function rebuild() {
   if (!anim.shape) return;
+  anim.chain = anim.dial.concat(anim.shape.extras);
   if (!anim.trace || anim.trace.length !== 2 * STEPS) {
     anim.trace = new Float64Array(2 * STEPS);
   }
-  const n = anim.dial.length;
+  const n = anim.chain.length;
   const [cx0, cy0] = anim.shape.centroid;
   for (let s = 0; s < STEPS; s++) {
     const t = s / STEPS;
     let x = cx0;
     let y = cy0;
     for (let i = 0; i < n; i++) {
-      const term = anim.dial[i];
+      const term = anim.chain[i];
       const a = 2 * Math.PI * term[0] * t + (term[2] * Math.PI) / 180;
       x += term[1] * Math.cos(a);
       y += term[1] * Math.sin(a);
     }
-    anim.trace[2 * s] = x + anim.extrasSum[0];
-    anim.trace[2 * s + 1] = y + anim.extrasSum[1];
+    anim.trace[2 * s] = x;
+    anim.trace[2 * s + 1] = y;
   }
 }
 
 // ---- drawing ----
 
-function sx(x) {
-  return (x / 100) * anim.w;
-}
-
-function sy(y) {
-  return (y / 100) * anim.h;
-}
-
 function draw() {
   const ctx = anim.ctx;
   const pal = palette();
+  // the backing store is w·dpr — without this mapping everything paints into
+  // its top-left quarter on retina screens (sibling's first-draw step)
+  ctx.setTransform(anim.dpr, 0, 0, anim.dpr, 0, 0);
   ctx.clearRect(0, 0, anim.w, anim.h);
   if (!anim.shape || !anim.trace) return;
+
+  // sketch space 0..100 letterboxed into the canvas (same mapping as the
+  // sibling's panel: square content centered, never stretched)
+  const scale = Math.min(anim.w, anim.h) / 100;
+  const ox = (anim.w - scale * 100) / 2;
+  const oy = (anim.h - scale * 100) / 2;
+  const sx = (x) => ox + scale * x;
+  const sy = (y) => oy + scale * y;
 
   // target: dashed ink trace (static per shape)
   const target = anim.shape.target;
@@ -266,10 +269,12 @@ function draw() {
   ctx.setLineDash([]);
 
   if (!anim.dial.length) return;
-  const n = anim.dial.length;
+  const chain = anim.chain;
+  const n = chain.length;
   const t = anim.t;
 
-  // chain centers for the dial terms at the current t (circles drawn for them)
+  // chain centers for ALL terms at the current t — circles, links and the
+  // pen tip all read this one pass, so they cannot drift apart
   if (!anim.centers || anim.centers.length < 2 * (n + 1)) {
     anim.centers = new Float64Array(2 * (n + 1));
   }
@@ -277,20 +282,19 @@ function draw() {
   c[0] = anim.shape.centroid[0];
   c[1] = anim.shape.centroid[1];
   for (let i = 0; i < n; i++) {
-    const term = anim.dial[i];
+    const term = chain[i];
     const a = 2 * Math.PI * term[0] * t + (term[2] * Math.PI) / 180;
     c[2 * (i + 1)] = c[2 * i] + term[1] * Math.cos(a);
-    c[2 * (i + 1) + 1] = c[2 * i] + term[1] * Math.sin(a);
+    c[2 * (i + 1) + 1] = c[2 * i + 1] + term[1] * Math.sin(a);
   }
-  const tipX = c[2 * n] + anim.extrasSum[0];
-  const tipY = c[2 * n + 1] + anim.extrasSum[1];
 
-  // circles: one beginPath+stroke (sub-pixel radii skipped)
+  // circles: one beginPath+stroke over the whole chain (sub-pixel radii
+  // skipped — most extras vanish, the visible few are honest epicycles)
   ctx.lineWidth = 1;
   ctx.strokeStyle = pal.circles;
   ctx.beginPath();
   for (let i = 0; i < n; i++) {
-    const r = (anim.dial[i][1] / 100) * anim.w;
+    const r = chain[i][1] * scale;
     if (r <= 1.2) continue;
     const X = sx(c[2 * i]);
     const Y = sy(c[2 * i + 1]);
@@ -299,51 +303,48 @@ function draw() {
   }
   ctx.stroke();
 
-  // links: one beginPath+stroke (sub-pixel legs skipped)
+  // links: one beginPath+stroke (sub-pixel arms skipped)
   ctx.strokeStyle = pal.links;
   ctx.beginPath();
   ctx.moveTo(sx(c[0]), sy(c[1]));
   for (let i = 1; i <= n; i++) {
-    if ((anim.dial[i - 1][1] / 100) * anim.w > 1.2) {
+    if (chain[i - 1][1] * scale > 1.2) {
       ctx.lineTo(sx(c[2 * i]), sy(c[2 * i + 1]));
     }
   }
   ctx.stroke();
 
-  // comet: the cached trace redrawn in alpha-stepped chunks behind the pen
-  const span = Math.floor(TAIL_FRAC * STEPS);
-  const chunk = Math.ceil(span / CHUNKS);
-  const head = Math.floor(t * STEPS);
+  // comet: the cached trace redrawn in alpha-stepped chunks behind the pen.
+  // Chunk boundaries end EXACTLY at the sample index (sibling math) so the
+  // comet's bright tip is the trace point the pen is about to occupy — no
+  // gap, no overshoot.
+  const TAIL = Math.floor(TAIL_FRAC * STEPS);
+  const idx = Math.max(1, Math.floor(t * STEPS));
   ctx.lineWidth = 1.6;
   ctx.strokeStyle = pal.trace;
   for (let k = 0; k < CHUNKS; k++) {
     ctx.globalAlpha = ((k + 1) / CHUNKS) * 0.85;
+    const a0 = idx - TAIL + Math.floor((TAIL * k) / CHUNKS);
+    const a1 = idx - TAIL + Math.floor((TAIL * (k + 1)) / CHUNKS);
     ctx.beginPath();
-    const start = head - span + k * chunk;
-    for (let s = start; s <= start + chunk; s++) {
-      const idx = ((s % STEPS) + STEPS) % STEPS;
-      const X = sx(anim.trace[2 * idx]);
-      const Y = sy(anim.trace[2 * idx + 1]);
-      if (s === start) ctx.moveTo(X, Y);
+    for (let s = a0; s <= a1; s++) {
+      const wrap = ((s % STEPS) + STEPS) % STEPS;
+      const X = sx(anim.trace[2 * wrap]);
+      const Y = sy(anim.trace[2 * wrap + 1]);
+      if (s === a0) ctx.moveTo(X, Y);
       else ctx.lineTo(X, Y);
     }
     ctx.stroke();
   }
   ctx.globalAlpha = 1;
 
-  // pen: bright dot at the metric's tip (live position, extra trig is cheap)
-  let penX = anim.shape.centroid[0];
-  let penY = anim.shape.centroid[1];
-  for (let i = 0; i < n; i++) {
-    const term = anim.dial[i];
-    const a = 2 * Math.PI * term[0] * t + (term[2] * Math.PI) / 180;
-    penX += term[1] * Math.cos(a);
-    penY += term[1] * Math.sin(a);
-  }
+  // pen: bright dot at the chain tip — the same pass that drew the circles
+  // and links, so the pen can never desync from the comet (whose head is
+  // the sample idx = floor(t·STEPS), at most one sample behind the tip)
   ctx.strokeStyle = pal.pen;
   ctx.lineWidth = 2;
   ctx.beginPath();
-  ctx.arc(sx(penX + anim.extrasSum[0]), sy(penY + anim.extrasSum[1]), 2.2, 0, 2 * Math.PI);
+  ctx.arc(sx(c[2 * n]), sy(c[2 * n + 1]), 2.2, 0, 2 * Math.PI);
   ctx.stroke();
 }
 // ---- routing ----
