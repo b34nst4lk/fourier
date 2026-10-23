@@ -8,6 +8,7 @@ const PUZZLES = {
   p1: {
     title: 'P1 · k dials only',
     dials: 'kkkk',
+    desc: 'turn the four frequency slots — the coarsest lever',
     patches: [
       { k: 3 },
       { k: -5 },
@@ -18,6 +19,7 @@ const PUZZLES = {
   p2: {
     title: 'P2 · phase dials only',
     dials: 'pppp',
+    desc: 'rotate each term\'s contribution',
     patches: [
       { phaseDeg: 0 },
       { phaseDeg: 330 },
@@ -28,6 +30,7 @@ const PUZZLES = {
   p3: {
     title: 'P3 · radius dials only',
     dials: 'rrrr',
+    desc: 'size each term\'s contribution',
     patches: [
       { rPct: 72 },
       { rPct: 8 },
@@ -38,26 +41,44 @@ const PUZZLES = {
   p4: {
     title: 'P4 · one dial each, 4th term fixed',
     dials: 'kprx',
+    desc: 'term 1 k · term 2 phase · term 3 radius · term 4 fixed',
     patches: [{ k: 3 }, { phaseDeg: 210 }, { rPct: 51 }, {}],
+  },
+  p5: {
+    title: 'P5 · one dial each, k on term 2',
+    dials: 'rkpx',
+    desc: 'term 1 radius · term 2 k · term 3 phase · term 4 fixed',
+    patches: [{ rPct: 72 }, { k: -5 }, { phaseDeg: 225 }, {}],
+  },
+  p6: {
+    title: 'P6 · one dial each, k on term 3',
+    dials: 'prkx',
+    desc: 'term 1 phase · term 2 radius · term 3 k · term 4 fixed',
+    patches: [{ phaseDeg: 0 }, { rPct: 8 }, { k: 8 }, {}],
   },
 };
 
 const root = document.getElementById('app');
 
 function home() {
+  const cards = Object.entries(PUZZLES)
+    .map(
+      ([id, pz]) =>
+        `<a class="card" href="#${id}"><b>${pz.title}</b><span>${pz.desc}</span></a>`,
+    )
+    .join('');
   root.innerHTML = `
-    <p class="intro">Four dial experiments against the sketch's star. The puzzle
+    <p class="intro">Dial experiments against the sketch's star. The puzzle
     terms are the star's <em>real</em> top-4 fourier coefficients
     (k = +1, −4, +6, −14; the k=0 centroid is fixed and never shown as a dial).
     Match the dashed target by closing the solid red line.</p>
-    <a class="card" href="#p1"><b>P1 · k dials only</b><span>turn the four frequency slots — the coarsest lever</span></a>
-    <a class="card" href="#p2"><b>P2 · phase dials only</b><span>rotate each term's contribution</span></a>
-    <a class="card" href="#p3"><b>P3 · radius dials only</b><span>size each term's contribution</span></a>
-    <a class="card" href="#p4"><b>P4 · one dial each</b><span>term 1 turns k, term 2 turns phase, term 3 turns radius; term 4 is fixed</span></a>
+    ${cards}
     <p class="note">match = RMS pointwise distance to the traced star, normalized
     like the plan says (target's RMS polar radius) · solved at ≥ 95% · a fully
     solved board tops out at ≈ 97.7% (the 4-term reconstruction never fully
     equals the traced star) · steppers: k ±1, phase ±5°, radius ±2% ·
+    a wrong k on the dominant term shows 0 — the metric gives a wrong frequency
+    no partial credit; the same wrong k on a small term is graded gently ·
     generated from fourier_sketch's star preset, no hand-copied numbers.</p>`;
 }
 

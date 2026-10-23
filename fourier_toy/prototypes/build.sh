@@ -24,10 +24,11 @@ if '</script' in bundle.lower():
     raise SystemExit("build: bundle contains '</script' — cannot inline safely")
 if tpl.count('{{APP_JS}}') != 1:
     raise SystemExit('build: template must hold exactly one {{APP_JS}} placeholder')
-for link in ('#p1', '#p2', '#p3', '#p4'):
-    anchor = 'href="%s"' % link
-    if anchor not in tpl and anchor not in bundle:
-        raise SystemExit('build: missing experiment link %s' % link)
+# links are rendered at runtime from the PUZZLES map — check its ids;
+# the actual card rendering is verified by the jsdom artifact checks
+for i in range(1, 7):
+    if ('p%d' % i) not in bundle:
+        raise SystemExit('build: missing experiment id p%d' % i)
 
 out = tpl.replace('{{APP_JS}}', bundle)
 dist = Path('dist')
