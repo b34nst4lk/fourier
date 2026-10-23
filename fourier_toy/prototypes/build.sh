@@ -26,7 +26,7 @@ if tpl.count('{{APP_JS}}') != 1:
     raise SystemExit('build: template must hold exactly one {{APP_JS}} placeholder')
 # links are rendered at runtime from the PUZZLES map — check its ids;
 # the actual card rendering is verified by the jsdom artifact checks
-for i in range(1, 8):
+for i in range(1, 9):
     if ('p%d' % i) not in bundle:
         raise SystemExit('build: missing experiment id p%d' % i)
 

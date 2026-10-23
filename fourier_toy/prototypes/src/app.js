@@ -63,6 +63,13 @@ const PUZZLES = {
     desc: 'the P6 arrangement on a 6-petal flower — petal modes k±5/±7',
     patches: [{ phaseDeg: 90 }, { rPct: 72 }, { k: 5 }, {}],
   },
+  p8: {
+    title: 'P8 · fish · one dial each, k on term 3',
+    shape: 'fish',
+    dials: 'prkx',
+    desc: 'the P6 arrangement on a fish drawn from its terms — two lobes sharing a waist',
+    patches: [{ phaseDeg: 235 }, { rPct: 72 }, { k: 0 }, {}],
+  },
 };
 
 const root = document.getElementById('app');
@@ -75,19 +82,20 @@ function home() {
     )
     .join('');
   root.innerHTML = `
-    <p class="intro">Dial experiments against two targets: the sketch's star
-    and a 6-petal flower. The puzzle terms are each shape's <em>real</em> top-4
-    fourier coefficients (the k=0 centroid is fixed and never shown as a dial).
-    Match the dashed target by closing the solid red line.</p>
+    <p class="intro">Dial experiments against three targets: the sketch's star,
+    a 6-petal flower, and a fish drawn from its terms. The puzzle terms are each
+    shape's <em>real</em> fourier coefficients (the k=0 centroid is fixed and
+    never shown as a dial). Match the dashed target by closing the solid red
+    line.</p>
     ${cards}
     <p class="note">match = RMS pointwise distance to the target trace, normalized
     by the target's RMS polar radius · solved at ≥ 95% · the star's board tops
     out at ≈ 97.7% (the traced star is not exactly a 4-term curve); the flower
-    is an exact 4-term shape and tops at 100% · steppers: k ±1, phase ±5°,
-    radius ±2% of the shape's biggest true radius · a wrong k on a shape's
-    dominant term shows 0 — no partial credit; the same wrong k on a small
-    term is graded gently · generated from fourier_sketch's pipeline, no
-    hand-copied numbers.</p>`;
+    and the fish are exact 4-term shapes (tops at 100%) · steppers: k ±1,
+    phase ±5°, radius ±2% of the shape's biggest true radius · a wrong k on a
+    shape's dominant term shows 0 — no partial credit; the same wrong k on a
+    small term is graded gently · generated from fourier_sketch's pipeline,
+    no hand-copied numbers.</p>`;
 }
 
 function route() {
