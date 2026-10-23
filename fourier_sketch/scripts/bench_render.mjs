@@ -141,7 +141,7 @@ function verify(label, cond) {
 // canvas_sync/boot calls from the app.
 canvas_in_dom = false;
 ffi.canvas_boot("fourier-canvas"); // el null → boot must schedule a retry
-ffi.canvas_sync(make_terms(64), false, true); // pump: ctx still null → no draw
+ffi.canvas_sync(make_terms(64), true); // pump: ctx still null → no draw
 canvas_in_dom = true; // element appears at patch time
 reset();
 drive(120);
@@ -172,7 +172,7 @@ for (const label of [1, 2]) {
 
 // ---- 2. per-frame ops while PLAYING ---------------------------------------
 const terms64 = make_terms(64);
-ffi.canvas_sync(terms64, false, true);
+ffi.canvas_sync(terms64, true);
 reset();
 let t_js = ms(() => drive(600));
 console.log(
@@ -183,7 +183,7 @@ console.log(
 const playing_ops = { ...ops };
 
 // ---- 3. per-frame ops while PAUSED (the idle-burn check) -------------------
-ffi.canvas_sync(terms64, false, false);
+ffi.canvas_sync(terms64, false);
 reset();
 drive(600);
 console.log(
@@ -192,7 +192,7 @@ console.log(
 );
 
 // ---- 4. per-frame ops in FINAL mode ---------------------------------------
-ffi.canvas_sync(terms64, true, true);
+ffi.canvas_sync(terms64, false);
 reset();
 drive(600);
 console.log(
@@ -239,7 +239,7 @@ Math.sin = (x) => {
 };
 
 function trig_case(label, terms, final, playing) {
-  ffi.canvas_sync(terms, final, playing); // sync costs one rebuild: not part of per-frame count
+  ffi.canvas_sync(terms, playing); // sync costs one rebuild: not part of per-frame count
   cos_n = 0;
   sin_n = 0;
   drive(120);
@@ -253,7 +253,8 @@ function trig_case(label, terms, final, playing) {
 trig_case("playing", make_terms(64), false, true);
 trig_case("playing", make_terms(256), false, true);
 trig_case("paused", make_terms(64), false, false);
-trig_case("final", make_terms(64), true, true);
+// the final frame ≡ the standing state (final is derived as ¬playing)
+trig_case("final", make_terms(64), true, false);
 Math.cos = real_cos;
 Math.sin = real_sin;
 
@@ -284,19 +285,19 @@ verify(
 );
 
 // paused: exactly one repaint on sync, then the loop disengages
-ffi.canvas_sync(terms64, false, false);
+ffi.canvas_sync(terms64, false);
 reset();
 drive(600);
 verify(`paused: 1 draw in 600 frames (was 600)`, ops.clearRect === 1);
 
 // final frame: one repaint on sync, then idle
-ffi.canvas_sync(terms64, true, true);
+ffi.canvas_sync(terms64, false);
 reset();
 drive(600);
 verify(`final: 1 draw in 600 frames (was 600)`, ops.clearRect === 1);
 
 // playing: 30fps gate => ~half the draws of a 60fps budget
-ffi.canvas_sync(terms64, false, true);
+ffi.canvas_sync(terms64, true);
 reset();
 drive(600);
 verify(
@@ -360,7 +361,7 @@ canvas_in_dom = true; // new shape ⇒ ≥3 dots ⇒ canvas REMOUNTS fresh
 gen = 1;
 els.push(mkEl());
 ffi.canvas_boot("fourier-canvas"); // boot+sync, as the app's sync does
-ffi.canvas_sync(make_terms(64), false, true);
+ffi.canvas_sync(make_terms(64), true);
 reset();
 drive(120);
 verify(

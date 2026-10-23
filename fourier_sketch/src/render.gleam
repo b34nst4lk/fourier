@@ -8,15 +8,16 @@
 import gleam/dynamic/decode
 import gleam/int
 import gleam/list
+import gleam/option.{type Option, None, Some}
 import terms.{type Term}
 
 /// Document id of the panel-2 canvas element (view + FFI must agree).
 pub const canvas_id = "fourier-canvas"
 
 /// The circles slider bounds (decision #12).
-const min_circles = 4
+pub const min_circles = 4
 
-const max_circles = 256
+pub const max_circles = 256
 
 /// Slice the amplitude-sorted terms to the top `count` and flatten to plain
 /// tuples for the FFI: each becomes a [k, radius, phase] JS array.
@@ -32,6 +33,14 @@ pub fn build_targets(
 /// Sentinel for the FFI's highlight slot when no term is selected.
 /// k values are bounded by ±N/2 ≤ 256, so this value is unambiguous.
 pub const no_highlight = 999_999
+
+/// Map the app's Option selection into the FFI's int slot.
+fn highlight_slot(selected: Option(Int)) -> Int {
+  case selected {
+    Some(k) -> k
+    None -> no_highlight
+  }
+}
 
 /// Speed slider bounds, as percents of the animation's max speed
 /// (SPEED in the FFI): 100% = the designed pace, 25% = slowest.
@@ -59,21 +68,21 @@ pub fn clamp_circles(n: Int) -> Int {
 fn boot(id: String) -> Nil
 
 /// Push current render state to the FFI animation loop. Cheap — floats only.
+/// Push the render state into the FFI loop. The final-frame flag is
+/// derived in the FFI (final ≡ ¬playing — one boolean owns the mode).
 pub fn sync(
   targets: List(#(Int, Float, Float)),
-  show_final: Bool,
   playing: Bool,
-  highlight_k: Int,
+  selected: Option(Int),
   speed_factor: Float,
 ) -> Nil {
   boot(canvas_id)
-  ffi_sync(targets, show_final, playing, highlight_k, speed_factor)
+  ffi_sync(targets, playing, highlight_slot(selected), speed_factor)
 }
 
 @external(javascript, "./fourier_sketch_ffi.mjs", "canvas_sync")
 fn ffi_sync(
   targets: List(#(Int, Float, Float)),
-  show_final: Bool,
   playing: Bool,
   highlight_k: Int,
   speed_factor: Float,

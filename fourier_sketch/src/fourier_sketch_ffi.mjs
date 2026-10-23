@@ -199,7 +199,7 @@ export function canvas_boot(id) {
   }
 }
 
-export function canvas_sync(terms, final, playing, highlight, speedFactor) {
+export function canvas_sync(terms, playing, highlight, speedFactor) {
   // Lustre hands over a Gleam List of tuples: iterable, but NOT a JS array —
   // no .length, no index access (draw() crashes with a RangeError otherwise,
   // every frame). Normalize once at the boundary; everything below sees plain
@@ -210,12 +210,13 @@ export function canvas_sync(terms, final, playing, highlight, speedFactor) {
   const terms_changed = !terms_equal(anim.terms, rows);
   anim.terms = rows;
   if (terms_changed) rebuild_cache();
-  anim.final = final;
+  // one boolean owns the mode: the final frame is the standing state
   anim.playing = playing;
+  anim.final = !playing;
   anim.highlight = highlight === 999_999 ? null : highlight;
   if (speedFactor != null) anim.speedFactor = speedFactor;
   // final frame should show the complete closed trace immediately
-  if (final) anim.t = 1.0;
+  if (!playing) anim.t = 1.0;
   anim.dirty = true;
   pump();
 }
@@ -311,7 +312,7 @@ function draw() {
 
   // chain centers: one pass, shared by circles, links and the pen tip
   const n = anim.terms.length;
-  const centers = anim.centers || (anim.centers = []);
+  const centers = anim.centers;
   centers.length = n + 1;
   centers[0] = [0, 0];
   let cx = 0;

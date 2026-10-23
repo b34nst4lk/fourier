@@ -78,13 +78,9 @@ fn pair_in(pair: String) -> Result(Dot, Nil) {
 
 fn dot_out(dot: Dot) -> String {
   let #(x, y) = dot
-  int.to_string(clamp_grid({ x *. 100.0 } |> f_round))
+  int.to_string(clamp_grid({ x *. 100.0 } |> float_round))
   <> ","
-  <> int.to_string(clamp_grid({ y *. 100.0 } |> f_round))
-}
-
-fn f_round(f: Float) -> Int {
-  float_round(f)
+  <> int.to_string(clamp_grid({ y *. 100.0 } |> float_round))
 }
 
 @external(erlang, "erlang", "round")

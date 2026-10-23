@@ -1,5 +1,7 @@
 //// The Lustre app: 2x2 grid — sketch (top-left), output (top-right), the
-//// term table (bottom row, full width). Dark-only.
+//// term table (bottom row, full width). Parchment-cartography themes
+//// (light + lamplit dark); the theme toggle lives in the static shell
+//// (index.html owns body[data-theme] — see the FFI palette()).
 ////
 //// Per the TDD policy the views are thin translators: all decisions live in
 //// sketch (state), store (persistence), and later dft/terms. The pointer
@@ -276,20 +278,8 @@ fn drag_commit(
   drag: Option(Int),
 ) -> #(Model, Effect(Msg)) {
   let sk = change(model.sketch)
-  let m =
-    Model(
-      sketch: sk,
-      drag: drag,
-      terms: pipeline(sk),
-      circles: model.circles,
-      speed: model.speed,
-      animate: model.animate,
-      selected: model.selected,
-      share_open: model.share_open,
-      share_copied: model.share_copied,
-      paste: model.paste,
-      paste_bad: model.paste_bad,
-    )
+  // record-update spread: adding a Model field can never break drags
+  let m = Model(..model, sketch: sk, drag: drag, terms: pipeline(sk))
   #(m, effect.batch([autosave(sk), canvas_sync(m)]))
 }
 
@@ -299,12 +289,8 @@ fn canvas_sync(model: Model) -> Effect(Msg) {
   effect.from(fn(_dispatch) {
     render.sync(
       render.build_targets(model.terms, model.circles),
-      bool.negate(model.animate),
       model.animate,
-      case model.selected {
-        Some(k) -> k
-        None -> render.no_highlight
-      },
+      model.selected,
       render.speed_factor(model.speed),
     )
   })
@@ -476,8 +462,8 @@ fn fourier_toolbar(model: Model) -> Element(Msg) {
     html.span([attr.class("slider-label")], [html.text("circles")]),
     html.input([
       attr.type_("range"),
-      attr.attribute("min", "4"),
-      attr.attribute("max", "256"),
+      attr.attribute("min", int.to_string(render.min_circles)),
+      attr.attribute("max", int.to_string(render.max_circles)),
       attr.attribute("step", "1"),
       attr.attribute("value", int.to_string(model.circles)),
       attr.class("circles-slider"),
@@ -489,8 +475,8 @@ fn fourier_toolbar(model: Model) -> Element(Msg) {
     html.span([attr.class("slider-label")], [html.text("speed")]),
     html.input([
       attr.type_("range"),
-      attr.attribute("min", "25"),
-      attr.attribute("max", "100"),
+      attr.attribute("min", int.to_string(render.min_speed_percent)),
+      attr.attribute("max", int.to_string(render.max_speed_percent)),
       attr.attribute("value", int.to_string(model.speed)),
       attr.class("speed-slider"),
       event.on("input", speed_decoder()),
@@ -699,22 +685,20 @@ fn point_str(p: Dot) -> String {
 @external(javascript, "./fourier_sketch_ffi.mjs", "event_value")
 fn event_value(event: decode.Dynamic, otherwise: Float) -> Float
 
-fn circles_decoder() -> decode.Decoder(Msg) {
-  decode.new_primitive_decoder("circles-slider", fn(data) {
+fn range_decoder(name: String, build: fn(Int) -> Msg) -> decode.Decoder(Msg) {
+  decode.new_primitive_decoder(name, fn(data) {
     let v = event_value(data, -1.0)
     case v >=. 0.0 {
-      True -> Ok(SetCircles(float.round(v)))
+      True -> Ok(build(float.round(v)))
       False -> Error(Ignored)
     }
   })
 }
 
+fn circles_decoder() -> decode.Decoder(Msg) {
+  range_decoder("circles-slider", fn(n) { SetCircles(n) })
+}
+
 fn speed_decoder() -> decode.Decoder(Msg) {
-  decode.new_primitive_decoder("speed-slider", fn(data) {
-    let v = event_value(data, -1.0)
-    case v >=. 0.0 {
-      True -> Ok(SetSpeed(float.round(v)))
-      False -> Error(Ignored)
-    }
-  })
+  range_decoder("speed-slider", fn(n) { SetSpeed(n) })
 }

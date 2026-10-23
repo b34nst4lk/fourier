@@ -412,3 +412,22 @@ about page wording now says so honestly. Also: hugo 0.161 ignores the
 legacy googleAnalytics key config — the id must sit in
 config/_default/hugo.toml services; the production-env fragment file did
 not merge.
+
+### Second review pass processed (2026-10-21) — artifact removed, zero parked findings
+
+All 13 findings were verified against the code before acting (the review
+was clean — nothing refuted this time). Applied, in the review's order:
+(1) drag_commit now record-update spreads — adding a Model field can
+never break drags again (the 11-field hand-copy that had grown silently is
+gone); (2) slider bounds derived in the view from render's now-pub consts
+(min/max circles, min/max speed percent) — no more doubled knowledge;
+(3) the FFI interface dropped `final` — final ≡ ¬playing derived in the
+harness-verified boundary (the impossible mixed-flag contract cases
+updated to conform; the pending/paused and final contracts now assert the
+same standing state); (4) the module doc reflects the theme toggle;
+(5) to_csv joins with "\n"; (6) the Option selection now crosses the
+boundary with the sentinel mapping localised in render (no_highlight
+999_999 → the FFI's null); (7) sketch_share's f_round middle-man retired;
+(8) the range decoders share one body via a build fn; (10) Sketch is now a
+pub opaque type — Snapshot is private, module-internal undo shape;
+(11) the dead centers fallback simplified. 9/12/13 kept as designed.

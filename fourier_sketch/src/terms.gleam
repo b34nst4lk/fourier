@@ -88,10 +88,7 @@ pub fn to_csv(rows: List(Term)) -> String {
       <> float.to_string(t.phase)
     }),
   )
-  |> string.join(
-    "
-",
-  )
+  |> string.join("\n")
 }
 
 /// Position of a term with this k in the list; -1 when absent — the same

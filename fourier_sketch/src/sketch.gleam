@@ -20,13 +20,12 @@ pub type Dot =
 
 /// What an undo entry remembers: the dots to restore, plus the redo stack as
 /// it was before the action (so cancel_grab can put it back untouched).
-/// Public because the pub `Sketch` constructor exposes the undo field — only
-/// sketch.gleam constructs one; construction stays module-internal.
-pub type Snapshot {
+/// Module-internal: `Sketch` is opaque, so the undo shape never leaks.
+type Snapshot {
   Snapshot(dots: List(Dot), redo_stack: List(List(Dot)))
 }
 
-pub type Sketch {
+pub opaque type Sketch {
   Sketch(
     dots: List(Dot),
     undo_stack: List(Snapshot),
