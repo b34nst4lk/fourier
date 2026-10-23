@@ -39,6 +39,10 @@ export function boot(root, pz) {
   const R_MAX = 200 * R_UNIT;
   const R_EPS = 1e-9;
   const fmtR = (r) => Math.round(r / R_UNIT) + '%';
+  // fixed higher-harmonic extras (fish): baked into the target AND the
+  // current synthesis, so the target reads like the drawn shape while the
+  // four dials still solve it exactly.
+  const extras = S.extras || [];
 
   const TGT = S.target.split(' ').map((s) => s.split(',').map(Number));
   const TARGET_PATH =
@@ -138,6 +142,12 @@ export function boot(root, pz) {
         x += s.r * Math.cos(a);
         y += s.r * Math.sin(a);
       }
+      for (let j = 0; j < extras.length; j++) {
+        const s = extras[j];
+        const a = 2 * Math.PI * s.k * t + (s.phaseDeg * Math.PI) / 180;
+        x += s.r * Math.cos(a);
+        y += s.r * Math.sin(a);
+      }
       d += (i ? 'L' : 'M') + x.toFixed(2) + ' ' + y.toFixed(2);
     }
     return d + 'Z';
@@ -151,6 +161,12 @@ export function boot(root, pz) {
       let y = S.centroid[1];
       for (let j = 0; j < st.length; j++) {
         const s = st[j];
+        const a = 2 * Math.PI * s.k * t + (s.phaseDeg * Math.PI) / 180;
+        x += s.r * Math.cos(a);
+        y += s.r * Math.sin(a);
+      }
+      for (let j = 0; j < extras.length; j++) {
+        const s = extras[j];
         const a = 2 * Math.PI * s.k * t + (s.phaseDeg * Math.PI) / 180;
         x += s.r * Math.cos(a);
         y += s.r * Math.sin(a);

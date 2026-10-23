@@ -91,11 +91,13 @@ function home() {
     <p class="note">match = RMS pointwise distance to the target trace, normalized
     by the target's RMS polar radius · solved at ≥ 95% · the star's board tops
     out at ≈ 97.7% (the traced star is not exactly a 4-term curve); the flower
-    and the fish are exact 4-term shapes (tops at 100%) · steppers: k ±1,
-    phase ±5°, radius ±2% of the shape's biggest true radius · a wrong k on a
-    shape's dominant term shows 0 — no partial credit; the same wrong k on a
-    small term is graded gently · generated from fourier_sketch's pipeline,
-    no hand-copied numbers.</p>`;
+    is an exact 4-term shape (tops at 100%); the fish's target carries 25
+    fixed higher-harmonic extras (baked into both traces) so it reads like
+    the drawn fish, and its four dials still solve it exactly · steppers: k
+    ±1, phase ±5°, radius ±2% of the shape's biggest dialable radius · a
+    wrong k on a shape's dominant term shows 0 — no partial credit; the same
+    wrong k on a small term is graded gently · generated from
+    fourier_sketch's pipeline, no hand-copied numbers.</p>`;
 }
 
 function route() {
