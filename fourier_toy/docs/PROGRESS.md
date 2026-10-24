@@ -268,3 +268,11 @@ dark 0.12→0.108 / 0.35→0.315) so the epicycle scaffolding recedes
 behind the now-stronger comet. Boot contract grew the alpha-ramp pins
 (tail ≥ 40%, tip ≤ 85%, tail dimmer than tip) — RED first (min 0.071),
 then GREEN — 23/23.
+
+## Epicycles receded further (2026-10-23)
+
+Follow-up to the comet readability pass: circles and links dialed down
+another ~10% (light 0.225→0.2 / 0.495→0.45; dark 0.108→0.095 /
+0.315→0.28) — the scaffolding now sits clearly behind the comet and the
+dashed target. Palette data only; gates unchanged and green (contract
+23/23, smoke 31/31, gleam 14/14).

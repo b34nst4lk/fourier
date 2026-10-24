@@ -51,15 +51,15 @@ const anim = {
 const PALETTES = {
   light: {
     target: "rgba(134, 97, 63, 0.55)",
-    circles: "rgba(70, 53, 31, 0.225)",
-    links: "rgba(70, 53, 31, 0.495)",
+    circles: "rgba(70, 53, 31, 0.2)",
+    links: "rgba(70, 53, 31, 0.45)",
     trace: "#a4372a",
     pen: "#d9a92f",
   },
   dark: {
     target: "rgba(200, 174, 120, 0.55)",
-    circles: "rgba(234, 217, 180, 0.108)",
-    links: "rgba(234, 217, 180, 0.315)",
+    circles: "rgba(234, 217, 180, 0.095)",
+    links: "rgba(234, 217, 180, 0.28)",
     trace: "#d05848",
     pen: "#d9a92f",
   },
