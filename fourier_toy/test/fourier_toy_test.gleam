@@ -192,3 +192,39 @@ pub fn solved_threshold_test() {
 pub fn k_int_to_float_sanity_test() {
   int.to_float(3) |> should.equal(3.0)
 }
+
+// ---------- display contracts: the row small print tells the truth ----------
+
+pub fn locked_note_names_the_locked_fields_test() {
+  let quaver = shapes.quaver()
+  let assert [s0, s1, s2, s3] = quaver.dial
+  let max_r = quaver.dial_max_r
+  // display helpers via the public readouts: pct through the radius readout,
+  // deg through the phase readout — numbers come from the fixture itself
+  let pct = fn(s) { puzzle.slot_value(DialR, s, max_r) }
+  let deg = fn(s) { puzzle.slot_value(DialP, s, max_r) }
+
+  // the phase dial's small print locks r and k — NOT φ (φ is what this dial
+  // changes; the DialP branch once printed r · φ)
+  let phase_note = puzzle.locked_note(DialP, s0, max_r)
+  phase_note
+  |> should.equal("locked: r " <> pct(s0) <> " · k " <> puzzle.fmt_k(s0.k))
+
+  let radius_note = puzzle.locked_note(DialR, s1, max_r)
+  radius_note
+  |> should.equal("locked: k " <> puzzle.fmt_k(s1.k) <> " · φ " <> deg(s1))
+
+  let k_note = puzzle.locked_note(DialK, s2, max_r)
+  k_note |> should.equal("locked: r " <> pct(s2) <> " · φ " <> deg(s2))
+
+  let fixed_note = puzzle.locked_note(puzzle.DialFixed, s3, max_r)
+  fixed_note
+  |> should.equal(
+    "fixed, correct: k "
+    <> puzzle.fmt_k(s3.k)
+    <> " · r "
+    <> pct(s3)
+    <> " · φ "
+    <> deg(s3),
+  )
+}

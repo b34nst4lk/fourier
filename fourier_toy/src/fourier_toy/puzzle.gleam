@@ -212,7 +212,7 @@ pub fn slot_value(kind: DialKind, s: TermState, max_r: Float) -> String {
 /// What the row's small print says about this slot's locked terms.
 pub fn locked_note(kind: DialKind, s: TermState, max_r: Float) -> String {
   case kind {
-    DialP -> "locked: r " <> pct(s.r, max_r) <> " · φ " <> deg(s.phase_deg)
+    DialP -> "locked: r " <> pct(s.r, max_r) <> " · k " <> fmt_k(s.k)
     DialR -> "locked: k " <> fmt_k(s.k) <> " · φ " <> deg(s.phase_deg)
     DialK -> "locked: r " <> pct(s.r, max_r) <> " · φ " <> deg(s.phase_deg)
     DialFixed ->

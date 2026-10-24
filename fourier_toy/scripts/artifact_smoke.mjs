@@ -226,6 +226,21 @@ tick(34, 5); // draw frames
   check("title is the single puzzle (quaver)", text(dom.window.document.querySelector("h2.pt")) === "quaver", text(dom.window.document.querySelector("h2.pt")));
   check("no routing chrome: no home cards, no back link", dom.window.document.querySelector("a.card") === null && dom.window.document.querySelector("a.back") === null);
   check("fixed slot 4 hidden (3 rows)", rows(dom).length === 3, "rows " + rows(dom).length);
+  {
+    // term 1 is the phase dial: its small print must lock r and k — not φ
+    const s0 = Array.from(shape.dial)[0];
+    const expectedSub =
+      "locked: r " +
+      puzzle.slot_value(Array.from(setup.dials)[1], s0, shape.dial_max_r) +
+      " · k " +
+      puzzle.fmt_k(s0.k);
+    const sub1 = text(rows(dom)[0].querySelector(".sub"));
+    check(
+      "term 1's small print locks r and k (not φ — φ is the dial)",
+      sub1 === expectedSub && !sub1.includes("φ"),
+      sub1 + " vs " + expectedSub,
+    );
+  }
   const themeBtn = dom.window.document.querySelector("button.theme");
   check(
     "bar: unboxed score (b), compact icon chip",

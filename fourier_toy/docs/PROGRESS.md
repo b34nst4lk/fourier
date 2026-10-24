@@ -300,3 +300,15 @@ reachable radius step (the quaver's 2%-grid radius cannot hit truth
 exactly — the score is asserted against the core for the actual stepped
 state, badge at ≥95%), reset, theme, hold-to-repeat (hold/swallow/tap).
 Gates: gleam 14/14, format, boot contract 23/23, artifact smoke 24/24.
+
+## Typo fix — term 1's small print named the wrong locked fields (2026-10-23)
+
+User report, confirmed: the phase dial's sub read "locked: r 100% · φ 265°"
+— listing φ, which is exactly what that dial CHANGES. The locked pair on
+the phase dial is r and k. The DialP branch of locked_note printed
+r · φ (copy of the DialK branch); DialR and DialK were correct. Fix:
+DialP now prints r · k. Caught by a new gold test (fixture-derived
+expectations via the public readout helpers — hand-typed expected strings
+for the other branches were first drafted from memory and wrong, so the
+test derives every number from the fixture) plus an artifact-smoke pin on
+the rendered sub. Gates: gleam 15/15, format, contract 23/23, smoke 25/25.
