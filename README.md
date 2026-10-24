@@ -8,7 +8,7 @@ arc-length resampler, amplitude-sorted term tables) and one design language
 | toy | what it is | live |
 |-----|------------|------|
 | `fourier_sketch` | draw dots → Fourier epicycles redraw your shape, term table explains it | https://jacks.im/toys/fourier-sketch |
-| `fourier_toy` | tuning puzzle: adjust term radii/phases to match a target shape | in progress |
+| `fourier_toy` | the quaver puzzle: tune phase/radius/k steppers until the comet closes on the dashed eighth note | https://jacks.im/toys/fourier-toy |
 
 ## Layout & history
 
@@ -16,8 +16,8 @@ Both toys sit in this repo as subtree imports (full per-project histories
 preserved, connected by the import commits):
 
     fourier_sketch/   shipped toy — phases 0–7 complete (docs/PLAN.md, docs/PROGRESS.md)
-    fourier_toy/      sibling puzzle — scaffold + plan-of-record draft
-    .github/          single CI workflow: test matrix over both projects
+    fourier_toy/     shipped toy — final v2: single quaver puzzle (docs/PLAN.md §9, docs/PROGRESS.md)
+    .github/         single CI workflow: test matrix over both projects
 
 ## Build & test
 
