@@ -33,16 +33,17 @@ body {
   background: var(--paper);
 }
 .bar { display: flex; justify-content: space-between; align-items: center; margin: 0 0 6px; }
-/* corner-chip toggle, icon-only: inline SVG inked via currentColor */
-.theme {
+.tools { display: flex; gap: 6px; align-items: center; }
+/* icon chips: compact square buttons, inline stroke SVGs inked via currentColor */
+.chip {
   width: auto;
   display: inline-flex; align-items: center; justify-content: center;
   padding: 5px;
   border: 1.5px solid var(--line); border-radius: 6px;
   background: var(--card); color: var(--ink); cursor: pointer;
 }
-.theme .icon { display: block; width: 16px; height: 16px; }
-.theme .icon path, .theme .icon circle, .theme .icon line {
+.chip .icon { display: block; width: 16px; height: 16px; }
+.chip .icon path, .chip .icon circle, .chip .icon line, .chip .icon polyline {
   stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round;
 }
 .pt { margin: 0 0 8px; font-size: 1rem; }
@@ -93,7 +94,6 @@ button:disabled { opacity: .35; cursor: default; }
   border: 1.5px solid var(--line); border-radius: 10px;
   background: var(--card);
 }
-.reset { width: 100%; padding: 10px; font-size: 1rem; }
 </style>
 </head>
 <body data-theme="light">

@@ -147,10 +147,6 @@ fn board_view(state: List(TermState), m: Float, dark: Bool) -> Element(Msg) {
           dial_row(kind, i, s)
         }),
     ),
-    html.button(
-      [attribute.class("reset"), event.on("click", decode.success(Reset))],
-      [html.text("reset to start")],
-    ),
   ])
 }
 
@@ -169,25 +165,37 @@ fn bar(m: Float, dark: Bool) -> Element(Msg) {
         html.span([attribute.class("ok")], [html.text("solved ✓")]),
       ],
     ),
-    // corner-chip toggle, icon-only: moon when light, sun when dark
-    // (ink-colored inline SVG — no glyph that a platform can emoji-ize);
-    // aria-label keeps the button's meaning for screen readers
-    html.button(
-      [
-        attribute.class("theme"),
-        attribute.aria_label(case dark {
-          True -> "light mode"
-          False -> "dark mode"
-        }),
-        event.on("click", decode.success(ToggleTheme)),
-      ],
-      [
-        case dark {
-          True -> sun_icon()
-          False -> moon_icon()
-        },
-      ],
-    ),
+    html.div([attribute.class("tools")], [
+      // reset chip: the standard counterclockwise icon, icon-only (the
+      // aria-label keeps its meaning for screen readers)
+      html.button(
+        [
+          attribute.classes([#("chip", True), #("reset", True)]),
+          attribute.aria_label("reset to start"),
+          event.on("click", decode.success(Reset)),
+        ],
+        [reset_icon()],
+      ),
+      // corner-chip toggle, icon-only: moon when light, sun when dark
+      // (ink-colored inline SVG — no glyph that a platform can emoji-ize);
+      // aria-label keeps the button's meaning for screen readers
+      html.button(
+        [
+          attribute.classes([#("chip", True), #("theme", True)]),
+          attribute.aria_label(case dark {
+            True -> "light mode"
+            False -> "dark mode"
+          }),
+          event.on("click", decode.success(ToggleTheme)),
+        ],
+        [
+          case dark {
+            True -> sun_icon()
+            False -> moon_icon()
+          },
+        ],
+      ),
+    ]),
   ])
 }
 
@@ -254,7 +262,20 @@ fn keep(el: Element(Msg)) -> Element(Msg) {
   el
 }
 
-// ---- theme icons (stroke geometry, 24×24 viewBox, inked via CSS) ----
+// ---- icon chips (stroke geometry, 24×24 viewBox, inked via CSS) ----
+
+/// The standard counterclockwise reset arrow (feather's rotate-ccw).
+fn reset_icon() -> Element(Msg) {
+  svg.svg(
+    [attribute.class("icon"), attribute.attribute("viewBox", "0 0 24 24")],
+    [
+      svg.polyline([attribute.attribute("points", "1 4 1 10 7 10")]),
+      svg.path([
+        attribute.attribute("d", "M3.51 15a9 9 0 1 0 2.13-9.36L1 10"),
+      ]),
+    ],
+  )
+}
 
 fn moon_icon() -> Element(Msg) {
   svg.svg(

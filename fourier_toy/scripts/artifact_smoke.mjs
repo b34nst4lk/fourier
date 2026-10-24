@@ -263,12 +263,17 @@ tick(34, 5); // draw frames
     );
   }
   const themeBtn = dom.window.document.querySelector("button.theme");
+  const resetBtn = dom.window.document.querySelector("button.reset");
   check(
-    "bar: unboxed score (b), compact icon chip",
+    "bar: unboxed score (b), icon chips — reset (↺, aria) + theme",
     dom.window.document.querySelector(".score b") !== null &&
       themeBtn.getAttribute("aria-label") === "dark mode" &&
-      themeBtn.querySelector("svg.icon") !== null,
-    "aria: " + themeBtn.getAttribute("aria-label"),
+      themeBtn.querySelector("svg.icon") !== null &&
+      resetBtn !== null &&
+      resetBtn.getAttribute("aria-label") === "reset to start" &&
+      resetBtn.querySelector("svg.icon") !== null,
+    "reset: " + (resetBtn ? resetBtn.getAttribute("aria-label") : "missing") +
+      ", theme aria: " + themeBtn.getAttribute("aria-label"),
   );
 }
 

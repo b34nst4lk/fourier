@@ -341,3 +341,14 @@ targets. (touch-action: manipulation already covered double-tap zoom;
 Android's contextmenu long-press was already prevented in the hold
 driver.) Smoke's shipped-CSS contract pins all three properties — RED
 30/31, then GREEN 31/31.
+
+## Reset: small icon chip in the bar (2026-10-23)
+
+The full-width "reset to start" text button is gone; reset is now a
+compact chip in the bar's tools group beside the theme chip — the
+standard counterclockwise arrow (feather's rotate-ccw, inline stroke SVG,
+currentColor). The chip styling is shared: .chip replaces the
+theme-specific rules, icon stroke scoping includes polyline. Icon-only
+buttons keep their meaning via aria-label ("reset to start"). The board
+gains the reset button's former vertical space. Smoke pins the bar as
+score + reset chip + theme chip (RED 30/31 → GREEN 31/31).
