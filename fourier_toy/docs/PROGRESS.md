@@ -393,3 +393,26 @@ pins the pre-solve reset zeroing. Two self-catches en route: my first
 Reset change preserved the counter unconditionally (the pre-solve S2
 check caught it — reset-before-solve must zero), and the hold check's
 n=(v0−v1)/5 broke across the wrap. RED 37/46 → GREEN 46/46.
+
+## Review pass — dead code applied, fixture memoized (2026-10-24)
+
+The repo-wide review handoff (fourier_sketch/docs/DEAD_CODE_HANDOFF.md)
+was verified item-by-item against the code, then the toy-side findings
+were applied. Visibility: `setups`/`find` and `round6`/`norm_deg`/`snap5`
+dropped to private — with one correction to the doc (it missed that the
+boot contract consumed `puzzle.find` via compiled JS; the contract now
+uses the public `quaver_setup()`, and `find` is confirmed absent from the
+compiled ESM surface). Redundancies: `shapes.ints` → `util.indices`;
+`mod360` deduplicated (one definition in shapes, puzzle imports it;
+`shapes.solved_at` made pub so update can gate without recomputing the
+metric). Perf (C1+C2): the immutable quaver fixture (512-pt synth) is
+memoized in the Model — built ONCE at boot instead of up to 6× per step
+(worse than the doc's 2×: dial_row/at_max also called the wrappers); the
+metric is computed ONCE per step in update and read by the view (was
+2×). C3: new `scripts/bench_puzzle.mjs` proves it — measured 3.96×
+cheaper per step (legacy 1.81ms vs 0.458ms), budgets pinned (boot ≤5ms,
+metric ≤2ms, ratio ≥1.5×). The Plan §10 parked Reset record-copy finding
+is resolved by the rewrite's record-update spread. PARKED (cross-repo,
+out of toy scope): B3/B5 fourier_core extraction, C4 sketch-side sync
+dedupe, C5/C6 accepted debt. Gates: gleam 15/15, format, contract 23/23,
+smoke 46/46, bench green.

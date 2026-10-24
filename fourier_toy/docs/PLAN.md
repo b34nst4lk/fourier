@@ -162,3 +162,12 @@ The prototype round is folded into the product. Decisions, with rationale:
   manifest (branch pin `prototype` until merged to main).
 - Phase table: phases 2–4 of the original v1 plan are superseded by the
   shipped v2 above; §7 shelf items remain parked.
+
+## 10. Parked review findings (tracked)
+
+From the repo-wide code review; parked here so they can't leak. Each
+is a judgement call or a future opportunity, not a defect.
+
+| Finding | Status | Detail |
+|---------|--------|--------|
+| `Reset` handler constructs `Model(...)` twice, sharing 3 fields (`state`, `model.dark`, `push_terms(state)`) and differing only in `moves` | resolved (2026-10-24) | Collapsed during the memoized-Model rewrite (C1/C2 of DEAD_CODE_HANDOFF.md): the handler now uses record-update spread (`Model(..model, state: …, match: …, moves: moves, solved_once: …)` with one `let` for the solved_once branch) — no field copying. |

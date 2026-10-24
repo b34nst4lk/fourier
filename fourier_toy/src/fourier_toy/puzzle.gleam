@@ -7,7 +7,7 @@
 //// Dials: k ±1 clamped to ±16; phase ±5° wrapping 0..360; radius ±2% of the
 //// shape's biggest dialable radius, clamped to 0..200%.
 
-import fourier_toy/shapes.{type Shape, type TermState}
+import fourier_toy/shapes.{type Shape, type TermState, mod360}
 import gleam/float
 import gleam/int
 import gleam/list
@@ -54,14 +54,6 @@ pub fn phase_step(s: TermState, dir: Int) -> TermState {
   shapes.TermState(s.k, s.r, mod360(s.phase_deg +. int.to_float(dir * 5)))
 }
 
-fn mod360(x: Float) -> Float {
-  case x <. 0.0, x >=. 360.0 {
-    True, _ -> mod360(x +. 360.0)
-    False, True -> mod360(x -. 360.0)
-    False, False -> x
-  }
-}
-
 pub fn radius_step(s: TermState, dir: Int, max_r: Float) -> TermState {
   let unit = 0.02 *. max_r
   let r = s.r +. int.to_float(dir) *. unit
@@ -106,8 +98,10 @@ pub fn initial(shape: Shape, patches: List(Patch)) -> List(TermState) {
 }
 
 // ---------- experiment configs (P6..P10, ported from the JS prototype) ----------
+// The roster stays private: it is the data table behind quaver_setup(),
+// not product API — the shipped toy exposes exactly one puzzle.
 
-pub fn setups() -> List(Setup) {
+fn setups() -> List(Setup) {
   [
     Setup(
       "p6",
@@ -152,7 +146,7 @@ pub fn setups() -> List(Setup) {
   ]
 }
 
-pub fn find(id: String) -> Result(Setup, Nil) {
+fn find(id: String) -> Result(Setup, Nil) {
   list.fold(setups(), Error(Nil), fn(acc, setup) {
     case acc {
       Ok(_) -> acc
@@ -165,8 +159,7 @@ pub fn find(id: String) -> Result(Setup, Nil) {
   })
 }
 
-/// The one shipped puzzle — the final v2 interface is single-puzzle (the
-/// experiment roster stays in setups() for the gold tests).
+/// The one shipped puzzle — the final v2 interface is single-puzzle.
 pub fn quaver_setup() -> Setup {
   let assert Ok(setup) = find("p9")
   setup

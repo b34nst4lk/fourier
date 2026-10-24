@@ -25,7 +25,18 @@ type Msg {
 }
 
 type Model {
-  Model(state: List(TermState), dark: Bool, moves: Int, solved_once: Bool)
+  // the immutable fixture data is memoized once at init (a 512-point
+  // synth_trace + the term table); the live match is computed once per step
+  // and read by the view — never rebuilt per render
+  Model(
+    setup: Setup,
+    shape: shapes.Shape,
+    state: List(TermState),
+    dark: Bool,
+    moves: Int,
+    solved_once: Bool,
+    match: Float,
+  )
 }
 
 pub fn main() -> Nil {
@@ -34,24 +45,26 @@ pub fn main() -> Nil {
   Nil
 }
 
-fn setup() -> Setup {
-  puzzle.quaver_setup()
-}
-
-fn shape() {
-  puzzle.shape_of(setup().shape)
-}
-
 fn init(_: Nil) -> #(Model, Effect(Msg)) {
   // stored choice (or system preference) decides the boot theme
   let dark = case ffi.theme_load() {
     "dark" -> True
     _ -> False
   }
-  let state = puzzle.initial(shape(), setup().patches)
+  let setup = puzzle.quaver_setup()
+  let shape = puzzle.shape_of(setup.shape)
+  let state = puzzle.initial(shape, setup.patches)
   #(
-    Model(state, dark, 0, False),
-    effect.batch([hold_driver(), sync_effect(state), theme_apply(dark)]),
+    Model(
+      setup: setup,
+      shape: shape,
+      state: state,
+      dark: dark,
+      moves: 0,
+      solved_once: False,
+      match: shapes.match_pct(shape, state),
+    ),
+    effect.batch([hold_driver(), sync_effect(shape, state), theme_apply(dark)]),
   )
 }
 
@@ -72,9 +85,9 @@ fn hold_driver() -> Effect(Msg) {
 
 /// Push the canvas everything it needs: the (constant) quaver shape plus
 /// the current dial terms.
-fn sync_effect(state: List(TermState)) -> Effect(Msg) {
+fn sync_effect(shape: shapes.Shape, state: List(TermState)) -> Effect(Msg) {
   effect.from(fn(_dispatch) {
-    ffi.canvas_shape(shape())
+    ffi.canvas_shape(shape)
     ffi.canvas_terms(state)
   })
 }
@@ -86,34 +99,54 @@ fn push_terms(state: List(TermState)) -> Effect(Msg) {
 fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
   case msg {
     SlotStep(slot, dir) -> {
-      let kind = kind_at(setup().dials, slot)
+      let kind = kind_at(model.setup.dials, slot)
       let stepped =
         list.index_map(model.state, fn(s, i) {
           case i == slot {
-            True -> puzzle.step(kind, s, dir, shape().dial_max_r)
+            True -> puzzle.step(kind, s, dir, model.shape.dial_max_r)
             False -> s
           }
         })
+      // the metric is computed ONCE per step: the solved_once gate and
+      // the view's score both read this result (was two 512-sample passes)
+      let match = shapes.match_pct(model.shape, stepped)
       // the counter freezes at the FIRST solve: steps after that don't
       // count — the number you solved in is the number you keep
       let #(moves, solved_once) = case model.solved_once {
         True -> #(model.moves, True)
-        False -> #(model.moves + 1, shapes.solved(shape(), stepped))
+        False -> #(model.moves + 1, match >=. shapes.solved_at)
       }
-      #(Model(stepped, model.dark, moves, solved_once), push_terms(stepped))
+      #(
+        Model(
+          ..model,
+          state: stepped,
+          match: match,
+          moves: moves,
+          solved_once: solved_once,
+        ),
+        push_terms(stepped),
+      )
     }
     Reset -> {
-      let state = puzzle.initial(shape(), setup().patches)
-      // before any solve, reset starts a fresh attempt (counter zero);
-      // after a solve, the record survives — the number you solved in is
-      // the number you keep, reset or not
-      case model.solved_once {
-        True -> #(
-          Model(state, model.dark, model.moves, True),
-          push_terms(state),
-        )
-        False -> #(Model(state, model.dark, 0, False), push_terms(state))
+      // the dials go back to start — and before any solve the counter
+      // zeroes; after a solve the record survives: the number you solved
+      // in is the number you keep, reset or not
+      let state = puzzle.initial(model.shape, model.setup.patches)
+      let match = shapes.match_pct(model.shape, state)
+      let #(moves, solved_once) = case model.solved_once {
+        True -> #(model.moves, True)
+        False -> #(0, False)
       }
+      #(
+        Model(
+          ..model,
+          state: state,
+          match: match,
+          moves: moves,
+          solved_once: solved_once,
+        ),
+        push_terms(state),
+      )
     }
     ToggleTheme -> {
       let dark = case model.dark {
@@ -121,7 +154,7 @@ fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
         False -> True
       }
       #(
-        Model(model.state, dark, model.moves, model.solved_once),
+        Model(..model, dark: dark),
         effect.from(fn(_dispatch) {
           ffi.canvas_theme(dark)
           ffi.set_dark(dark)
@@ -143,28 +176,22 @@ fn kind_at(dials: List(puzzle.DialKind), slot: Int) -> puzzle.DialKind {
 // ---------- view ----------
 
 fn view(model: Model) -> Element(Msg) {
-  let m = shapes.match_pct(shape(), model.state)
-  board_view(model.state, m, model.moves, model.dark)
+  board_view(model)
 }
 
-fn board_view(
-  state: List(TermState),
-  m: Float,
-  moves: Int,
-  dark: Bool,
-) -> Element(Msg) {
+fn board_view(model: Model) -> Element(Msg) {
   html.div([], [
-    bar(m, moves, dark),
-    html.h2([attribute.class("pt")], [html.text(setup().title)]),
+    bar(model.match, model.moves, model.dark),
+    html.h2([attribute.class("pt")], [html.text(model.setup.title)]),
     html.canvas([attribute.class("board"), attribute.id("toy-board")]),
     html.div(
       [attribute.class("rows")],
-      list.index_map(setup().dials, fn(kind, i) { #(i, kind) })
+      list.index_map(model.setup.dials, fn(kind, i) { #(i, kind) })
         |> list.filter(fn(pair) { pair.1 != puzzle.DialFixed })
         |> list.map(fn(pair) {
           let #(i, kind) = pair
-          let assert [s, ..] = list.drop(state, i)
-          dial_row(kind, i, s)
+          let assert [s, ..] = list.drop(model.state, i)
+          dial_row(kind, i, s, model.shape.dial_max_r)
         }),
     ),
   ])
@@ -176,7 +203,7 @@ fn bar(m: Float, moves: Int, dark: Bool) -> Element(Msg) {
       [
         attribute.classes([
           #("score", True),
-          #("solved", m >=. 95.0),
+          #("solved", m >=. shapes.solved_at),
         ]),
       ],
       [
@@ -222,14 +249,19 @@ fn bar(m: Float, moves: Int, dark: Bool) -> Element(Msg) {
   ])
 }
 
-fn dial_row(kind: puzzle.DialKind, i: Int, s: TermState) -> Element(Msg) {
+fn dial_row(
+  kind: puzzle.DialKind,
+  i: Int,
+  s: TermState,
+  max_r: Float,
+) -> Element(Msg) {
   let head = [
     html.div([attribute.class("id")], [
       html.span([attribute.class("term")], [
         html.text("term " <> int.to_string(i + 1)),
       ]),
       html.span([attribute.class("sub")], [
-        html.text(puzzle.locked_note(kind, s, shape().dial_max_r)),
+        html.text(puzzle.locked_note(kind, s, max_r)),
       ]),
     ]),
   ]
@@ -240,9 +272,9 @@ fn dial_row(kind: puzzle.DialKind, i: Int, s: TermState) -> Element(Msg) {
     _ -> [
       edge_button(i, -1, at_min(kind, s)),
       html.div([attribute.class("val")], [
-        html.text(puzzle.slot_value(kind, s, shape().dial_max_r)),
+        html.text(puzzle.slot_value(kind, s, max_r)),
       ]),
-      edge_button(i, 1, at_max(kind, s)),
+      edge_button(i, 1, at_max(kind, s, max_r)),
     ]
   }
   html.div([attribute.class("row")], list.append(head, body))
@@ -257,10 +289,10 @@ fn at_min(kind: puzzle.DialKind, s: TermState) -> Bool {
   }
 }
 
-fn at_max(kind: puzzle.DialKind, s: TermState) -> Bool {
+fn at_max(kind: puzzle.DialKind, s: TermState, max_r: Float) -> Bool {
   case kind {
     puzzle.DialK -> s.k >= 16
-    puzzle.DialR -> s.r >=. 2.0 *. shape().dial_max_r
+    puzzle.DialR -> s.r >=. 2.0 *. max_r
     _ -> False
   }
 }

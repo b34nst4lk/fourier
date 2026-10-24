@@ -28,11 +28,11 @@ import gleam/order
 import resample
 import sketch
 import terms.{type Term}
-import util.{pi}
+import util.{indices, pi}
 
 const n_samples = 512
 
-const solved_at = 95.0
+pub const solved_at = 95.0
 
 pub type Shape {
   Shape(
@@ -56,11 +56,11 @@ pub type TermState {
 
 /// Round to 6 decimals — precision parity with the archived JS fixtures
 /// (the JS generator applied Number(toFixed(6)) to DFT-derived values).
-pub fn round6(x: Float) -> Float {
+fn round6(x: Float) -> Float {
   int.to_float(float.round(x *. 1_000_000.0)) /. 1_000_000.0
 }
 
-pub fn norm_deg(rad: Float) -> Float {
+fn norm_deg(rad: Float) -> Float {
   let deg = rad /. pi *. 180.0
   case deg <. 0.0 {
     True -> deg +. 360.0
@@ -69,12 +69,13 @@ pub fn norm_deg(rad: Float) -> Float {
 }
 
 /// Snap degrees to the 5° dial grid (0..360).
-pub fn snap5(deg: Float) -> Float {
+fn snap5(deg: Float) -> Float {
   let snapped = int.to_float(float.round(deg /. 5.0)) *. 5.0
   mod360(snapped)
 }
 
-fn mod360(x: Float) -> Float {
+/// The shared wrap for degree arithmetic — puzzle.phase_step imports it.
+pub fn mod360(x: Float) -> Float {
   case x <. 0.0, x >=. 360.0 {
     True, _ -> mod360(x +. 360.0)
     False, True -> mod360(x -. 360.0)
@@ -113,13 +114,9 @@ pub fn synth_trace(
   centroid: #(Float, Float),
   terms: List(TermState),
 ) -> List(#(Float, Float)) {
-  list.map(ints(n_samples), fn(i) {
+  list.map(indices(n_samples), fn(i) {
     position_at(centroid, terms, int.to_float(i) /. int.to_float(n_samples))
   })
-}
-
-fn ints(n: Int) -> List(Int) {
-  list.repeat(Nil, n) |> list.index_map(fn(_, i) { i })
 }
 
 /// RMS pointwise distance between two equal-length traces.
@@ -191,7 +188,7 @@ pub fn star() -> Shape {
 pub fn flower() -> Shape {
   let f = 26.0
   let samples =
-    ints(n_samples)
+    indices(n_samples)
     |> list.map(fn(i) {
       let t = int.to_float(i) /. int.to_float(n_samples) *. 2.0 *. pi
       let r =

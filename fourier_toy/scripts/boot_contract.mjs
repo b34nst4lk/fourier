@@ -144,12 +144,9 @@ function check(name, ok, detail = "") {
   }
 }
 
-function setup_of(id) {
-  const r = puzzle.find(id);
-  const s = r && r[0]; // Ok's payload sits at index 0 (Error → undefined)
-  if (!s || !s.patches || !s.dials) throw new Error("no setup " + id);
-  return s;
-}
+// the app is single-puzzle: scenarios drive THE shipped puzzle (quaver) via
+// the public accessor. setups/find are private — not contract surface.
+const setup_of = () => puzzle.quaver_setup();
 
 // The exact pushes ffi.gleam makes for a Board page: canvas_shape(shape),
 // then canvas_terms(state). The Gleam side pre-maps BOTH TermState lists to
@@ -174,7 +171,7 @@ const DPR = 2;
 
 console.log("S1 · cold load onto a board — sync arrives BEFORE the canvas mounts");
 {
-  const setup = setup_of("p6"); // star: DialP, DialR, DialK, DialFixed
+  const setup = setup_of(); // quaver: DialP, DialR, DialK, DialFixed
   registry = null; // Lustre has not rendered yet
   const { shape, state } = sync_board(setup);
   check("nothing scheduled pre-mount except the boot retry", raf_q.length === 1, "pending raf: " + raf_q.length);
@@ -203,7 +200,7 @@ console.log("S1 · cold load onto a board — sync arrives BEFORE the canvas mou
 
 console.log("S2 · dial sync while booted — repaints on the live element");
 {
-  const setup = setup_of("p6");
+  const setup = setup_of();
   const shape = puzzle.shape_of(setup.shape);
   const rows = step_state(shape, setup, puzzle.initial(shape, setup.patches), 0, -1); // phase −5°
   const before = registry.getContext().ops.arc;
@@ -217,13 +214,13 @@ console.log("S2 · dial sync while booted — repaints on the live element");
 console.log("S3 · board→board — element replaced between syncs rebinds on the next sync");
 {
   const old_el = registry;
-  const setup_flower = setup_of("p7");
-  sync_board(setup_flower); // sync runs pre-render: old element still mounted
+  const setup_next = setup_of();
+  sync_board(setup_next); // sync runs pre-render: old element still mounted
   registry = make_el(); // the render REPLACED the canvas element
   const new_el = registry;
   // the next sync (any dial press) must bind the new element
-  const shape = puzzle.shape_of(setup_flower.shape);
-  const rows = step_state(shape, setup_flower, puzzle.initial(shape, setup_flower.patches), 0, 1);
+  const shape = puzzle.shape_of(setup_next.shape);
+  const rows = step_state(shape, setup_next, puzzle.initial(shape, setup_next.patches), 0, 1);
   ffi.canvas_terms(rows.map((s) => [s.k, s.r, s.phase_deg]));
   for (let i = 0; i < 3; i++) tick(34);
   check(
@@ -245,7 +242,7 @@ console.log("S4 · home→board — payload stashed while unmounted survives to 
 {
   registry = null; // home view rendered: no canvas
   for (let i = 0; i < 3; i++) tick(34); // the loop idles (nothing to assert yet)
-  const setup = setup_of("p9"); // quaver
+  const setup = setup_of(); // quaver
   sync_board(setup); // hashchange sync runs pre-render: no canvas in the DOM
   // the live frame loop (drawing the previous, detached board) already holds
   // one pending raf; the retry must add exactly one more, once — never stack
@@ -273,7 +270,7 @@ console.log("S5 · headless — no 2D context: app upright, no crash");
   registry = make_el(true); // getContext returns null (jsdom w/o canvas pkg)
   let threw = null;
   try {
-    const setup = setup_of("p6");
+    const setup = setup_of();
     sync_board(setup);
     for (let i = 0; i < 3; i++) tick(34);
   } catch (err) {
@@ -285,7 +282,7 @@ console.log("S5 · headless — no 2D context: app upright, no crash");
 console.log("S6 · quaver at truth — DPR transform, pen/comet lockstep, comet ≡ target");
 {
   registry = make_el(); // rebind path (previous element was headless)
-  const setup = setup_of("p9"); // quaver: 4 dial terms + 25 rotating extras
+  const setup = setup_of(); // quaver: 4 dial terms + 25 rotating extras
   const shape = puzzle.shape_of(setup.shape);
   const extras = Array.from(shape.extras, (t) => [t.k, t.r, t.phase_deg]);
   ffi.canvas_shape(shape.centroid, shape.target, extras);
