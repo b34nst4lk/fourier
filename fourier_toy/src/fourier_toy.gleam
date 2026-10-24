@@ -18,6 +18,7 @@ import lustre/attribute
 import lustre/effect.{type Effect}
 import lustre/element.{type Element}
 import lustre/element/html
+import lustre/element/svg
 import lustre/event
 
 type Msg {
@@ -191,15 +192,23 @@ fn bar(dark: Bool, m: Float) -> Element(Msg) {
         html.span([attribute.class("ok")], [html.text("solved ✓")]),
       ],
     ),
-    // sibling's corner-chip convention: a small-caps word, never a wide
-    // button — the bar keeps the original prototype's back + score layout
+    // corner-chip toggle, icon-only: moon when light, sun when dark
+    // (ink-colored inline SVG — no glyph that a platform can emoji-ize);
+    // aria-label keeps the button's meaning for screen readers
     html.button(
-      [attribute.class("theme"), event.on("click", decode.success(ToggleTheme))],
       [
-        html.text(case dark {
-          True -> "day"
-          False -> "night"
+        attribute.class("theme"),
+        attribute.aria_label(case dark {
+          True -> "light mode"
+          False -> "dark mode"
         }),
+        event.on("click", decode.success(ToggleTheme)),
+      ],
+      [
+        case dark {
+          True -> sun_icon()
+          False -> moon_icon()
+        },
       ],
     ),
   ])
@@ -301,4 +310,49 @@ fn edge_button(i: Int, dir: Int, disabled_flag: Bool) -> Element(Msg) {
 
 fn keep(el: Element(Msg)) -> Element(Msg) {
   el
+}
+
+// ---- theme icons (stroke geometry, 24×24 viewBox, inked via CSS) ----
+
+fn moon_icon() -> Element(Msg) {
+  svg.svg(
+    [attribute.class("icon"), attribute.attribute("viewBox", "0 0 24 24")],
+    [
+      svg.path([
+        attribute.attribute(
+          "d",
+          "M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z",
+        ),
+      ]),
+    ],
+  )
+}
+
+fn sun_icon() -> Element(Msg) {
+  let ray = fn(x1: String, y1: String, x2: String, y2: String) {
+    svg.line([
+      attribute.attribute("x1", x1),
+      attribute.attribute("y1", y1),
+      attribute.attribute("x2", x2),
+      attribute.attribute("y2", y2),
+    ])
+  }
+  svg.svg(
+    [attribute.class("icon"), attribute.attribute("viewBox", "0 0 24 24")],
+    [
+      svg.circle([
+        attribute.attribute("cx", "12"),
+        attribute.attribute("cy", "12"),
+        attribute.attribute("r", "5"),
+      ]),
+      ray("12", "1", "12", "3"),
+      ray("12", "21", "12", "23"),
+      ray("4.22", "4.22", "5.64", "5.64"),
+      ray("18.36", "18.36", "19.78", "19.78"),
+      ray("1", "12", "3", "12"),
+      ray("21", "12", "23", "12"),
+      ray("4.22", "19.78", "5.64", "18.36"),
+      ray("18.36", "5.64", "19.78", "4.22"),
+    ],
+  )
 }

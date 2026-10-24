@@ -211,3 +211,16 @@ button width:100% no longer applies). Two leftover CSS quirks cleaned:
 the duplicated .bar rule from the earlier rebalance, and .score .val
 styles. Artifact smoke pins the layout: score is an unboxed <b>, chip
 reads "night" and flips to "day" — 27/27.
+
+## Theme chip: icon-only sun/moon (2026-10-23)
+
+The night/day word chip became an icon chip: inline stroke SVGs (Feather-
+style geometry, 24×24 viewBox) inked via CSS currentColor — moon when
+light (tap → dark), sun when dark. Chosen over unicode glyphs (☀/☾)
+deliberately: Android renders U+2600 as a color emoji, breaking the
+parchment ink family; an inline SVG can't be platform-restyled. aria-label
+keeps the button's meaning for screen readers ("dark mode"/"light mode" —
+the target state). Drawn through lustre/element/svg with plain string
+attributes — the sibling's sketch-panel pattern; ink follows var(--ink)
+in both palettes. Smoke updated to pin the icon chip: aria-label flip +
+sun's ray lines present after toggle — 27/27.

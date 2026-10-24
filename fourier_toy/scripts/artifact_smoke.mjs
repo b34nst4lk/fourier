@@ -236,13 +236,17 @@ tick(34, 5); // draw frames
     "dom " + score_val(dom) + " vs core " + expect + "%",
   );
   check("fixed slot 4 hidden (3 rows)", rows(dom).length === 3, "rows " + rows(dom).length);
+  const themeBtn = dom.window.document.querySelector("button.theme");
   check(
-    "top bar matches the prototype: unboxed score (b), compact night chip",
+    "top bar matches the prototype: unboxed score (b), compact icon chip",
     dom.window.document.querySelector(".score b") !== null &&
       dom.window.document.querySelector(".score .val") === null &&
-      text(dom.window.document.querySelector("button.theme")) === "night",
+      themeBtn.getAttribute("aria-label") === "dark mode" &&
+      themeBtn.querySelector("svg.icon") !== null &&
+      text(themeBtn) === "",
     "score b: " + (dom.window.document.querySelector(".score b") !== null) +
-      ", theme: " + text(dom.window.document.querySelector("button.theme")),
+      ", aria: " + themeBtn.getAttribute("aria-label") +
+      ", icon: " + (themeBtn.querySelector("svg.icon") !== null),
   );
 }
 
@@ -337,8 +341,12 @@ console.log("S5 · theme toggle mirrors onto the body");
   tick();
   check("body flips to dark", dom.window.document.body.getAttribute("data-theme") === "dark");
   check(
-    "chip label flips to day",
-    text(dom.window.document.querySelector("button.theme")) === "day",
+    "chip flips to the sun (aria-label light mode, icon swaps)",
+    dom.window.document.querySelector("button.theme").getAttribute("aria-label") ===
+      "light mode" &&
+      dom.window.document
+        .querySelector("button.theme")
+        .querySelectorAll("svg.icon line").length > 0,
   );
   dom.window.document.querySelector("button.theme").click();
   tick();

@@ -34,13 +34,17 @@ body {
 }
 .bar { display: flex; justify-content: space-between; align-items: center; margin: 0 0 6px; }
 .back { color: #8a6a3a; text-decoration: none; font-size: .9rem; }
-/* sibling's corner-chip convention: small-caps word, auto width — compact */
+/* corner-chip toggle, icon-only: inline SVG inked via currentColor */
 .theme {
   width: auto;
-  font: inherit; font-size: 12px; font-variant-caps: small-caps; letter-spacing: .18em;
-  padding: 4px 14px;
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 5px;
   border: 1.5px solid var(--line); border-radius: 6px;
   background: var(--card); color: var(--ink); cursor: pointer;
+}
+.theme .icon { display: block; width: 16px; height: 16px; }
+.theme .icon path, .theme .icon circle, .theme .icon line {
+  stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round;
 }
 .pt { margin: 0 0 8px; font-size: 1rem; }
 .score { font-size: .92rem; }
