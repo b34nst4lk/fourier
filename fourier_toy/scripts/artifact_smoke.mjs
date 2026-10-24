@@ -184,6 +184,9 @@ function counter(dom) {
   const el = dom.window.document.querySelector(".score .mv");
   return el ? el.textContent.replace(/\s+/g, " ").trim() : null;
 }
+function counter_n(d) {
+  return parseInt((counter(d) || "").replace(/[^0-9]/g, ""), 10);
+}
 function rows(dom) {
   return [...dom.window.document.querySelectorAll(".rows .row")];
 }
@@ -302,6 +305,30 @@ console.log("S2 · dial behavior — wrap, ground-truth steps, floor disable");
     score_val(dom) === puzzle.fmt1(match_of(state)) + "%",
     "dom " + score_val(dom) + " vs core " + puzzle.fmt1(match_of(state)) + "%",
   );
+  // radius floor: step slot 1 down to 0%
+  // BEFORE any solve, reset starts a fresh attempt: the counter zeroes
+  dom.window.document.querySelector("button.reset").click();
+  state = initial_state();
+  tick();
+  check(
+    "reset before any solve zeroes the counter",
+    counter(dom) === "· 0 changes",
+    JSON.stringify(counter(dom)),
+  );
+  check(
+    "reset restores the phase dial (355°)",
+    row_val(dom, 0) === "355°",
+    row_val(dom, 0),
+  );
+  // redo the wrap so the counter arithmetic below stays exact
+  row_button(dom, 0, 1).click();
+  state = step_slot(state, 0, 1);
+  tick();
+  check(
+    "counting resumes after the fresh reset (· 1 change)",
+    counter(dom) === "· 1 change",
+    JSON.stringify(counter(dom)),
+  );
   // radius floor: step slot 1 down to 0% — the minus button must disable
   let clicks = 0;
   let btn = row_button(dom, 1, -1);
@@ -324,34 +351,98 @@ console.log("S2 · dial behavior — wrap, ground-truth steps, floor disable");
   );
 }
 
-// ==== S3 · dial-home solve path ==============================================
-console.log("S3 · dial-home solve path — every dialable at (or nearest to) truth ⇒ solved");
+// ==== S3 · hold-to-repeat on the steppers ======================================
+console.log("S3 · hold-to-repeat — auto-steps while held, tap steps once");
+{
+  const fire = (name, el) =>
+    el.dispatchEvent(new dom.window.Event(name, { bubbles: true }));
+  const c0 = counter_n(dom);
+
+  const v0 = parseInt(row_val(dom, 0), 10);
+  const btn = row_button(dom, 0, -1);
+  fire("pointerdown", btn);
+  await sleep(700);
+  fire("pointerup", btn);
+  tick(); // flush the RAF-pending renders the repeats scheduled
+  const v1 = parseInt(row_val(dom, 0), 10);
+  // phase wraps mod 360 — the hold presses MINUS, so v1 ≡ v0 − 5n (mod 360)
+  const n = ((v0 - v1 + 360) % 360) / 5;
+  check(
+    "hold auto-repeats the stepper (≥ 2 steps in 700ms)",
+    n >= 2,
+    v0 + "° → " + v1 + "° (n=" + n + ")",
+  );
+  for (let i = 0; i < n; i++) state = step_slot(state, 0, -1);
+  check(
+    "score matches the core after n repeat steps",
+    score_val(dom) === puzzle.fmt1(match_of(state)) + "%",
+    "dom " + score_val(dom) + " vs core " + puzzle.fmt1(match_of(state)) + "%",
+  );
+  check(
+    "each repeat tick counts as a change",
+    counter_n(dom) === c0 + n,
+    c0 + " → " + counter_n(dom),
+  );
+
+  // the natural release-click after a repeated hold must be swallowed
+  fire("click", btn);
+  tick();
+  check(
+    "release click after a hold is swallowed (no double-step)",
+    parseInt(row_val(dom, 0), 10) === v1,
+    row_val(dom, 0) + " vs " + v1 + "°",
+  );
+  // a QUICK TAP (down+up inside the repeat threshold) steps exactly once
+  fire("pointerdown", btn);
+  fire("pointerup", btn);
+  fire("click", btn);
+  tick();
+  state = step_slot(state, 0, -1);
+  check(
+    "quick tap steps exactly once",
+    parseInt(row_val(dom, 0), 10) === ((v1 - 5 + 360) % 360) &&
+      score_val(dom) === puzzle.fmt1(match_of(state)) + "%",
+    row_val(dom, 0) + " vs " + ((v1 - 5 + 360) % 360) + "°, score " + score_val(dom),
+  );
+  check(
+    "the tap's single step counts too",
+    counter_n(dom) === c0 + n + 1,
+    c0 + " + " + n + " + 1 vs " + counter_n(dom),
+  );
+}
+
+// ==== S4 · dial-home solve path — from wherever the dials now stand ============
+console.log("S4 · dial-home solve path — every dialable at (or nearest to) truth ⇒ solved");
+let moves_at_solve = null;
 {
   const truth = Array.from(shape.dial);
-  const t0 = truth[0], t1 = truth[1], t2 = truth[2];
-  // slot 0: phase 0° → truth via the shortest direction around the dial
-  const up = ((t0.phase_deg - 0 + 360) % 360) / 5;
-  const down = ((0 - t0.phase_deg + 360) % 360) / 5;
-  const dir = up <= down ? 1 : -1;
+  const t0 = truth[0];
+  const t1 = truth[1];
+  const t2 = truth[2];
+  const cur = Array.from(state);
+  // phase: shortest direction around the dial, from the CURRENT phase
+  const up = ((t0.phase_deg - cur[0].phase_deg + 360) % 360) / 5;
+  const down = ((cur[0].phase_deg - t0.phase_deg + 360) % 360) / 5;
+  const pdir = up <= down ? 1 : -1;
   for (let i = 0; i < Math.min(up, down); i++) {
-    row_button(dom, 0, dir).click();
-    state = step_slot(state, 0, dir);
+    row_button(dom, 0, pdir).click();
+    state = step_slot(state, 0, pdir);
     tick();
   }
-  // slot 1: radius 0% → nearest reachable step to truth (unit = 2% of max)
+  // radius: nearest reachable step to truth (unit = 2% of max)
   const unit = 0.02 * shape.dial_max_r;
-  const r_up = Math.round((t1.r - 0) / unit);
-  for (let i = 0; i < r_up; i++) {
-    row_button(dom, 1, 1).click();
-    state = step_slot(state, 1, 1);
+  const r_delta = t1.r - cur[1].r;
+  const rdir = r_delta >= 0 ? 1 : -1;
+  for (let i = 0; i < Math.round(Math.abs(r_delta) / unit); i++) {
+    row_button(dom, 1, rdir).click();
+    state = step_slot(state, 1, rdir);
     tick();
   }
-  // slot 2: k −5 → truth k
-  const k_clicks = Math.abs(t2.k - -5);
-  const k_dir = t2.k > -5 ? 1 : -1;
-  for (let i = 0; i < k_clicks; i++) {
-    row_button(dom, 2, k_dir).click();
-    state = step_slot(state, 2, k_dir);
+  // k: straight to truth
+  const kdir = t2.k >= cur[2].k ? 1 : -1;
+  for (let i = 0; i < Math.abs(t2.k - cur[2].k); i++) {
+    row_button(dom, 2, kdir).click();
+    state = step_slot(state, 2, kdir);
     tick();
   }
   tick(34, 3);
@@ -360,33 +451,39 @@ console.log("S3 · dial-home solve path — every dialable at (or nearest to) tr
     score_val(dom) === puzzle.fmt1(match_of(state)) + "%",
     "dom " + score_val(dom) + " vs core " + puzzle.fmt1(match_of(state)) + "%",
   );
-  const solved = dom.window.document.querySelector(".score.solved");
-  check("solved badge appears at ≥ 95%", solved !== null, "score " + score_val(dom));
+  check(
+    "solved badge appears at ≥ 95%",
+    dom.window.document.querySelector(".score.solved") !== null,
+    "score " + score_val(dom),
+  );
 
   // the counter freezes at the FIRST solve: further steps stop counting,
   // and it stays frozen even after dialing back into unsolved territory
-  const moves_at_solve = counter(dom);
+  moves_at_solve = counter_n(dom);
   row_button(dom, 0, 1).click(); // phase +5° past truth
   state = step_slot(state, 0, 1);
   tick(34, 2);
   check(
     "counter frozen at the first solve (extra step doesn't count)",
-    counter(dom) === moves_at_solve,
-    moves_at_solve + " → " + JSON.stringify(counter(dom)),
+    counter_n(dom) === moves_at_solve,
+    moves_at_solve + " → " + counter_n(dom),
   );
-  row_button(dom, 2, 1).click(); // k off truth — definitely unsolved now
-  state = step_slot(state, 2, 1);
+  row_button(dom, 2, -1).click(); // k off truth — definitely unsolved now
+  state = step_slot(state, 2, -1);
   tick(34, 2);
   check(
     "counter stays frozen after dialing away",
-    counter(dom) === moves_at_solve,
-    moves_at_solve + " → " + JSON.stringify(counter(dom)),
+    counter_n(dom) === moves_at_solve,
+    moves_at_solve + " → " + counter_n(dom),
   );
-  check("badge drops when unsolved again", !dom.window.document.querySelector(".score.solved"));
+  check(
+    "badge drops when unsolved again",
+    !dom.window.document.querySelector(".score.solved"),
+  );
 }
 
-// ==== S4 · reset ===============================================================
-console.log("S4 · reset returns to the initial state");
+// ==== S5 · reset — dials back to start, the solved record survives ==========
+console.log("S5 · reset — dials to start; the number you solved in is the number you keep");
 {
   dom.window.document.querySelector("button.reset").click();
   state = initial_state();
@@ -397,12 +494,33 @@ console.log("S4 · reset returns to the initial state");
     score_val(dom) === expect + "%",
     "dom " + score_val(dom) + " vs core " + expect + "%",
   );
-  check("reset clears the solved badge", !dom.window.document.querySelector(".score.solved"));
-  check("reset zeroes the change counter", counter(dom) === "· 0 changes", JSON.stringify(counter(dom)));
+  check(
+    "badge gone after reset (unsolved again)",
+    !dom.window.document.querySelector(".score.solved"),
+  );
+  check(
+    "the solved record survives reset (counter unchanged)",
+    counter_n(dom) === moves_at_solve,
+    moves_at_solve + " vs " + counter_n(dom),
+  );
+  // play after a solved reset does NOT re-count — the record is final
+  row_button(dom, 2, 1).click(); // k −5 → −4
+  state = step_slot(state, 2, 1);
+  tick();
+  check(
+    "steps after a solved reset don't count (record is final)",
+    counter_n(dom) === moves_at_solve,
+    moves_at_solve + " vs " + counter_n(dom),
+  );
+  check(
+    "but the dial still steps (k reads −4)",
+    row_val(dom, 2) === "k " + puzzle.fmt_k(-4),
+    row_val(dom, 2),
+  );
 }
 
-// ==== S5 · theme toggle ========================================================
-console.log("S5 · theme toggle mirrors onto the body");
+// ==== S6 · theme toggle ========================================================
+console.log("S6 · theme toggle mirrors onto the body");
 {
   const themeBtn = () => dom.window.document.querySelector("button.theme");
   themeBtn().click();
@@ -425,61 +543,6 @@ console.log("S5 · theme toggle mirrors onto the body");
     "choice updated in localStorage (f-toy-theme: light)",
     dom.window.localStorage.getItem("f-toy-theme") === "light",
     JSON.stringify(dom.window.localStorage.getItem("f-toy-theme")),
-  );
-}
-
-// ==== S6 · hold-to-repeat on the steppers ======================================
-console.log("S6 · hold-to-repeat — auto-steps while held, tap steps once");
-{
-  const fire = (name, el) =>
-    el.dispatchEvent(new dom.window.Event(name, { bubbles: true }));
-
-  const v0 = parseInt(row_val(dom, 0), 10);
-  const btn = row_button(dom, 0, -1);
-  fire("pointerdown", btn);
-  await sleep(700);
-  fire("pointerup", btn);
-  tick(); // flush the RAF-pending renders the repeats scheduled
-  const v1 = parseInt(row_val(dom, 0), 10);
-  const n = (v0 - v1) / 5;
-  check("hold auto-repeats the stepper (≥ 2 steps in 700ms)", n >= 2, v0 + "° → " + v1 + "° (n=" + n + ")");
-  for (let i = 0; i < n; i++) state = step_slot(state, 0, -1);
-  check(
-    "score matches the core after n repeat steps",
-    score_val(dom) === puzzle.fmt1(match_of(state)) + "%",
-    "dom " + score_val(dom) + " vs core " + puzzle.fmt1(match_of(state)) + "%",
-  );
-  check(
-    "each repeat tick counts as a change",
-    counter(dom) === "· " + n + " changes",
-    JSON.stringify(counter(dom)),
-  );
-
-  // the natural release-click after a repeated hold must be swallowed
-  fire("click", btn);
-  tick();
-  check(
-    "release click after a hold is swallowed (no double-step)",
-    parseInt(row_val(dom, 0), 10) === v1,
-    row_val(dom, 0) + " vs " + v1 + "°",
-  );
-
-  // a QUICK TAP (down+up inside the repeat threshold) steps exactly once
-  fire("pointerdown", btn);
-  fire("pointerup", btn);
-  fire("click", btn);
-  tick();
-  state = step_slot(state, 0, -1);
-  check(
-    "quick tap steps exactly once",
-    parseInt(row_val(dom, 0), 10) === v1 - 5 &&
-      score_val(dom) === puzzle.fmt1(match_of(state)) + "%",
-    row_val(dom, 0) + " vs " + (v1 - 5) + "°, score " + score_val(dom),
-  );
-  check(
-    "the tap's single step counts too (n + 1 changes)",
-    counter(dom) === "· " + (n + 1) + " changes",
-    JSON.stringify(counter(dom)),
   );
 }
 

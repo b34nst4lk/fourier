@@ -377,3 +377,19 @@ pins the semantics: extra step past the solve doesn't count, k-off-truth
 step still doesn't count, badge drops while the number stays — RED
 39/41 → GREEN 41/41 (reset-resumes is covered by the existing S4/S6
 counter checks after the reset).
+
+## The solved record survives reset (2026-10-23)
+
+Refinement of the freeze semantics: once solved, reset restores the dials
+but the record stays — "· N changes" is the number you solved in, reset
+or not, and post-solve play never re-counts. Before ANY solve, reset
+still starts a fresh attempt (counter zero). Reset branches on
+solved_once. Smoke restructured to pin the full semantics: sections
+reordered (hold-to-repeat before the solve, so counting scenarios all
+run pre-solve), the solve path is now generic (computes clicks from the
+tracked state, wherever the dials stand), the hold's step-count math is
+wrap-aware (the hold now starts from phase 0° and wraps to 355°), and S2
+pins the pre-solve reset zeroing. Two self-catches en route: my first
+Reset change preserved the counter unconditionally (the pre-solve S2
+check caught it — reset-before-solve must zero), and the hold check's
+n=(v0−v1)/5 broke across the wrap. RED 37/46 → GREEN 46/46.

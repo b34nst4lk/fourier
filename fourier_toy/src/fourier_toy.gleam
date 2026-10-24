@@ -104,7 +104,16 @@ fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
     }
     Reset -> {
       let state = puzzle.initial(shape(), setup().patches)
-      #(Model(state, model.dark, 0, False), push_terms(state))
+      // before any solve, reset starts a fresh attempt (counter zero);
+      // after a solve, the record survives — the number you solved in is
+      // the number you keep, reset or not
+      case model.solved_once {
+        True -> #(
+          Model(state, model.dark, model.moves, True),
+          push_terms(state),
+        )
+        False -> #(Model(state, model.dark, 0, False), push_terms(state))
+      }
     }
     ToggleTheme -> {
       let dark = case model.dark {
