@@ -362,6 +362,27 @@ console.log("S3 · dial-home solve path — every dialable at (or nearest to) tr
   );
   const solved = dom.window.document.querySelector(".score.solved");
   check("solved badge appears at ≥ 95%", solved !== null, "score " + score_val(dom));
+
+  // the counter freezes at the FIRST solve: further steps stop counting,
+  // and it stays frozen even after dialing back into unsolved territory
+  const moves_at_solve = counter(dom);
+  row_button(dom, 0, 1).click(); // phase +5° past truth
+  state = step_slot(state, 0, 1);
+  tick(34, 2);
+  check(
+    "counter frozen at the first solve (extra step doesn't count)",
+    counter(dom) === moves_at_solve,
+    moves_at_solve + " → " + JSON.stringify(counter(dom)),
+  );
+  row_button(dom, 2, 1).click(); // k off truth — definitely unsolved now
+  state = step_slot(state, 2, 1);
+  tick(34, 2);
+  check(
+    "counter stays frozen after dialing away",
+    counter(dom) === moves_at_solve,
+    moves_at_solve + " → " + JSON.stringify(counter(dom)),
+  );
+  check("badge drops when unsolved again", !dom.window.document.querySelector(".score.solved"));
 }
 
 // ==== S4 · reset ===============================================================

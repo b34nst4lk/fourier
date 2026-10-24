@@ -365,3 +365,15 @@ background; counter 0 at boot, 1 change singular, exact counts through
 the radius loop (38), reset to zero, repeat ticks counted, tap counted —
 RED 31/38 → GREEN 38/38. (Mid-fix: a stray double comma after the score
 span — the compiler caught it before any gate ran.)
+
+## Counter freezes at the first solve (2026-10-23)
+
+"· N changes" is now the number you solved in: the model tracks
+solved_once (set the first time a step lands ≥ 95%), and once set, steps
+stop counting — permanently, even after dialing back into unsolved
+territory (the badge itself still tracks the live state). Reset starts a
+fresh attempt: counter 0, solved_once cleared, counting resumes. Smoke
+pins the semantics: extra step past the solve doesn't count, k-off-truth
+step still doesn't count, badge drops while the number stays — RED
+39/41 → GREEN 41/41 (reset-resumes is covered by the existing S4/S6
+counter checks after the reset).

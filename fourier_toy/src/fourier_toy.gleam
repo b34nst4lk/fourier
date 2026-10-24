@@ -25,7 +25,7 @@ type Msg {
 }
 
 type Model {
-  Model(state: List(TermState), dark: Bool, moves: Int)
+  Model(state: List(TermState), dark: Bool, moves: Int, solved_once: Bool)
 }
 
 pub fn main() -> Nil {
@@ -50,7 +50,7 @@ fn init(_: Nil) -> #(Model, Effect(Msg)) {
   }
   let state = puzzle.initial(shape(), setup().patches)
   #(
-    Model(state, dark, 0),
+    Model(state, dark, 0, False),
     effect.batch([hold_driver(), sync_effect(state), theme_apply(dark)]),
   )
 }
@@ -94,11 +94,17 @@ fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
             False -> s
           }
         })
-      #(Model(stepped, model.dark, model.moves + 1), push_terms(stepped))
+      // the counter freezes at the FIRST solve: steps after that don't
+      // count — the number you solved in is the number you keep
+      let #(moves, solved_once) = case model.solved_once {
+        True -> #(model.moves, True)
+        False -> #(model.moves + 1, shapes.solved(shape(), stepped))
+      }
+      #(Model(stepped, model.dark, moves, solved_once), push_terms(stepped))
     }
     Reset -> {
       let state = puzzle.initial(shape(), setup().patches)
-      #(Model(state, model.dark, 0), push_terms(state))
+      #(Model(state, model.dark, 0, False), push_terms(state))
     }
     ToggleTheme -> {
       let dark = case model.dark {
@@ -106,7 +112,7 @@ fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
         False -> True
       }
       #(
-        Model(model.state, dark, model.moves),
+        Model(model.state, dark, model.moves, model.solved_once),
         effect.from(fn(_dispatch) {
           ffi.canvas_theme(dark)
           ffi.set_dark(dark)
