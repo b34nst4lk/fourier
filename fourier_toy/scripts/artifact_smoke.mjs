@@ -81,7 +81,7 @@ function make_ctx() {
   };
 }
 
-function boot_dom() {
+function boot_dom({ stored = null, systemDark = false } = {}) {
   raf_q = [];
   NOW = 1000.0;
   const dom = new JSDOM(html, {
@@ -96,6 +96,19 @@ function boot_dom() {
         return raf_handle;
       };
       window.cancelAnimationFrame = () => {};
+      // jsdom's matchMedia is inert — the boot reads the system preference
+      // at init, so the stub must exist before the bundle runs
+      window.matchMedia = (q) => ({
+        matches: systemDark && /prefers-color-scheme:\s*dark/.test(q),
+        addEventListener() {},
+        removeEventListener() {},
+      });
+      // seed the stored theme choice (sibling's f-sketch-theme convention)
+      if (stored) {
+        try {
+          window.localStorage.setItem("f-toy-theme", stored);
+        } catch (e) {}
+      }
       // ONE stable recording ctx per canvas element
       window.HTMLCanvasElement.prototype.getContext = function () {
         if (!this.__ctx) this.__ctx = make_ctx();
@@ -344,6 +357,11 @@ console.log("S5 · theme toggle mirrors onto the body");
   tick();
   check("body flips to dark", dom.window.document.body.getAttribute("data-theme") === "dark");
   check(
+    "choice saved to localStorage (f-toy-theme: dark)",
+    dom.window.localStorage.getItem("f-toy-theme") === "dark",
+    JSON.stringify(dom.window.localStorage.getItem("f-toy-theme")),
+  );
+  check(
     "chip flips to the sun (aria-label light mode, icon swaps)",
     themeBtn().getAttribute("aria-label") === "light mode" &&
       themeBtn().querySelectorAll("svg.icon line").length > 0,
@@ -351,6 +369,11 @@ console.log("S5 · theme toggle mirrors onto the body");
   themeBtn().click();
   tick();
   check("body flips back to light", dom.window.document.body.getAttribute("data-theme") === "light");
+  check(
+    "choice updated in localStorage (f-toy-theme: light)",
+    dom.window.localStorage.getItem("f-toy-theme") === "light",
+    JSON.stringify(dom.window.localStorage.getItem("f-toy-theme")),
+  );
 }
 
 // ==== S6 · hold-to-repeat on the steppers ======================================
@@ -395,6 +418,37 @@ console.log("S6 · hold-to-repeat — auto-steps while held, tap steps once");
     parseInt(row_val(dom, 0), 10) === v1 - 5 &&
       score_val(dom) === puzzle.fmt1(match_of(state)) + "%",
     row_val(dom, 0) + " vs " + (v1 - 5) + "°, score " + score_val(dom),
+  );
+}
+
+// ==== S7 · theme persistence ==================================================
+console.log("S7 · theme persistence — stored choice beats system preference");
+{
+  const chipOf = (d) => d.window.document.querySelector("button.theme");
+  const bodyTheme = (d) => d.window.document.body.getAttribute("data-theme");
+
+  const storedDark = boot_dom({ stored: "dark", systemDark: false });
+  tick();
+  check(
+    "stored dark boots dark (stored beats system light)",
+    bodyTheme(storedDark) === "dark" && chipOf(storedDark).getAttribute("aria-label") === "light mode",
+    "body " + bodyTheme(storedDark),
+  );
+
+  const storedLightSysDark = boot_dom({ stored: "light", systemDark: true });
+  tick();
+  check(
+    "stored light boots light (stored beats system dark)",
+    bodyTheme(storedLightSysDark) === "light" && chipOf(storedLightSysDark).getAttribute("aria-label") === "dark mode",
+    "body " + bodyTheme(storedLightSysDark),
+  );
+
+  const noStoredSysDark = boot_dom({ systemDark: true });
+  tick();
+  check(
+    "no stored choice: system preference applies (dark)",
+    bodyTheme(noStoredSysDark) === "dark",
+    "body " + bodyTheme(noStoredSysDark),
   );
 }
 

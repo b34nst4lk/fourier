@@ -357,6 +357,42 @@ export function set_dark(dark) {
   }
 }
 
+// ---- theme persistence (sibling pattern: f-sketch-theme) -------------------
+// Stored choice beats system preference; prefers-color-scheme is the
+// fallback when nothing is stored. Every access is guarded — private-mode
+// Safari throws on localStorage touch.
+
+const THEME_KEY = "f-toy-theme";
+
+export function theme_load() {
+  try {
+    const stored = window.localStorage.getItem(THEME_KEY);
+    if (stored === "dark") return "dark";
+    if (stored === "light") return "light";
+  } catch (err) {
+    // storage unavailable — fall through to the system preference
+  }
+  try {
+    if (
+      window.matchMedia &&
+      window.matchMedia("(prefers-color-scheme: dark)").matches
+    ) {
+      return "dark";
+    }
+  } catch (err) {
+    // no matchMedia either — default light
+  }
+  return "light";
+}
+
+export function theme_save(dark) {
+  try {
+    window.localStorage.setItem(THEME_KEY, dark ? "dark" : "light");
+  } catch (err) {
+    // best-effort: storage unavailable — the toggle still works this visit
+  }
+}
+
 // ---- hold-to-repeat driver for the stepper buttons ---------------------------
 // A device-level input concern, so it lives beside the canvas driver: Lustre
 // owns the stepping (its click handler stays the single path — each repeat

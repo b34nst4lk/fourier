@@ -312,3 +312,20 @@ expectations via the public readout helpers — hand-typed expected strings
 for the other branches were first drafted from memory and wrong, so the
 test derives every number from the fixture) plus an artifact-smoke pin on
 the rendered sub. Gates: gleam 15/15, format, contract 23/23, smoke 25/25.
+
+## Theme persistence (2026-10-23)
+
+The toggle now persists: stored choice (localStorage key f-toy-theme,
+sibling's f-sketch-theme convention) beats the system preference at boot,
+prefers-color-scheme is the fallback, and every toggle saves. All storage
+access is guarded (private-mode Safari throws). Architecture: the model
+stays the single source of truth — init reads ffi.theme_load(), the
+ToggleTheme effect saves via ffi.theme_save(); the canvas palette
+follows through the existing canvas_theme push plus the boot snapshot
+reading the body attribute. Known trade-off (shared with the sibling):
+the stored theme applies when the module script runs, so a dark-stored
+visitor sees a brief light flash — an anti-flash head script was
+deliberately skipped to keep one source of truth for the fallback logic.
+Smoke grew a persistence section (themed boots: stored dark / stored
+light vs system dark / system dark with nothing stored) plus localStorage
+assertions on both toggles — RED 26/30, then GREEN — 30/30.

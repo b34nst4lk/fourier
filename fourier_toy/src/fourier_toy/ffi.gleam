@@ -46,6 +46,23 @@ pub fn set_dark(dark: Bool) -> Nil {
 @external(javascript, "../fourier_toy_ffi.mjs", "set_dark")
 fn js_set_dark(dark: Bool) -> Nil
 
+/// The boot-time theme: the stored choice ("dark"/"light"), falling back to
+/// the system preference; "light" when neither is available.
+pub fn theme_load() -> String {
+  js_theme_load()
+}
+
+@external(javascript, "../fourier_toy_ffi.mjs", "theme_load")
+fn js_theme_load() -> String
+
+/// Persist the theme choice (best-effort — storage may be unavailable).
+pub fn theme_save(dark: Bool) -> Nil {
+  js_theme_save(dark)
+}
+
+@external(javascript, "../fourier_toy_ffi.mjs", "theme_save")
+fn js_theme_save(dark: Bool) -> Nil
+
 /// Bind the hold-to-repeat input driver for the stepper buttons. Call once
 /// at app start; delegates via document listeners, so rows re-rendered by
 /// any later change are covered without re-binding.

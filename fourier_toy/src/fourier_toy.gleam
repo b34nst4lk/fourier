@@ -43,8 +43,25 @@ fn shape() {
 }
 
 fn init(_: Nil) -> #(Model, Effect(Msg)) {
+  // stored choice (or system preference) decides the boot theme
+  let dark = case ffi.theme_load() {
+    "dark" -> True
+    _ -> False
+  }
   let state = puzzle.initial(shape(), setup().patches)
-  #(Model(state, False), effect.batch([hold_driver(), sync_effect(state)]))
+  #(
+    Model(state, dark),
+    effect.batch([hold_driver(), sync_effect(state), theme_apply(dark)]),
+  )
+}
+
+/// Mirror the boot theme onto the page and the canvas palette.
+fn theme_apply(dark: Bool) -> Effect(Msg) {
+  effect.from(fn(_dispatch) {
+    ffi.canvas_theme(dark)
+    ffi.set_dark(dark)
+    Nil
+  })
 }
 
 /// Bind the hold-to-repeat input driver once — its document-level listeners
@@ -93,6 +110,7 @@ fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
         effect.from(fn(_dispatch) {
           ffi.canvas_theme(dark)
           ffi.set_dark(dark)
+          ffi.theme_save(dark)
           Nil
         }),
       )
