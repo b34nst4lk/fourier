@@ -49,6 +49,7 @@ body {
 .pt { margin: 0 0 8px; font-size: 1rem; }
 .score { font-size: .92rem; }
 .score b { font-size: 1.25rem; }
+.score .mv { color: var(--mut); font-size: .82rem; margin-left: 6px; }
 .score .ok { display: none; color: var(--ok); font-weight: 600; margin-left: 8px; }
 .score.solved .ok { display: inline; }
 .score.solved b { color: var(--ok); }
@@ -88,11 +89,10 @@ button {
 button:active { background: #f1e4c8; }
 body[data-theme="dark"] button:active { background: #3d321f; }
 button:disabled { opacity: .35; cursor: default; }
+/* dial readouts: plain text, centered in the grid cell — no box */
 .val {
   display: flex; align-items: center; justify-content: center;
   font-size: 1.02rem;
-  border: 1.5px solid var(--line); border-radius: 10px;
-  background: var(--card);
 }
 </style>
 </head>

@@ -25,7 +25,7 @@ type Msg {
 }
 
 type Model {
-  Model(state: List(TermState), dark: Bool)
+  Model(state: List(TermState), dark: Bool, moves: Int)
 }
 
 pub fn main() -> Nil {
@@ -50,7 +50,7 @@ fn init(_: Nil) -> #(Model, Effect(Msg)) {
   }
   let state = puzzle.initial(shape(), setup().patches)
   #(
-    Model(state, dark),
+    Model(state, dark, 0),
     effect.batch([hold_driver(), sync_effect(state), theme_apply(dark)]),
   )
 }
@@ -94,11 +94,11 @@ fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
             False -> s
           }
         })
-      #(Model(stepped, model.dark), push_terms(stepped))
+      #(Model(stepped, model.dark, model.moves + 1), push_terms(stepped))
     }
     Reset -> {
       let state = puzzle.initial(shape(), setup().patches)
-      #(Model(state, model.dark), push_terms(state))
+      #(Model(state, model.dark, 0), push_terms(state))
     }
     ToggleTheme -> {
       let dark = case model.dark {
@@ -106,7 +106,7 @@ fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
         False -> True
       }
       #(
-        Model(model.state, dark),
+        Model(model.state, dark, model.moves),
         effect.from(fn(_dispatch) {
           ffi.canvas_theme(dark)
           ffi.set_dark(dark)
@@ -129,12 +129,17 @@ fn kind_at(dials: List(puzzle.DialKind), slot: Int) -> puzzle.DialKind {
 
 fn view(model: Model) -> Element(Msg) {
   let m = shapes.match_pct(shape(), model.state)
-  board_view(model.state, m, model.dark)
+  board_view(model.state, m, model.moves, model.dark)
 }
 
-fn board_view(state: List(TermState), m: Float, dark: Bool) -> Element(Msg) {
+fn board_view(
+  state: List(TermState),
+  m: Float,
+  moves: Int,
+  dark: Bool,
+) -> Element(Msg) {
   html.div([], [
-    bar(m, dark),
+    bar(m, moves, dark),
     html.h2([attribute.class("pt")], [html.text(setup().title)]),
     html.canvas([attribute.class("board"), attribute.id("toy-board")]),
     html.div(
@@ -150,7 +155,7 @@ fn board_view(state: List(TermState), m: Float, dark: Bool) -> Element(Msg) {
   ])
 }
 
-fn bar(m: Float, dark: Bool) -> Element(Msg) {
+fn bar(m: Float, moves: Int, dark: Bool) -> Element(Msg) {
   html.div([attribute.class("bar")], [
     html.span(
       [
@@ -162,6 +167,9 @@ fn bar(m: Float, dark: Bool) -> Element(Msg) {
       [
         html.text("Match "),
         html.b([], [html.text(puzzle.fmt1(m) <> "%")]),
+        html.span([attribute.class("mv")], [
+          html.text(" · " <> changes_text(moves)),
+        ]),
         html.span([attribute.class("ok")], [html.text("solved ✓")]),
       ],
     ),
@@ -260,6 +268,14 @@ fn edge_button(i: Int, dir: Int, disabled_flag: Bool) -> Element(Msg) {
 
 fn keep(el: Element(Msg)) -> Element(Msg) {
   el
+}
+
+/// One change per stepper step; the singular reads better at one.
+fn changes_text(n: Int) -> String {
+  case n {
+    1 -> "1 change"
+    _ -> int.to_string(n) <> " changes"
+  }
 }
 
 // ---- icon chips (stroke geometry, 24×24 viewBox, inked via CSS) ----

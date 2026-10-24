@@ -180,6 +180,10 @@ function score_val(dom) {
   const el = dom.window.document.querySelector(".score b");
   return el ? text(el) : null;
 }
+function counter(dom) {
+  const el = dom.window.document.querySelector(".score .mv");
+  return el ? el.textContent.replace(/\s+/g, " ").trim() : null;
+}
 function rows(dom) {
   return [...dom.window.document.querySelectorAll(".rows .row")];
 }
@@ -221,6 +225,12 @@ console.log("S0 · artifact CSS — controls opt out of double-tap zoom");
     !/user-scalable\s*=\s*no/i.test(html) && !/maximum-scale\s*=\s*1\b/i.test(html),
     "viewport meta limits zoom",
   );
+  const valRule = html.match(/\.val \{[^}]*\}/);
+  check(
+    "dial readouts are plain text (no box)",
+    valRule !== null && !/border/.test(valRule[0]) && !/background/.test(valRule[0]),
+    "val rule: " + (valRule ? valRule[0].replace(/\s+/g, " ") : "missing"),
+  );
 }
 
 // ==== S1 · boot straight into the quaver board ================================
@@ -245,6 +255,7 @@ tick(34, 5); // draw frames
     "dom " + score_val(dom) + " vs core " + expect + "%",
   );
   check("title is the single puzzle (quaver)", text(dom.window.document.querySelector("h2.pt")) === "quaver", text(dom.window.document.querySelector("h2.pt")));
+  check("counter starts at zero (· 0 changes)", counter(dom) === "· 0 changes", JSON.stringify(counter(dom)));
   check("no routing chrome: no home cards, no back link", dom.window.document.querySelector("a.card") === null && dom.window.document.querySelector("a.back") === null);
   check("fixed slot 4 hidden (3 rows)", rows(dom).length === 3, "rows " + rows(dom).length);
   {
@@ -285,6 +296,7 @@ console.log("S2 · dial behavior — wrap, ground-truth steps, floor disable");
   state = step_slot(state, 0, 1);
   tick();
   check("phase wraps past 360 (0°)", row_val(dom, 0) === "0°", row_val(dom, 0));
+  check("one change counts (· 1 change, singular)", counter(dom) === "· 1 change", JSON.stringify(counter(dom)));
   check(
     "score tracks the stepped state",
     score_val(dom) === puzzle.fmt1(match_of(state)) + "%",
@@ -304,6 +316,11 @@ console.log("S2 · dial behavior — wrap, ground-truth steps, floor disable");
     "radius floors at 0% and disables minus",
     row_val(dom, 1) === "0%" && btn.disabled,
     row_val(dom, 1) + " disabled=" + btn.disabled,
+  );
+  check(
+    "counter tracks every step (1 + " + clicks + " = " + (clicks + 1) + " changes)",
+    counter(dom) === "· " + (clicks + 1) + " changes",
+    JSON.stringify(counter(dom)),
   );
 }
 
@@ -360,6 +377,7 @@ console.log("S4 · reset returns to the initial state");
     "dom " + score_val(dom) + " vs core " + expect + "%",
   );
   check("reset clears the solved badge", !dom.window.document.querySelector(".score.solved"));
+  check("reset zeroes the change counter", counter(dom) === "· 0 changes", JSON.stringify(counter(dom)));
 }
 
 // ==== S5 · theme toggle ========================================================
@@ -410,6 +428,11 @@ console.log("S6 · hold-to-repeat — auto-steps while held, tap steps once");
     score_val(dom) === puzzle.fmt1(match_of(state)) + "%",
     "dom " + score_val(dom) + " vs core " + puzzle.fmt1(match_of(state)) + "%",
   );
+  check(
+    "each repeat tick counts as a change",
+    counter(dom) === "· " + n + " changes",
+    JSON.stringify(counter(dom)),
+  );
 
   // the natural release-click after a repeated hold must be swallowed
   fire("click", btn);
@@ -431,6 +454,11 @@ console.log("S6 · hold-to-repeat — auto-steps while held, tap steps once");
     parseInt(row_val(dom, 0), 10) === v1 - 5 &&
       score_val(dom) === puzzle.fmt1(match_of(state)) + "%",
     row_val(dom, 0) + " vs " + (v1 - 5) + "°, score " + score_val(dom),
+  );
+  check(
+    "the tap's single step counts too (n + 1 changes)",
+    counter(dom) === "· " + (n + 1) + " changes",
+    JSON.stringify(counter(dom)),
   );
 }
 

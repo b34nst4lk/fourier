@@ -352,3 +352,16 @@ theme-specific rules, icon stroke scoping includes polyline. Icon-only
 buttons keep their meaning via aria-label ("reset to start"). The board
 gains the reset button's former vertical space. Smoke pins the bar as
 score + reset chip + theme chip (RED 30/31 → GREEN 31/31).
+
+## Change counter + plain-text dial readouts (2026-10-23)
+
+The bar's score line now carries a muted change counter — "· N changes"
+(singular at one) — counting every stepper step (hold-repeat ticks count
+individually; reset zeroes it: a fresh attempt). Dial row readouts
+(k/phase/radius) are plain centered text now — the boxed .val styling
+(their border/card background) is gone; the score counter is .score .mv,
+muted small. Smoke pins all of it: shipped-CSS val rule has no border/
+background; counter 0 at boot, 1 change singular, exact counts through
+the radius loop (38), reset to zero, repeat ticks counted, tap counted —
+RED 31/38 → GREEN 38/38. (Mid-fix: a stray double comma after the score
+span — the compiler caught it before any gate ran.)
