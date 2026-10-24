@@ -209,6 +209,14 @@ console.log("S0 · artifact CSS — controls opt out of double-tap zoom");
     "button rule: " + (btnRule ? btnRule[0].slice(0, 80) + "…" : "missing"),
   );
   check(
+    "steppers opt out of text selection (long-press = hold-repeat, not loupe)",
+    btnRule !== null &&
+      /-webkit-user-select:\s*none/.test(btnRule[0]) &&
+      /(^|[^-])user-select:\s*none/.test(btnRule[0]) &&
+      /-webkit-touch-callout:\s*none/.test(btnRule[0]),
+    "button rule: " + (btnRule ? btnRule[0] : "missing"),
+  );
+  check(
     "viewport stays user-scalable (pinch-zoom accessibility preserved)",
     !/user-scalable\s*=\s*no/i.test(html) && !/maximum-scale\s*=\s*1\b/i.test(html),
     "viewport meta limits zoom",

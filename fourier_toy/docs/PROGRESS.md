@@ -329,3 +329,15 @@ deliberately skipped to keep one source of truth for the fallback logic.
 Smoke grew a persistence section (themed boots: stored dark / stored
 light vs system dark / system dark with nothing stored) plus localStorage
 assertions on both toggles — RED 26/30, then GREEN — 30/30.
+
+## Long-press no longer triggers the text-selection loupe (2026-10-23)
+
+User report: press-and-hold on +/− registered as press-and-hold-to-select
+— the mobile selection loupe stole the pointer (pointercancel) and killed
+the hold-to-repeat. Fix: -webkit-user-select: none + user-select: none +
+-webkit-touch-callout: none on the button rule — the standard touch-
+control guard; the +/− glyphs are control labels, never selection
+targets. (touch-action: manipulation already covered double-tap zoom;
+Android's contextmenu long-press was already prevented in the hold
+driver.) Smoke's shipped-CSS contract pins all three properties — RED
+30/31, then GREEN 31/31.

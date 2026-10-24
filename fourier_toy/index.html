@@ -78,6 +78,11 @@ button {
   background: var(--card); color: var(--ink); cursor: pointer;
   /* rapid stepper taps must not trigger double-tap zoom; pinch stays */
   touch-action: manipulation;
+  /* long-press on a stepper is hold-to-repeat, never the text-selection
+     loupe (mobile browsers would otherwise steal the pointer mid-hold) */
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
 }
 button:active { background: #f1e4c8; }
 body[data-theme="dark"] button:active { background: #3d321f; }
