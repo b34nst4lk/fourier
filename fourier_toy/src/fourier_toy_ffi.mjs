@@ -368,3 +368,99 @@ export function set_dark(dark) {
     document.body.setAttribute("data-theme", dark ? "dark" : "light");
   }
 }
+
+// ---- hold-to-repeat driver for the stepper buttons ---------------------------
+// A device-level input concern, so it lives beside the canvas driver: Lustre
+// owns the stepping (its click handler stays the single path — each repeat
+// is a synthesized `btn.click()`, so dial state, score, and the canvas sync
+// exactly like a tap). A QUICK TAP still steps once: repeats only begin
+// after a 400ms hold, and the natural release-click that follows a repeated
+// hold is swallowed (capture phase, before Lustre's delegated listener) so a
+// hold never double-steps. Interval accelerates 120ms → 45ms so long
+// travels (a full phase lap, radius 0→100%) take ~2–3s of holding.
+
+const HOLD_INITIAL_MS = 400;
+const HOLD_FIRST_MS = 120;
+const HOLD_ACCEL = 0.88;
+const HOLD_FLOOR_MS = 45;
+
+let hold_timer = null;
+let hold_btn = null;
+let hold_id; // pointerId of the active hold (undefined for plain Events)
+let hold_swallow = false; // a repeat fired — swallow exactly one release click
+
+function hold_clear() {
+  if (hold_timer !== null) {
+    clearTimeout(hold_timer);
+    hold_timer = null;
+  }
+  hold_btn = null;
+}
+
+// the first repeat fires after the initial threshold, then the chain
+// restarts at HOLD_FIRST_MS and accelerates toward the floor
+function hold_begin(btn) {
+  if (hold_btn !== btn) return; // superseded or cleared meanwhile
+  hold_swallow = false; // our own synthesized click must pass through
+  btn.click(); // disabled buttons suppress clicks — clamps stop the effect
+  hold_swallow = true; // arm for the natural release click
+  hold_tick(btn, HOLD_FIRST_MS);
+}
+
+function hold_tick(btn, delay) {
+  hold_timer = setTimeout(() => {
+    if (hold_btn !== btn) return;
+    hold_swallow = false;
+    btn.click();
+    hold_swallow = true;
+    hold_tick(btn, Math.max(HOLD_FLOOR_MS, delay * HOLD_ACCEL));
+  }, delay);
+}
+
+export function hold_init() {
+  document.addEventListener("pointerdown", (ev) => {
+    const btn = ev.target && ev.target.closest ? ev.target.closest("button.btn") : null;
+    if (!btn || btn.disabled) return;
+    hold_swallow = false; // a new press invalidates any pending swallow
+    hold_clear(); // one hold at a time — a second finger takes over
+    hold_btn = btn;
+    hold_id = ev.pointerId;
+    hold_timer = setTimeout(() => hold_begin(btn), HOLD_INITIAL_MS);
+  });
+  const end =
+    (disarm) =>
+    (ev) => {
+      if (hold_btn === null) return;
+      if (hold_id !== undefined && ev.pointerId !== undefined && ev.pointerId !== hold_id) {
+        return; // a different pointer's event — ignore
+      }
+      hold_clear();
+      // pointerup: the natural release click is still coming — stay armed;
+      // pointerout/pointercancel: no click will follow — disarm or the flag
+      // would eat the next innocent tap on this stepper
+      if (disarm) hold_swallow = false;
+    };
+  // pointerup/cancel/out all bubble; pointerleave does not — pointerout is
+  // the delegatable "finger slid off the button" signal
+  document.addEventListener("pointerup", end(false));
+  document.addEventListener("pointercancel", end(true));
+  document.addEventListener("pointerout", end(true));
+  // long-press on a stepper must not be stolen by a context-menu gesture
+  document.addEventListener("contextmenu", (ev) => {
+    if (ev.target && ev.target.closest && ev.target.closest("button.btn")) {
+      ev.preventDefault();
+    }
+  });
+  // the release-click after a repeated hold: swallow it before Lustre sees
+  document.addEventListener(
+    "click",
+    (ev) => {
+      if (hold_swallow && ev.target && ev.target.closest && ev.target.closest("button.btn")) {
+        hold_swallow = false;
+        ev.stopImmediatePropagation();
+        ev.preventDefault();
+      }
+    },
+    true,
+  );
+}

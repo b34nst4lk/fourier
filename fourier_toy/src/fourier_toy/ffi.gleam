@@ -69,3 +69,13 @@ pub fn set_dark(dark: Bool) -> Nil {
 
 @external(javascript, "../fourier_toy_ffi.mjs", "set_dark")
 fn js_set_dark(dark: Bool) -> Nil
+
+/// Bind the hold-to-repeat input driver for the stepper buttons. Call once
+/// at app start; delegates via document listeners, so rows re-rendered by
+/// route changes are covered without re-binding.
+pub fn hold_init() -> Nil {
+  js_hold_init()
+}
+
+@external(javascript, "../fourier_toy_ffi.mjs", "hold_init")
+fn js_hold_init() -> Nil

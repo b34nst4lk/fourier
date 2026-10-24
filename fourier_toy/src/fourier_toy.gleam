@@ -45,7 +45,13 @@ pub fn main() -> Nil {
 
 fn init(_: Nil) -> #(Model, Effect(Msg)) {
   let model = Model(route(ffi.hash_now()), False)
-  #(model, effect.batch([watch_hash(), sync_effect(model.page)]))
+  #(model, effect.batch([watch_hash(), hold_driver(), sync_effect(model.page)]))
+}
+
+/// Bind the hold-to-repeat input driver once — its document-level listeners
+/// cover stepper rows re-rendered by any later route change.
+fn hold_driver() -> Effect(Msg) {
+  effect.from(fn(_dispatch) { ffi.hold_init() })
 }
 
 fn route(hash: String) -> Page {

@@ -412,6 +412,58 @@ console.log("S7 · p8 → #p10 — board-to-board keeps painting");
   check("p10 shows all four rows (no fixed slot)", rows(dom).length === 4, "rows " + rows(dom).length);
 }
 
+// ==== S8 · hold-to-repeat on the steppers ==================================
+console.log("S8 · hold-to-repeat — auto-steps while held, tap steps once");
+{
+  const p10 = setup_of("p10");
+  const shape = puzzle.shape_of("flower");
+  let state = initial_state(p10);
+  const row_val = (slot) => text(rows(dom)[slot].querySelector(".val"));
+  const fire = (name, el) =>
+    el.dispatchEvent(new dom.window.Event(name, { bubbles: true }));
+
+  // read the starting phase value (e.g. "90°")
+  const v0 = parseInt(row_val(0), 10);
+  // HOLD the minus button: repeats begin at 400ms, accelerating — 700ms of
+  // holding must produce several steps
+  const btn = row_button(dom, 0, -1);
+  fire("pointerdown", btn);
+  await sleep(700);
+  fire("pointerup", btn);
+  tick(); // flush the RAF-pending renders the repeats scheduled
+  const v1 = parseInt(row_val(0), 10);
+  const n = (v0 - v1) / 5;
+  check("hold auto-repeats the stepper (≥ 2 steps in 700ms)", n >= 2, v0 + "° → " + v1 + "° (n=" + n + ")");
+  for (let i = 0; i < n; i++) state = step_slot(shape, p10, state, 0, -1);
+  check(
+    "score matches the core after n repeat steps",
+    score_val(dom) === puzzle.fmt1(match_of(shape, state)) + "%",
+    "dom " + score_val(dom) + " vs core " + puzzle.fmt1(match_of(shape, state)) + "%",
+  );
+
+  // the natural release-click after a repeated hold must be swallowed
+  fire("click", btn);
+  tick();
+  check(
+    "release click after a hold is swallowed (no double-step)",
+    parseInt(row_val(0), 10) === v1,
+    row_val(0) + " vs " + v1 + "°",
+  );
+
+  // a QUICK TAP (down+up inside the repeat threshold) steps exactly once
+  fire("pointerdown", btn);
+  fire("pointerup", btn);
+  fire("click", btn);
+  tick();
+  state = step_slot(shape, p10, state, 0, -1);
+  check(
+    "quick tap steps exactly once",
+    parseInt(row_val(0), 10) === v1 - 5 &&
+      score_val(dom) === puzzle.fmt1(match_of(shape, state)) + "%",
+    row_val(0) + " vs " + (v1 - 5) + "°, score " + score_val(dom),
+  );
+}
+
 console.log("");
 console.log(passed + "/" + (passed + failed) + " checks passed");
 if (failed > 0) process.exit(1);

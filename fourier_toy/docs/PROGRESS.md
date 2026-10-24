@@ -224,3 +224,33 @@ the target state). Drawn through lustre/element/svg with plain string
 attributes — the sibling's sketch-panel pattern; ink follows var(--ink)
 in both palettes. Smoke updated to pin the icon chip: aria-label flip +
 sun's ray lines present after toggle — 27/27.
+
+## Hold-to-repeat on the steppers (2026-10-23)
+
+Implemented as a device-level input driver in the FFI (`hold_init`, bound
+once at init): pointerdown on a stepper schedules the first repeat after
+400ms, then the chain restarts at 120ms and accelerates ×0.88 to a 45ms
+floor (~22 steps/s — a full phase lap or radius 0→100% in ~2–3s of
+holding). Each repeat is a synthesized `btn.click()`, so Lustre's click
+handler stays the single stepping path — dial state, score, and the
+canvas sync exactly like a tap; disabled buttons suppress clicks, so
+clamps stop the effect naturally. A quick tap still steps exactly once:
+repeats only begin after the threshold, and the natural release-click
+that follows a repeated hold is swallowed in the capture phase (before
+Lustre's delegated listener).
+
+Two bugs caught by the probes before any deploy: (1) the swallow flag
+was armed BEFORE the synthesized click, so the driver swallowed its own
+repeats — every tick died at the document gate (0 steps in jsdom);
+fix: clear-then-arm around each synthesized click, disarm on
+pointerout/pointercancel (a slide-off must not eat the next innocent
+tap), re-arm fresh on each pointerdown. (2) the chain multiplied the
+initial threshold (400→352→310ms) instead of restarting at 120ms —
+HOLD_FIRST_MS was defined but never used; fix: hold_begin fires the
+first repeat and hands the chain to hold_tick at 120ms.
+
+Smoke S8 (31/31 now): hold 700ms ⇒ n repeats with the score matching the
+core step-for-step; the release click swallowed; a quick tap steps
+exactly once. Note for future checks: read row values only after tick()
+— Lustre renders are RAF-deferred, so post-click DOM reads are stale
+without a frame flush.
