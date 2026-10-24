@@ -1,11 +1,8 @@
-//// fourier toy v2 — dial experiments against fixture shapes, rendered as
-//// always-on epicycle + comet illustrations on canvas, with the score and
-//// dial rows driven by the tested pure core (shapes + puzzle modules).
-////
-//// Architecture (the sibling's proven split): Lustre owns puzzle state,
-//// dial state, score, and the row UI; the canvas lives on the FFI side and
-//// runs its own RAF loop — Gleam pushes shape/terms/theme in on change
-//// (cache-deduped there), exactly like fourier_sketch's panel-2.
+//// fourier toy — the quaver puzzle: tune four Fourier terms (phase, radius,
+//// k) until the solid comet closes onto the dashed eighth-note target.
+//// Final v2 shape: ONE puzzle, no routing — the app boots straight into
+//// the board. The tested pure core (shapes + puzzle) owns the math; the
+//// canvas/RAF/theme/hold drivers live in the FFI (sibling patterns).
 
 import fourier_toy/ffi
 import fourier_toy/puzzle.{type Setup}
@@ -22,19 +19,13 @@ import lustre/element/svg
 import lustre/event
 
 type Msg {
-  HashChange(String)
   SlotStep(Int, Int)
   Reset
   ToggleTheme
 }
 
-type Page {
-  Home
-  Board(setup: Setup, state: List(TermState), match_pct: Float)
-}
-
 type Model {
-  Model(page: Page, dark: Bool)
+  Model(state: List(TermState), dark: Bool)
 }
 
 pub fn main() -> Nil {
@@ -43,46 +34,31 @@ pub fn main() -> Nil {
   Nil
 }
 
+fn setup() -> Setup {
+  puzzle.quaver_setup()
+}
+
+fn shape() {
+  puzzle.shape_of(setup().shape)
+}
+
 fn init(_: Nil) -> #(Model, Effect(Msg)) {
-  let model = Model(route(ffi.hash_now()), False)
-  #(model, effect.batch([watch_hash(), hold_driver(), sync_effect(model.page)]))
+  let state = puzzle.initial(shape(), setup().patches)
+  #(Model(state, False), effect.batch([hold_driver(), sync_effect(state)]))
 }
 
 /// Bind the hold-to-repeat input driver once — its document-level listeners
-/// cover stepper rows re-rendered by any later route change.
+/// cover the stepper rows through every later re-render.
 fn hold_driver() -> Effect(Msg) {
   effect.from(fn(_dispatch) { ffi.hold_init() })
 }
 
-fn route(hash: String) -> Page {
-  case puzzle.find(hash) {
-    Ok(setup) -> {
-      let shape = puzzle.shape_of(setup.shape)
-      let state = puzzle.initial(shape, setup.patches)
-      Board(setup, state, shapes.match_pct(shape, state))
-    }
-    Error(Nil) -> Home
-  }
-}
-
-fn watch_hash() -> Effect(Msg) {
-  effect.from(fn(dispatch) {
-    ffi.hash_watch(fn(hash) { dispatch(HashChange(hash)) })
-  })
-}
-
-/// Push the canvas everything it needs for the page we're on.
-fn sync_effect(page: Page) -> Effect(Msg) {
+/// Push the canvas everything it needs: the (constant) quaver shape plus
+/// the current dial terms.
+fn sync_effect(state: List(TermState)) -> Effect(Msg) {
   effect.from(fn(_dispatch) {
-    case page {
-      Home -> Nil
-      Board(setup, state, _) -> {
-        let shape = puzzle.shape_of(setup.shape)
-        ffi.canvas_shape(shape)
-        ffi.canvas_terms(state)
-        Nil
-      }
-    }
+    ffi.canvas_shape(shape())
+    ffi.canvas_terms(state)
   })
 }
 
@@ -92,44 +68,28 @@ fn push_terms(state: List(TermState)) -> Effect(Msg) {
 
 fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
   case msg {
-    HashChange(hash) -> {
-      let page = route(hash)
-      #(Model(page, model.dark), sync_effect(page))
+    SlotStep(slot, dir) -> {
+      let kind = kind_at(setup().dials, slot)
+      let stepped =
+        list.index_map(model.state, fn(s, i) {
+          case i == slot {
+            True -> puzzle.step(kind, s, dir, shape().dial_max_r)
+            False -> s
+          }
+        })
+      #(Model(stepped, model.dark), push_terms(stepped))
     }
-    SlotStep(slot, dir) ->
-      case model.page {
-        Board(setup, state, _) -> {
-          let shape = puzzle.shape_of(setup.shape)
-          let kind = kind_at(setup.dials, slot)
-          let stepped =
-            list.index_map(state, fn(s, i) {
-              case i == slot {
-                True -> puzzle.step(kind, s, dir, shape.dial_max_r)
-                False -> s
-              }
-            })
-          let page = Board(setup, stepped, shapes.match_pct(shape, stepped))
-          #(Model(page, model.dark), push_terms(stepped))
-        }
-        Home -> #(model, effect.none())
-      }
-    Reset ->
-      case model.page {
-        Board(setup, _, _) -> {
-          let shape = puzzle.shape_of(setup.shape)
-          let state = puzzle.initial(shape, setup.patches)
-          let page = Board(setup, state, shapes.match_pct(shape, state))
-          #(Model(page, model.dark), push_terms(state))
-        }
-        Home -> #(model, effect.none())
-      }
+    Reset -> {
+      let state = puzzle.initial(shape(), setup().patches)
+      #(Model(state, model.dark), push_terms(state))
+    }
     ToggleTheme -> {
       let dark = case model.dark {
         True -> False
         False -> True
       }
       #(
-        Model(model.page, dark),
+        Model(model.state, dark),
         effect.from(fn(_dispatch) {
           ffi.canvas_theme(dark)
           ffi.set_dark(dark)
@@ -150,41 +110,34 @@ fn kind_at(dials: List(puzzle.DialKind), slot: Int) -> puzzle.DialKind {
 // ---------- view ----------
 
 fn view(model: Model) -> Element(Msg) {
-  case model.page {
-    Home -> home_view()
-    Board(setup, state, m) -> board_view(setup, state, m, model.dark)
-  }
+  let m = shapes.match_pct(shape(), model.state)
+  board_view(model.state, m, model.dark)
 }
 
-fn home_view() -> Element(Msg) {
+fn board_view(state: List(TermState), m: Float, dark: Bool) -> Element(Msg) {
   html.div([], [
-    html.p([attribute.class("intro")], [
-      html.text(
-        "Dial experiments against four targets: the sketch's star, a 6-petal flower, a fish drawn from its terms, and a quaver (♪). The puzzle terms are each shape's real fourier coefficients (the k=0 centroid is fixed and never shown as a dial). Match the dashed target by closing the solid comet.",
-      ),
-    ]),
+    bar(m, dark),
+    html.h2([attribute.class("pt")], [html.text(setup().title)]),
+    html.canvas([attribute.class("board"), attribute.id("toy-board")]),
     html.div(
-      [attribute.class("cards")],
-      list.map(puzzle.setups(), fn(setup) {
-        html.a([attribute.class("card"), attribute.href("#" <> setup.id)], [
-          html.span([attribute.class("card-t")], [html.text(setup.title)]),
-          html.span([attribute.class("card-d")], [html.text(setup.desc)]),
-        ])
-      }),
+      [attribute.class("rows")],
+      list.index_map(setup().dials, fn(kind, i) { #(i, kind) })
+        |> list.filter(fn(pair) { pair.1 != puzzle.DialFixed })
+        |> list.map(fn(pair) {
+          let #(i, kind) = pair
+          let assert [s, ..] = list.drop(state, i)
+          dial_row(kind, i, s)
+        }),
     ),
-    html.p([attribute.class("note")], [
-      html.text(
-        "solved at ≥ 95% · the star's board tops out at ≈ 97.7% (the traced star is not exactly a 4-term curve); the others are exact targets (tops at 100%) · the fish and quaver carry fixed higher-harmonic extras baked into both traces · a wrong k on a dominant term shows 0 — no partial credit — while the same wrong k on a small term is graded gently · animation always on, at half the sketch's max speed",
-      ),
-    ]),
+    html.button(
+      [attribute.class("reset"), event.on("click", decode.success(Reset))],
+      [html.text("reset to start")],
+    ),
   ])
 }
 
-fn bar(dark: Bool, m: Float) -> Element(Msg) {
+fn bar(m: Float, dark: Bool) -> Element(Msg) {
   html.div([attribute.class("bar")], [
-    html.a([attribute.class("back"), attribute.href("#")], [
-      html.text("← experiments"),
-    ]),
     html.span(
       [
         attribute.classes([
@@ -220,49 +173,14 @@ fn bar(dark: Bool, m: Float) -> Element(Msg) {
   ])
 }
 
-fn board_view(
-  setup: Setup,
-  state: List(TermState),
-  m: Float,
-  dark: Bool,
-) -> Element(Msg) {
-  html.div([], [
-    bar(dark, m),
-    html.h2([attribute.class("pt")], [
-      html.text(setup.title),
-    ]),
-    html.canvas([attribute.class("board"), attribute.id("toy-board")]),
-    html.div(
-      [attribute.class("rows")],
-      list.index_map(setup.dials, fn(kind, i) { #(i, kind) })
-        |> list.filter(fn(pair) { pair.1 != puzzle.DialFixed })
-        |> list.map(fn(pair) {
-          let #(i, kind) = pair
-          let assert [s, ..] = list.drop(state, i)
-          dial_row(setup, kind, i, s)
-        }),
-    ),
-    html.button(
-      [attribute.class("reset"), event.on("click", decode.success(Reset))],
-      [html.text("reset to start")],
-    ),
-  ])
-}
-
-fn dial_row(
-  setup: Setup,
-  kind: puzzle.DialKind,
-  i: Int,
-  s: TermState,
-) -> Element(Msg) {
-  let shape = puzzle.shape_of(setup.shape)
+fn dial_row(kind: puzzle.DialKind, i: Int, s: TermState) -> Element(Msg) {
   let head = [
     html.div([attribute.class("id")], [
       html.span([attribute.class("term")], [
         html.text("term " <> int.to_string(i + 1)),
       ]),
       html.span([attribute.class("sub")], [
-        html.text(puzzle.locked_note(kind, s, shape.dial_max_r)),
+        html.text(puzzle.locked_note(kind, s, shape().dial_max_r)),
       ]),
     ]),
   ]
@@ -271,18 +189,18 @@ fn dial_row(
       html.div([attribute.class("val")], [html.text("not a dial")]),
     ]
     _ -> [
-      edge_button(i, -1, at_min(kind, s, shape.dial_max_r)),
+      edge_button(i, -1, at_min(kind, s)),
       html.div([attribute.class("val")], [
-        html.text(puzzle.slot_value(kind, s, shape.dial_max_r)),
+        html.text(puzzle.slot_value(kind, s, shape().dial_max_r)),
       ]),
-      edge_button(i, 1, at_max(kind, s, shape.dial_max_r)),
+      edge_button(i, 1, at_max(kind, s)),
     ]
   }
   html.div([attribute.class("row")], list.append(head, body))
   |> keep
 }
 
-fn at_min(kind: puzzle.DialKind, s: TermState, _max_r: Float) -> Bool {
+fn at_min(kind: puzzle.DialKind, s: TermState) -> Bool {
   case kind {
     puzzle.DialK -> s.k <= -16
     puzzle.DialR -> s.r <=. 0.0
@@ -290,10 +208,10 @@ fn at_min(kind: puzzle.DialKind, s: TermState, _max_r: Float) -> Bool {
   }
 }
 
-fn at_max(kind: puzzle.DialKind, s: TermState, max_r: Float) -> Bool {
+fn at_max(kind: puzzle.DialKind, s: TermState) -> Bool {
   case kind {
     puzzle.DialK -> s.k >= 16
-    puzzle.DialR -> s.r >=. 2.0 *. max_r
+    puzzle.DialR -> s.r >=. 2.0 *. shape().dial_max_r
     _ -> False
   }
 }

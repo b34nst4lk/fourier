@@ -135,3 +135,30 @@ gives it, so the puzzle is fair by construction and self-checking).
 - Deployed sibling: https://jacks.im/toys/fourier-sketch
 - Site deploy post-mortem (single-file bundle rule): sibling PROGRESS
   §"Deployment failure post-mortem"
+## 9. Final v2 plan of record (2026-10-23)
+
+The prototype round is folded into the product. Decisions, with rationale:
+
+- **Single puzzle: the quaver, no routing.** The five-experiment roster
+  (P6–P10) served the prototype's purpose — comparing dial kinds and
+  feedback feel. For the shipped toy one well-shaped target (an exact
+  4-term solve with 25 rotating extras) tells the whole story; menus
+  between experiments were chrome. The app boots straight into the
+  board; the experiment roster stays in `puzzle.setups()` for the gold
+  tests, and `puzzle.quaver_setup()` is the shipped accessor.
+- **Dials**: steppers with hold-to-repeat (FFI input driver; taps stay
+  one step, release-click swallowed after repeats); phase ±5° wrap,
+  radius ±2% clamp 0–200%, k ±1 clamp ±16. Solved ≥ 95%.
+- **Illustration**: always-on comet at 50% of the sketch's max speed,
+  alpha ramp 40%→85% (full lap readable), epicycles chained for the four
+  dials plus the rotating extras (mostly sub-pixel), dashed target under
+  the comet — comet, pen and score share one synthesis formula.
+- **UI**: unboxed "Match **xx.x%**" score, icon-only theme chip
+  (moon/sun, currentColor stroke SVG), no back link. Mobile: controls
+  carry touch-action: manipulation; viewport stays user-scalable.
+- **Deployment**: the JS prototype round is retired (its directory is
+  deleted; tag `prototype-js-v1` preserves it). The v2 Gleam app is the
+  toy published at **https://jacks.im/toys/fourier-toy** via the blog
+  manifest (branch pin `prototype` until merged to main).
+- Phase table: phases 2–4 of the original v1 plan are superseded by the
+  shipped v2 above; §7 shelf items remain parked.

@@ -351,22 +351,6 @@ function draw() {
   ctx.arc(sx(c[2 * n]), sy(c[2 * n + 1]), 2.2, 0, 2 * Math.PI);
   ctx.stroke();
 }
-// ---- routing ----
-
-export function hash_now() {
-  return window.location.hash.replace(/^#/, "");
-}
-
-export function hash_set(fragment) {
-  const current = hash_now();
-  if (current === fragment) return;
-  window.location.hash = "#" + fragment;
-}
-
-export function hash_watch(handler) {
-  window.addEventListener("hashchange", () => handler(hash_now()));
-}
-
 export function set_dark(dark) {
   if (document.body) {
     document.body.setAttribute("data-theme", dark ? "dark" : "light");

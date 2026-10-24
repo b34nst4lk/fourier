@@ -276,3 +276,27 @@ another ~10% (light 0.225→0.2 / 0.495→0.45; dark 0.108→0.095 /
 0.315→0.28) — the scaffolding now sits clearly behind the comet and the
 dashed target. Palette data only; gates unchanged and green (contract
 23/23, smoke 31/31, gleam 14/14).
+
+## Finalization — single-puzzle interface, prototype round retired (2026-10-23)
+
+Product decision (recorded in PLAN §9): the toy ships as ONE puzzle — the
+quaver — with no routing. The app rewrite: Page/route/hash machinery,
+home view, back link and the hash FFI are gone (Model is just state+dark;
+the match % is computed in the view from the tested core); boots straight
+into the board at any URL; title "quaver"; quaver Setup retitled for the
+product (`puzzle.quaver_setup()` is the shipped accessor; the P6–P10
+roster stays in setups() for the gold tests). Home/card CSS dropped from
+index.html.
+
+prototype_js/ deleted from the tree — the JS prototype round is retired;
+tag `prototype-js-v1` preserves it in history. The v2 Gleam app becomes
+the toy served at /toys/fourier-toy/ (manifest updated in the blog repo;
+the /toys/fourier-toy-2/ slug disappears and its stale artifact removed).
+
+Smoke rewritten for the final interface — 24 checks: boot-straight-in
+(paint, initial score vs core, no routing chrome, unboxed score, icon
+chip), phase wrap, radius floor+disable, dial-home solve at the nearest
+reachable radius step (the quaver's 2%-grid radius cannot hit truth
+exactly — the score is asserted against the core for the actual stepped
+state, badge at ≥95%), reset, theme, hold-to-repeat (hold/swallow/tap).
+Gates: gleam 14/14, format, boot contract 23/23, artifact smoke 24/24.

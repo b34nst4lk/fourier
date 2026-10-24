@@ -38,30 +38,6 @@ fn row(t: TermState) -> #(Int, Float, Float) {
   #(t.k, t.r, t.phase_deg)
 }
 
-/// The current URL hash fragment ("" = the home page, "#p6" = a puzzle).
-pub fn hash_now() -> String {
-  js_hash_now()
-}
-
-@external(javascript, "../fourier_toy_ffi.mjs", "hash_now")
-fn js_hash_now() -> String
-
-/// Set the URL hash without triggering a route message loop.
-pub fn hash_set(fragment: String) -> Nil {
-  js_hash_set(fragment)
-}
-
-@external(javascript, "../fourier_toy_ffi.mjs", "hash_set")
-fn js_hash_set(fragment: String) -> Nil
-
-/// Subscribe to hash changes. The handler runs on every hashchange event.
-pub fn hash_watch(handler: fn(String) -> Nil) -> Nil {
-  js_hash_watch(handler)
-}
-
-@external(javascript, "../fourier_toy_ffi.mjs", "hash_watch")
-fn js_hash_watch(handler: fn(String) -> Nil) -> Nil
-
 /// Mirror the toggle onto the body's data-theme so the page CSS follows.
 pub fn set_dark(dark: Bool) -> Nil {
   js_set_dark(dark)
@@ -72,7 +48,7 @@ fn js_set_dark(dark: Bool) -> Nil
 
 /// Bind the hold-to-repeat input driver for the stepper buttons. Call once
 /// at app start; delegates via document listeners, so rows re-rendered by
-/// route changes are covered without re-binding.
+/// any later change are covered without re-binding.
 pub fn hold_init() -> Nil {
   js_hold_init()
 }

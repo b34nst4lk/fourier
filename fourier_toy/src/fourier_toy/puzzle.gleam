@@ -135,8 +135,8 @@ pub fn setups() -> List(Setup) {
     ),
     Setup(
       "p9",
-      "P9 · quaver · one dial each, k on term 3",
-      "term 1 phase · term 2 radius · term 3 k · term 4 fixed",
+      "quaver",
+      "match the eighth note — term 1 phase · term 2 radius · term 3 k",
       "quaver",
       [DialP, DialR, DialK, DialFixed],
       [PhaseDeg(355.0), RPct(73.0), KSet(-5), Keep],
@@ -163,6 +163,13 @@ pub fn find(id: String) -> Result(Setup, Nil) {
         }
     }
   })
+}
+
+/// The one shipped puzzle — the final v2 interface is single-puzzle (the
+/// experiment roster stays in setups() for the gold tests).
+pub fn quaver_setup() -> Setup {
+  let assert Ok(setup) = find("p9")
+  setup
 }
 
 pub fn shape_of(key: String) -> Shape {
