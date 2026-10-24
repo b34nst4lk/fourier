@@ -24,6 +24,8 @@ const MAX_DPR = 2;
 const FRAME_MS = 1000 / 30;
 const CHUNKS = 12; // comet alpha chunks
 const TAIL_FRAC = 0.98; // fraction of the lap drawn by the comet
+const COMET_TAIL = 0.4; // comet alpha floor — the whole lap stays readable
+const COMET_TIP = 0.85; // comet alpha at the pen
 
 const anim = {
   started: false,
@@ -49,15 +51,15 @@ const anim = {
 const PALETTES = {
   light: {
     target: "rgba(134, 97, 63, 0.55)",
-    circles: "rgba(70, 53, 31, 0.25)",
-    links: "rgba(70, 53, 31, 0.55)",
+    circles: "rgba(70, 53, 31, 0.225)",
+    links: "rgba(70, 53, 31, 0.495)",
     trace: "#a4372a",
     pen: "#d9a92f",
   },
   dark: {
     target: "rgba(200, 174, 120, 0.55)",
-    circles: "rgba(234, 217, 180, 0.12)",
-    links: "rgba(234, 217, 180, 0.35)",
+    circles: "rgba(234, 217, 180, 0.108)",
+    links: "rgba(234, 217, 180, 0.315)",
     trace: "#d05848",
     pen: "#d9a92f",
   },
@@ -323,7 +325,9 @@ function draw() {
   ctx.lineWidth = 1.6;
   ctx.strokeStyle = pal.trace;
   for (let k = 0; k < CHUNKS; k++) {
-    ctx.globalAlpha = ((k + 1) / CHUNKS) * 0.85;
+    // tail at COMET_TAIL, tip at COMET_TIP, linear across the chunks —
+    // the whole lap stays readable while the gradient still shows motion
+    ctx.globalAlpha = COMET_TAIL + ((COMET_TIP - COMET_TAIL) * k) / (CHUNKS - 1);
     const a0 = idx - TAIL + Math.floor((TAIL * k) / CHUNKS);
     const a1 = idx - TAIL + Math.floor((TAIL * (k + 1)) / CHUNKS);
     ctx.beginPath();

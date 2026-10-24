@@ -254,3 +254,17 @@ core step-for-step; the release click swallowed; a quick tap steps
 exactly once. Note for future checks: read row values only after tick()
 — Lustre renders are RAF-deferred, so post-click DOM reads are stale
 without a frame flush.
+
+## Comet readability pass (2026-10-23)
+
+User report: the moving comet was hard to parse — the tail faded to
+((1/12)×0.85 ≈ 7%), so most of the lap was near-invisible and the shape
+read as a disconnected stub. Fix: comet alpha ramp re-based to a 40%
+floor at the tail, 85% at the tip, linear across the 12 chunks
+(COMET_TAIL/COMET_TIP constants; was (k+1)/12 × 0.85). The gradient
+still shows motion, but the whole lap stays readable. Circles and links
+dialed ~10% fainter in both palettes (light 0.25→0.225 / 0.55→0.495;
+dark 0.12→0.108 / 0.35→0.315) so the epicycle scaffolding recedes
+behind the now-stronger comet. Boot contract grew the alpha-ramp pins
+(tail ≥ 40%, tip ≤ 85%, tail dimmer than tip) — RED first (min 0.071),
+then GREEN — 23/23.

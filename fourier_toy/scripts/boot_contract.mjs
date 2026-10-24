@@ -36,8 +36,10 @@ function make_ctx() {
     setTransform_args: null, // last setTransform() call (DPR contract)
     pen: null, // last arc() center = the pen tip (draws end with the pen)
     segments: [], // one coordinate list per stroke — draw-order structure
+    stroke_alphas: [], // globalAlpha at each stroke (comet ramp contract)
   };
   let seg = []; // coords accumulated since the last stroke
+  let curAlpha = 1; // current globalAlpha (recorded at stroke time)
   const push = (x, y) => {
     seg.push([x, y]);
     if (!Number.isFinite(x) || !Number.isFinite(y)) ops.nan++;
@@ -58,9 +60,11 @@ function make_ctx() {
     },
     set strokeStyle(_) {},
     get globalAlpha() {
-      return 1;
+      return curAlpha;
     },
-    set globalAlpha(_) {},
+    set globalAlpha(v) {
+      curAlpha = v;
+    },
     setTransform: (a, b, c, d, e, f) => {
       ops.setTransform_args = [a, b, c, d, e, f];
     },
@@ -85,6 +89,7 @@ function make_ctx() {
     stroke: () => {
       ops.stroke++;
       ops.segments.push(seg);
+      ops.stroke_alphas.push(curAlpha);
       seg = [];
     },
   };
@@ -338,6 +343,22 @@ console.log("S6 · quaver at truth — DPR transform, pen/comet lockstep, comet 
     penDist.toFixed(2) + "px",
   );
   check("no NaN in the full-synthesis pass", ops.nan === 0, "nan " + ops.nan);
+  // comet alpha ramp: the tail must stay readable (never below 40%),
+  // the tip at 85%, dimmer toward the tail so motion still reads
+  const alphas = ops.stroke_alphas.slice(-16); // last draw: 16 strokes
+  const cometA = alphas.slice(3, 15); // the 12 comet chunk strokes
+  const minA = Math.min(...cometA);
+  const maxA = Math.max(...cometA);
+  check(
+    "comet tail never fades below 40% (full lap readable)",
+    minA >= 0.4,
+    "min " + minA.toFixed(3),
+  );
+  check(
+    "comet tip at 85%, gradient tail→tip",
+    maxA <= 0.85 + 1e-9 && cometA[0] < cometA[cometA.length - 1],
+    "max " + maxA.toFixed(3) + ", head " + cometA[0] + " tail " + cometA[cometA.length - 1],
+  );
 }
 
 console.log("");
