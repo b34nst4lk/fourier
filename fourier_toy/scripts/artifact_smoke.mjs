@@ -172,7 +172,7 @@ function score_text(dom) {
   return el ? text(el).replace(/\s+/g, " ") : null;
 }
 function score_val(dom) {
-  const el = dom.window.document.querySelector(".score .val");
+  const el = dom.window.document.querySelector(".score b");
   return el ? text(el) : null;
 }
 function rows(dom) {
@@ -236,6 +236,14 @@ tick(34, 5); // draw frames
     "dom " + score_val(dom) + " vs core " + expect + "%",
   );
   check("fixed slot 4 hidden (3 rows)", rows(dom).length === 3, "rows " + rows(dom).length);
+  check(
+    "top bar matches the prototype: unboxed score (b), compact night chip",
+    dom.window.document.querySelector(".score b") !== null &&
+      dom.window.document.querySelector(".score .val") === null &&
+      text(dom.window.document.querySelector("button.theme")) === "night",
+    "score b: " + (dom.window.document.querySelector(".score b") !== null) +
+      ", theme: " + text(dom.window.document.querySelector("button.theme")),
+  );
 }
 
 // ==== S2 · dials: wrap, step, disable ========================================
@@ -328,6 +336,10 @@ console.log("S5 · theme toggle mirrors onto the body");
   dom.window.document.querySelector("button.theme").click();
   tick();
   check("body flips to dark", dom.window.document.body.getAttribute("data-theme") === "dark");
+  check(
+    "chip label flips to day",
+    text(dom.window.document.querySelector("button.theme")) === "day",
+  );
   dom.window.document.querySelector("button.theme").click();
   tick();
   check("body flips back to light", dom.window.document.body.getAttribute("data-theme") === "light");

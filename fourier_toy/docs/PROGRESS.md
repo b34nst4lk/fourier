@@ -197,3 +197,17 @@ in the viewport meta) was rejected on purpose. Artifact smoke grew a
 shipped-CSS contract (jsdom cannot synthesize gestures): the button rule
 must carry touch-action: manipulation AND the viewport must stay
 user-scalable — 25/25.
+
+## Top bar back to the prototype layout (2026-10-23)
+
+User report: the text-wide "dark mode" toggle crowded the bar and squashed
+the Match %, and the percentage read like a boxed element. The box was
+the global .val dial-readout rule leaking onto the score span. Fix: bar
+restored to the original prototype's structure — plain-text score
+(`Match <b>67.2%</b>`, b at 1.25rem, solved turns the b green, no border)
+— and the toggle restyled as the sibling's corner-chip convention
+(12px small-caps letter-spaced "night"/"day", width:auto so the global
+button width:100% no longer applies). Two leftover CSS quirks cleaned:
+the duplicated .bar rule from the earlier rebalance, and .score .val
+styles. Artifact smoke pins the layout: score is an unboxed <b>, chip
+reads "night" and flips to "day" — 27/27.

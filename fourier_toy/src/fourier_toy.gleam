@@ -187,16 +187,18 @@ fn bar(dark: Bool, m: Float) -> Element(Msg) {
       ],
       [
         html.text("Match "),
-        html.span([attribute.class("val")], [html.text(puzzle.fmt1(m) <> "%")]),
+        html.b([], [html.text(puzzle.fmt1(m) <> "%")]),
         html.span([attribute.class("ok")], [html.text("solved ✓")]),
       ],
     ),
+    // sibling's corner-chip convention: a small-caps word, never a wide
+    // button — the bar keeps the original prototype's back + score layout
     html.button(
       [attribute.class("theme"), event.on("click", decode.success(ToggleTheme))],
       [
         html.text(case dark {
-          True -> "light mode"
-          False -> "dark mode"
+          True -> "day"
+          False -> "night"
         }),
       ],
     ),
