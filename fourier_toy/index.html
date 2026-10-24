@@ -54,6 +54,8 @@ body {
   border: 1.5px solid var(--line);
   border-radius: 10px;
   margin: 0 0 10px;
+  /* stray double-taps on the play surface must not zoom either */
+  touch-action: manipulation;
 }
 .intro { font-size: .92rem; margin: 0 0 12px; }
 .card {
@@ -83,6 +85,8 @@ button {
   font: inherit; font-size: 1.35rem; width: 100%;
   border: 1.5px solid var(--line); border-radius: 10px;
   background: var(--card); color: var(--ink); cursor: pointer;
+  /* rapid stepper taps must not trigger double-tap zoom; pinch stays */
+  touch-action: manipulation;
 }
 button:active { background: #f1e4c8; }
 body[data-theme="dark"] button:active { background: #3d321f; }

@@ -195,6 +195,24 @@ async function go(dom, hash) {
   tick();
 }
 
+// ==== S0 · shipped CSS contract =================================================
+console.log("S0 · artifact CSS — controls opt out of double-tap zoom");
+{
+  // jsdom cannot synthesize touch gestures; the shipped-CSS rule is the
+  // behavior contract for "rapid stepper taps must not zoom" (pinch stays)
+  const btnRule = html.match(/button \{[^}]*\}/);
+  check(
+    "steppers carry touch-action: manipulation (no double-tap zoom; pinch kept)",
+    btnRule !== null && /touch-action:\s*manipulation/.test(btnRule[0]),
+    "button rule: " + (btnRule ? btnRule[0].slice(0, 80) + "…" : "missing"),
+  );
+  check(
+    "viewport stays user-scalable (pinch-zoom accessibility preserved)",
+    !/user-scalable\s*=\s*no/i.test(html) && !/maximum-scale\s*=\s*1\b/i.test(html),
+    "viewport meta limits zoom",
+  );
+}
+
 // ==== S1 · cold load straight onto a board (init effects run pre-render) =====
 console.log("S1 · cold load at #p6 — pre-mount sync payload must paint after boot");
 const p6 = setup_of("p6");

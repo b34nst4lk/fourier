@@ -184,3 +184,16 @@ Contract grown to 21 checks: DPR transform args, pen-on-comet-edge
 pen-on-full-synthesis-curve. Gates: gleam 14/14, format green, boot
 contract 21/21, artifact smoke 23/23 (its canvas stub gained the
 setTransform no-op the new draw requires).
+
+## Mobile fix — rapid stepper taps caused double-tap zoom (2026-10-23)
+
+User report: tapping +/− quickly on a phone zoomed the page in. Root cause
+is the browser's double-tap-to-zoom gesture, not the app. Fix: surgical
+`touch-action: manipulation` on `button` and `.board` in index.html —
+kills double-tap zoom (and the legacy tap delay, so steppers feel
+snappier on iOS) while pinch-zoom stays fully available everywhere; the
+accessibility-hostile alternative (`user-scalable=no` / `maximum-scale`
+in the viewport meta) was rejected on purpose. Artifact smoke grew a
+shipped-CSS contract (jsdom cannot synthesize gestures): the button rule
+must carry touch-action: manipulation AND the viewport must stay
+user-scalable — 25/25.
