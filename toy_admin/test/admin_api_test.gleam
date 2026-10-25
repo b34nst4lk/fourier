@@ -705,6 +705,29 @@ pub fn preview_derives_the_fixture_and_leaves_the_store_alone_test() {
   should.equal(before.updated_at, after.updated_at)
 }
 
+pub fn preview_with_present_but_empty_fields_still_previews_test() {
+  fresh_admin_db("ui-preview-blank-fields")
+  configure_audience()
+  // The EDITOR always sends both fields — while you are still drawing they
+  // are empty STRINGs, not absent keys (wire.preview_body never omits them;
+  // you name and date the puzzle AFTER you draw). A present-but-empty date
+  // is "no date picked yet", the same state as an absent field — not a bad
+  // date drawing session.
+  let response =
+    call(
+      Some(good_token()),
+      http.Post,
+      "/api/admin/preview",
+      Some(create_body("", "", triangle)),
+    )
+  should.equal(200, response.status)
+  let assert Ok(previewed) = response_fixture(simulate.read_body(response))
+  should.equal(
+    derivation.derive_fixture(triangle_points(), "preview", ""),
+    previewed,
+  )
+}
+
 pub fn preview_asks_for_a_drawing_but_not_for_a_name_or_a_date_test() {
   fresh_admin_db("ui-preview-bare")
   configure_audience()

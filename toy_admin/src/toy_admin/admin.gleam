@@ -192,8 +192,14 @@ fn derive_preview(request: wisp.Request) -> wisp.Response {
 fn validated_preview(
   draft: Draft,
 ) -> Result(#(String, String, List(Dot)), List(String)) {
+  // The editor ALWAYS sends both fields — while you are still drawing they
+  // are empty strings, not absent keys. A blank field IS "not picked yet":
+  // the same state the absent-field test covers, so the preview is the
+  // dateless "preview" fixture. (The CREATE route stays strict: a save with
+  // a blank date is a BadPuzzleDate.)
   let show_date = case draft.show_date {
     None -> Ok("")
+    Some("") -> Ok("")
     Some(value) -> validated_date(value)
   }
   let dots = validated_dots(draft.dots)
