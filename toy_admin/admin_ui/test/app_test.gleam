@@ -58,6 +58,7 @@ fn model() -> admin_ui.Model {
     name: "",
     show_date: "",
     drawing: draw.empty(),
+    drag: None,
     play: None,
     armed: None,
     preview: None,
@@ -73,6 +74,17 @@ fn model() -> admin_ui.Model {
 fn step(model: admin_ui.Model, msg: admin_ui.Msg) -> admin_ui.Model {
   let #(next, _) = admin_ui.update(model, msg)
   next
+}
+
+/// A press on empty space: the left button on a fresh spot is the ADD — the
+/// original tap-to-append contract, unchanged by the edit vocabulary.
+fn press(model: admin_ui.Model, point: #(Float, Float)) -> admin_ui.Model {
+  step(model, admin_ui.DotsDown(0, point))
+}
+
+/// pointerup (and pointerleave — same message, same decoder) closes the drag.
+fn release(model: admin_ui.Model) -> admin_ui.Model {
+  step(model, admin_ui.DotsUp)
 }
 
 fn play_state(model: admin_ui.Model) -> admin_ui.Play {
@@ -291,8 +303,8 @@ pub fn the_solved_badge_fires_once_and_the_count_freezes_test() {
   should.equal(True, score.solved(honest))
 }
 
-pub fn a_tap_adds_a_dot_and_undo_takes_it_back_test() {
-  let tapped = step(model(), admin_ui.DotsTapped(#(10.0, 10.0)))
+pub fn a_press_adds_a_dot_and_undo_takes_it_back_test() {
+  let tapped = press(model(), #(10.0, 10.0))
   should.equal(1, draw.count(tapped.drawing))
   let back = step(tapped, admin_ui.Undo)
   should.equal(0, draw.count(back.drawing))
@@ -326,9 +338,9 @@ pub fn a_delete_is_armed_then_confirmed_test() {
 }
 
 pub fn a_refused_save_keeps_the_drawing_and_says_why_test() {
-  let drawn = step(model(), admin_ui.DotsTapped(#(10.0, 10.0)))
-  let drawn = step(drawn, admin_ui.DotsTapped(#(20.0, 10.0)))
-  let drawn = step(drawn, admin_ui.DotsTapped(#(20.0, 20.0)))
+  let drawn = press(model(), #(10.0, 10.0))
+  let drawn = press(drawn, #(20.0, 10.0))
+  let drawn = press(drawn, #(20.0, 20.0))
 
   let taken = wire.Failure(409, ["DuplicateShowDate"])
   let refused = step(drawn, admin_ui.Saved(Error(taken)))
@@ -340,7 +352,7 @@ pub fn a_refused_save_keeps_the_drawing_and_says_why_test() {
 }
 
 pub fn a_saved_puzzle_lands_on_the_menu_and_the_calendar_reloads_test() {
-  let drawn = step(model(), admin_ui.DotsTapped(#(10.0, 10.0)))
+  let drawn = press(model(), #(10.0, 10.0))
   let saved = step(drawn, admin_ui.Saved(Ok(Nil)))
   should.equal(admin_ui.Menu, saved.view)
   should.equal(Some("saved"), saved.flash)
@@ -348,6 +360,131 @@ pub fn a_saved_puzzle_lands_on_the_menu_and_the_calendar_reloads_test() {
   // the editor's leftovers are gone — a fresh "new puzzle" starts blank
   should.equal(0, draw.count(saved.drawing))
   should.equal("", saved.name)
+}
+
+// ---------------------------------------------------------------------------
+// The pointer gestures: press / move / release and the right-button delete.
+//
+// The bug this answers: the authoring canvas could only APPEND, so one
+// misplaced dot meant clearing the whole drawing. The sketch's vocabulary is
+// ported whole (grab within `draw.hit_radius`, move without history, one undo
+// step per drag, right-click deletes), and every CHANGE goes through
+// `schedule_preview` so the live panel shows it.
+// ---------------------------------------------------------------------------
+
+pub fn a_press_near_a_dot_grabs_it_instead_of_adding_test() {
+  let drawn = press(model(), #(10.0, 10.0))
+  // inside the 3-unit hit radius a press GRABS: the count stays, nothing is
+  // appended on top of the dot the user meant to move
+  let grabbed = step(drawn, admin_ui.DotsDown(0, #(11.0, 11.0)))
+  should.equal(1, draw.count(grabbed.drawing))
+  should.equal(Some(0), grabbed.drag)
+
+  // ...and a press out on empty space still ADDS (the tap contract survives)
+  let added = step(drawn, admin_ui.DotsDown(0, #(40.0, 40.0)))
+  should.equal(2, draw.count(added.drawing))
+  should.equal([#(10.0, 10.0), #(40.0, 40.0)], draw.dots(added.drawing))
+  should.equal(None, added.drag)
+}
+
+pub fn a_drag_moves_the_dot_and_schedules_one_preview_test() {
+  let drawn = press(model(), #(10.0, 10.0)) |> release
+  let before = drawn.preview_scheduled.generation
+
+  // the press grabs, and a grab is not a change: nothing is scheduled
+  let grabbed = step(drawn, admin_ui.DotsDown(0, #(10.0, 10.0)))
+  should.equal(Some(0), grabbed.drag)
+  should.equal(drawn.preview_scheduled, grabbed.preview_scheduled)
+
+  // the moves repaint the dot, and NO move schedules: the debounce must not
+  // fire per pointer sample, only for the drop
+  let moved = step(grabbed, admin_ui.DotsMove(#(20.0, 30.0)))
+  let moved = step(moved, admin_ui.DotsMove(#(25.0, 35.0)))
+  should.equal([#(25.0, 35.0)], draw.dots(moved.drawing))
+  should.equal(drawn.preview_scheduled, moved.preview_scheduled)
+  should.equal(Some(0), moved.drag)
+
+  // the drop closes the drag and schedules exactly ONE preview (one bump)
+  let dropped = step(moved, admin_ui.DotsUp)
+  should.equal(None, dropped.drag)
+  should.equal(before + 1, dropped.preview_scheduled.generation)
+  should.equal(Some(before + 1), dropped.preview_scheduled.scheduled)
+
+  // and the whole drag was ONE undo step: it returns the pre-grab dot
+  should.equal([#(10.0, 10.0)], draw.dots(step(dropped, admin_ui.Undo).drawing))
+}
+
+pub fn a_click_on_a_dot_is_not_a_change_test() {
+  let drawn = press(model(), #(10.0, 10.0)) |> release
+  let clock = drawn.preview_scheduled
+
+  // press on the dot and let go without moving: a click, not a drag
+  let clicked = step(drawn, admin_ui.DotsDown(0, #(10.5, 10.5))) |> release
+  should.equal(draw.dots(drawn.drawing), draw.dots(clicked.drawing))
+  should.equal(None, clicked.drag)
+  // no preview was scheduled and no generation bumped
+  should.equal(clock, clicked.preview_scheduled)
+  // and no undo entry was left behind: one undo still takes the ADD back
+  should.equal(0, draw.count(step(clicked, admin_ui.Undo).drawing))
+}
+
+pub fn a_right_press_deletes_the_nearest_dot_and_previews_test() {
+  let drawn =
+    press(model(), #(10.0, 10.0))
+    |> release
+    |> press(#(50.0, 50.0))
+    |> release
+  should.equal(2, draw.count(drawn.drawing))
+  let before = drawn.preview_scheduled.generation
+
+  // the right button deletes the dot in reach — not the last one drawn
+  let deleted = step(drawn, admin_ui.DotsDown(2, #(51.0, 51.0)))
+  should.equal(1, draw.count(deleted.drawing))
+  should.equal([#(10.0, 10.0)], draw.dots(deleted.drawing))
+  // a delete is a change, never a grab
+  should.equal(None, deleted.drag)
+  // the panel PREVIEWS the deletion: the same funnel the taps use
+  should.equal(before + 1, deleted.preview_scheduled.generation)
+  should.equal(Some(before + 1), deleted.preview_scheduled.scheduled)
+  // ...and it is one undo step
+  should.equal(2, draw.count(step(deleted, admin_ui.Undo).drawing))
+}
+
+pub fn a_right_press_away_from_every_dot_deletes_nothing_test() {
+  let drawn = press(model(), #(10.0, 10.0)) |> release
+  let clock = drawn.preview_scheduled
+
+  // the sketch's rule: nothing in reach, nothing deleted, nothing scheduled
+  let missed = step(drawn, admin_ui.DotsDown(2, #(80.0, 80.0)))
+  should.equal(1, draw.count(missed.drawing))
+  should.equal(clock, missed.preview_scheduled)
+
+  // an empty drawing has nothing to delete either
+  let empty = step(model(), admin_ui.DotsDown(2, #(10.0, 10.0)))
+  should.equal(0, draw.count(empty.drawing))
+  should.equal(model().preview_scheduled, empty.preview_scheduled)
+}
+
+pub fn a_release_or_a_move_with_no_drag_in_flight_changes_nothing_test() {
+  let drawn = press(model(), #(10.0, 10.0)) |> release
+
+  // pointerup and pointerleave share this message; with no drag it is a no-op
+  let upped = step(drawn, admin_ui.DotsUp)
+  should.equal(draw.dots(drawn.drawing), draw.dots(upped.drawing))
+  should.equal(drawn.preview_scheduled, upped.preview_scheduled)
+
+  // a pointermove with nothing grabbed moves nothing (it would otherwise drag
+  // whichever dot happens to sit at the last index)
+  let stray = step(drawn, admin_ui.DotsMove(#(70.0, 70.0)))
+  should.equal(draw.dots(drawn.drawing), draw.dots(stray.drawing))
+  should.equal(drawn.preview_scheduled, stray.preview_scheduled)
+}
+
+pub fn a_drag_never_survives_a_view_swap_test() {
+  let grabbed = press(model(), #(10.0, 10.0)) |> release |> press(#(10.0, 10.0))
+  should.equal(Some(0), grabbed.drag)
+  // a fresh drawing starts with no gesture in flight
+  should.equal(None, step(grabbed, admin_ui.StartNew).drag)
 }
 
 fn play_kind(play: admin_ui.Play, slot: Int) -> dial.Kind {

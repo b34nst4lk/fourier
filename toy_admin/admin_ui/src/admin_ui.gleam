@@ -22,6 +22,14 @@
 ////   - Delete is armed, not confirmed twice-from-nowhere: the button becomes
 ////     `sure?` for two seconds and a second click inside that window deletes. A
 ////     stray click costs nothing; a deliberate second click is still one.
+////   - The DRAWING PANEL speaks fourier_sketch's gesture vocabulary, not a
+////     reduced one: left press on empty space appends, left press within
+////     `draw.hit_radius` grabs (then move, then drop), right press deletes the
+////     dot in reach, and up/leave close the drag. Only a CHANGE reaches
+////     `schedule_preview` — a grab, a move mid-drag and a click-without-move do
+////     not, so the panel debounces per gesture and not per pointer sample.
+////     Desktop only (product ruling, 2026-10-25): the right button is the
+////     delete, so there is no touch equivalent and none is wanted.
 ////   - The fence is the SERVER's (Cloudflare Access); this UI is served behind
 ////     it, and an expired session shows up as the 401 banner.
 
@@ -157,6 +165,10 @@ pub type Model {
     name: String,
     show_date: String,
     drawing: draw.Drawing,
+    // the dot a press grabbed (a drawing-order index), None when no drag is
+    // in flight — fourier_sketch keeps the same field for the same reason:
+    // the gesture spans messages, so the model, not the drawing, holds it
+    drag: Option(Int),
     play: Option(Play),
     armed: Option(Int),
     preview: Option(wire.Fixture),
@@ -175,7 +187,13 @@ pub type Msg {
   StartTest(Int)
   TestLoaded(Result(wire.Fixture, wire.Failure))
   DotsLoaded(Result(List(score.Point), wire.Failure))
-  DotsTapped(#(Float, Float))
+  // The drawing panel's pointer vocabulary, the sketch's own (app.gleam
+  // SketchDown/SketchMove/SketchUp): a left press near a dot GRABS, a left
+  // press on empty space ADDS, a right press (button 2) DELETES the dot in
+  // reach, move drags, up/leave close.
+  DotsDown(Int, score.Point)
+  DotsMove(score.Point)
+  DotsUp
   Undo
   Clear
   NameChanged(String)
@@ -195,6 +213,9 @@ pub type Msg {
   DisarmDelete(Int)
   Delete(Int)
   Deleted(Result(Nil, wire.Failure))
+  // the contextmenu handler's only job is prevent_default (the right button
+  // must not open the browser menu); it dispatches nothing
+  Ignored
 }
 
 // ---------- boot ----------
@@ -217,6 +238,7 @@ fn init(_: Nil) -> #(Model, Effect(Msg)) {
       name: "",
       show_date: "",
       drawing: draw.empty(),
+      drag: None,
       play: None,
       armed: None,
       preview: None,
@@ -391,6 +413,7 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
           name: "",
           show_date: "",
           drawing: draw.empty(),
+          drag: None,
           flash: None,
           failure: None,
           play: None,
@@ -420,6 +443,7 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
             None -> ""
           },
           drawing: draw.empty(),
+          drag: None,
           flash: None,
           failure: None,
           play: None,
@@ -485,11 +509,69 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
       effect.none(),
     )
 
-    DotsTapped(point) -> {
-      let drawing = draw.add(model.drawing, point)
-      let next = Model(..model, drawing: drawing)
-      schedule_preview(next, render_drawing(drawing))
-    }
+    DotsDown(button, point) ->
+      case button {
+        // right button: delete the dot in reach, and nothing when the press
+        // lands out on empty space (the sketch's rule)
+        2 ->
+          case draw.nearest(draw.dots(model.drawing), point, draw.hit_radius) {
+            Ok(index) -> {
+              let drawing = draw.remove(model.drawing, index)
+              let next = Model(..model, drawing: drawing)
+              schedule_preview(next, render_drawing(drawing))
+            }
+            Error(_) -> #(model, effect.none())
+          }
+        // left button: grab the dot in reach, else append one
+        0 ->
+          case draw.nearest(draw.dots(model.drawing), point, draw.hit_radius) {
+            Ok(index) -> {
+              // a grab is not a drawing change: no dot moves yet, nothing is
+              // scheduled, nothing is painted — the moves and the drop follow
+              let drawing = draw.grab(model.drawing, index)
+              #(
+                Model(..model, drawing: drawing, drag: Some(index)),
+                effect.none(),
+              )
+            }
+            Error(_) -> {
+              let drawing = draw.add(model.drawing, point)
+              let next = Model(..model, drawing: drawing)
+              schedule_preview(next, render_drawing(drawing))
+            }
+          }
+        // no other button does anything (middle click, back/forward buttons)
+        _ -> #(model, effect.none())
+      }
+
+    DotsMove(point) ->
+      case model.drag {
+        Some(index) -> {
+          // the dot follows the pointer. A move is NOT a drawing change yet:
+          // it repaints only, so the debounce cannot fire once per sample —
+          // the DROP is what schedules the preview
+          let drawing = draw.set(model.drawing, index, point)
+          #(Model(..model, drawing: drawing), render_drawing(drawing))
+        }
+        None -> #(model, effect.none())
+      }
+
+    DotsUp ->
+      case model.drag {
+        None -> #(model, effect.none())
+        Some(_) -> {
+          // up (and leave — same message) closes the gesture. A press that
+          // never moved is a CLICK: the grab's snapshot is popped, so it
+          // costs no undo entry and schedules nothing. A real move keeps its
+          // one snapshot and asks the panel for one preview.
+          let #(drawing, moved) = draw.drop(model.drawing)
+          let next = Model(..model, drawing: drawing, drag: None)
+          case moved {
+            True -> schedule_preview(next, render_drawing(drawing))
+            False -> #(next, effect.none())
+          }
+        }
+      }
 
     Undo -> {
       let drawing = draw.undo(model.drawing)
@@ -538,6 +620,7 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
           name: "",
           show_date: "",
           drawing: draw.empty(),
+          drag: None,
           play: None,
           flash: Some("saved"),
           failure: None,
@@ -730,6 +813,7 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
         Model(
           ..model,
           view: Menu,
+          drag: None,
           play: None,
           busy: True,
           flash: None,
@@ -787,6 +871,8 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
       Model(..model, busy: False, failure: Some(failure)),
       effect.none(),
     )
+
+    Ignored -> #(model, effect.none())
   }
 }
 
@@ -1094,12 +1180,20 @@ fn draw_panel(model: Model) -> Element(Msg) {
     html.canvas([
       attribute.class("board"),
       attribute.id("draw-canvas"),
-      event.on("pointerdown", tap_decoder()),
+      // the family's gesture set (fourier_sketch's own bindings): press grabs
+      // or adds, move drags, up AND leave close, and the context menu the
+      // right button would open is prevented — the right button deletes here
+      event.on("pointerdown", down_decoder()),
+      event.on("pointermove", move_decoder()),
+      event.on("pointerup", up_decoder()),
+      event.on("pointerleave", up_decoder()),
+      event.prevent_default(event.on("contextmenu", ignored_decoder())),
     ]),
     html.p([attribute.class("hint")], [
       html.text(
         int.to_string(draw.count(model.drawing))
-        <> " dots — tap to add, three at least, the outline closes itself",
+        <> " dots — tap to add, drag to move, right-click to delete, "
+        <> "three at least, the outline closes itself",
       ),
     ]),
     html.div([attribute.class("tools")], [
@@ -1218,13 +1312,46 @@ fn field_label(text: String, problem: Bool) -> Element(Msg) {
   ])
 }
 
-/// A tap on the panel becomes a dot. The mapping (pixels -> 0..100, letterbox
-/// aware) is FFI; the tap that lands outside the square is dropped.
-fn tap_decoder() -> decode.Decoder(Msg) {
-  decode.then(decode.dynamic, fn(event) {
-    case event_point(event) {
-      #(x, y, True) -> decode.success(DotsTapped(#(x, y)))
-      _ -> decode.failure(DotsTapped(#(0.0, 0.0)), "a point on the panel")
+/// A press on the panel: WHERE (pixels -> 0..100, letterbox aware — the
+/// mapping is FFI, shared with fourier_sketch) and with WHICH button (0 is the
+/// left one, 2 the right). A press that lands outside the square is dropped:
+/// no message, no dot.
+fn down_decoder() -> decode.Decoder(Msg) {
+  pointer_decoder(fn(button, point) { DotsDown(button, point) })
+}
+
+/// A pointermove during a drag: the same mapping, the button ignored.
+fn move_decoder() -> decode.Decoder(Msg) {
+  pointer_decoder(fn(_button, point) { DotsMove(point) })
+}
+
+/// pointerup and pointerleave close the drag with one decoder (the sketch
+/// binds mouseup and mouseleave the same way): a drag released off the panel
+/// must not stay open.
+fn up_decoder() -> decode.Decoder(Msg) {
+  decode.new_primitive_decoder("up", fn(_) { Ok(DotsUp) })
+}
+
+/// The contextmenu handler's only job is `prevent_default`; it decodes to a
+/// message the update ignores (the sketch's ignored_decoder, verbatim).
+fn ignored_decoder() -> decode.Decoder(Msg) {
+  decode.new_primitive_decoder("ignored", fn(_) { Ok(Ignored) })
+}
+
+/// fourier_sketch's pointer_decoder: one primitive decoder over the raw event,
+/// because the coordinates need the element's rect (FFI) and the button comes
+/// off the event object.
+fn pointer_decoder(build: fn(Int, score.Point) -> Msg) -> decode.Decoder(Msg) {
+  decode.new_primitive_decoder("pointer", fn(data) {
+    case event_point(data) {
+      #(x, y, True) ->
+        case
+          decode.run(data, decode.field("button", decode.int, decode.success))
+        {
+          Ok(button) -> Ok(build(button, #(x, y)))
+          Error(_) -> Error(Ignored)
+        }
+      _ -> Error(Ignored)
     }
   })
 }

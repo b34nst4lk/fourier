@@ -165,7 +165,20 @@ let raf_handle = 0;
 let NOW = 1000.0;
 
 function make_ctx() {
-  const ops = { arc: 0, moveTo: 0, lineTo: 0, stroke: 0, fill: 0, clearRect: 0, nan: 0 };
+  // `arcs` is every dot ever painted on this element; `last_arcs` is the dots
+  // of the LATEST paint (reset by the clearRect that opens each one), which is
+  // what "the dot moved" is read from.
+  const ops = {
+    arc: 0,
+    moveTo: 0,
+    lineTo: 0,
+    stroke: 0,
+    fill: 0,
+    clearRect: 0,
+    nan: 0,
+    arcs: [],
+    last_arcs: [],
+  };
   const finite = (x, y) => {
     if (!Number.isFinite(x) || !Number.isFinite(y)) ops.nan++;
   };
@@ -175,6 +188,7 @@ function make_ctx() {
     setTransform: () => {},
     clearRect: () => {
       ops.clearRect++;
+      ops.last_arcs = [];
     },
     beginPath: () => {},
     closePath: () => {},
@@ -206,6 +220,8 @@ function make_ctx() {
     },
     arc: (x, y, _r) => {
       ops.arc++;
+      ops.arcs.push([x, y]);
+      ops.last_arcs.push([x, y]);
       finite(x, y);
     },
     stroke: () => {
@@ -367,17 +383,57 @@ function click(el) {
 }
 // a tap on the drawing panel: pointerdown at a pixel (the rect is 300×300 at
 // 0,0, so sketch units = px / 3)
-function tap(dom, px, py) {
+// The drawing panel's pointer vocabulary, one pointer event per call. The rect
+// is 300×300 at 0,0, so sketch units = px / 3 and the 3-unit hit radius is 9px.
+function press(dom, px, py, button = 0) {
   const el = doc(dom).getElementById("draw-canvas");
-  if (!el) throw new Error("tap: no draw canvas");
-  const ev = new dom.window.MouseEvent("pointerdown", {
-    bubbles: true,
-    cancelable: true,
-    clientX: px,
-    clientY: py,
-  });
-  el.dispatchEvent(ev);
+  if (!el) throw new Error("press: no draw canvas");
+  el.dispatchEvent(
+    new dom.window.MouseEvent("pointerdown", {
+      bubbles: true,
+      cancelable: true,
+      clientX: px,
+      clientY: py,
+      button,
+    }),
+  );
   tick(); // the paint effect is followed by the retry chain, frame-paced
+}
+function drag_to(dom, px, py) {
+  const el = doc(dom).getElementById("draw-canvas");
+  if (!el) throw new Error("drag_to: no draw canvas");
+  el.dispatchEvent(
+    new dom.window.MouseEvent("pointermove", {
+      bubbles: true,
+      cancelable: true,
+      clientX: px,
+      clientY: py,
+    }),
+  );
+  tick();
+}
+function release(dom, px, py, button = 0) {
+  const el = doc(dom).getElementById("draw-canvas");
+  if (!el) throw new Error("release: no draw canvas");
+  el.dispatchEvent(
+    new dom.window.MouseEvent("pointerup", {
+      bubbles: true,
+      cancelable: true,
+      clientX: px,
+      clientY: py,
+      button,
+    }),
+  );
+  tick();
+}
+// A tap = press + release at the same spot, which is what a click really is
+// (a press that GRABBED must be closed, or the next press drags that dot).
+// `button` 0 is the left button (add / grab), 2 the right one (delete); every
+// coordinate the smoke taps is far outside the 3-unit hit radius, so the
+// existing taps stay ADDs.
+function tap(dom, px, py, button = 0) {
+  press(dom, px, py, button);
+  release(dom, px, py, button);
 }
 const by_text = (dom, selector, label) =>
   [...doc(dom).querySelectorAll(selector)].find((el) => text(el) === label) || null;
@@ -856,6 +912,186 @@ console.log("S6 · live panel — the drawing previews itself");
     "calls: " + before_open + " -> " + preview_calls(),
   );
   check("the full board took over", doc(dom).getElementById("play-board") !== null);
+  dom.window.close();
+}
+
+// ==== S7 · the edit vocabulary: drag, click, right-click delete =============
+// The bug: "the canvas for creating a puzzle lacks deletion and moving of
+// existing nodes". A press that grabs no longer APPENDS a dot on top of the one
+// meant to be moved, a drop is one undo step and one preview, a click without a
+// move is nothing at all, and the right button deletes the dot in reach.
+console.log("S7 · authoring — moving and deleting existing nodes");
+{
+  const dom = boot_dom({ previewFixture: PANEL_FIXTURE });
+  await settle();
+  click(button(dom, "new puzzle"));
+  tick();
+
+  const dots_now = () =>
+    (canvas_ops(dom, "draw-canvas")?.last_arcs ?? []).map(([x, y]) => [
+      +x.toFixed(2),
+      +y.toFixed(2),
+    ]);
+  const shape_is = (expected) => JSON.stringify(dots_now()) === JSON.stringify(expected);
+  const preview_calls = () =>
+    dom.window.__calls.filter((c) => c.method === "POST" && c.path === "/api/admin/preview")
+      .length;
+
+  // three seeds at (20,20) · (50,30) · (40,70): 30–54 units apart, so every one
+  // of these taps is outside the 3-unit (9px) hit radius — an ADD, as before
+  tap(dom, 60, 60);
+  tap(dom, 150, 90);
+  tap(dom, 120, 210);
+  check(
+    "three taps on far-apart spots still ADD three dots",
+    shape_is([[20, 20], [50, 30], [40, 70]]),
+    JSON.stringify(dots_now()),
+  );
+  // let the seeds' own debounce window close before counting requests
+  await sleep(360);
+  await settle();
+
+  // -- drag: press ON a dot, two moves, release ----------------------------
+  const before_drag = preview_calls();
+  press(dom, 123, 208); // ~1.2 units from (40,70): inside the 3-unit radius,
+  // so it GRABS — and it is deliberately NOT the dot's exact spot, because a
+  // press that appended would land a dot visibly beside it
+  check(
+    "a press on a dot does not append another one",
+    shape_is([[20, 20], [50, 30], [40, 70]]),
+    JSON.stringify(dots_now()),
+  );
+  drag_to(dom, 180, 240); // (60,80)
+  drag_to(dom, 200, 250); // (66.67,83.33) — the dot follows the pointer
+  check(
+    "the grabbed dot moves in the paint ops",
+    shape_is([[20, 20], [50, 30], [66.67, 83.33]]),
+    JSON.stringify(dots_now()),
+  );
+  check(
+    "a move does not POST: the drop schedules the preview",
+    preview_calls() === before_drag,
+    "calls: " + before_drag + " -> " + preview_calls(),
+  );
+  release(dom, 200, 250);
+  check(
+    "the dropped dot stays where it was released",
+    shape_is([[20, 20], [50, 30], [66.67, 83.33]]),
+    JSON.stringify(dots_now()),
+  );
+  check(
+    "the drop itself does not POST inside the window",
+    preview_calls() === before_drag,
+    "calls: " + before_drag + " -> " + preview_calls(),
+  );
+  await sleep(360);
+  await settle();
+  check(
+    "a whole drag is ONE preview after the drop window",
+    preview_calls() === before_drag + 1,
+    "calls: " + before_drag + " -> " + preview_calls(),
+  );
+
+  // ONE undo step for the whole drag: undo returns the pre-grab dot
+  click(button(dom, "undo"));
+  tick();
+  check(
+    "one undo takes the whole drag back",
+    shape_is([[20, 20], [50, 30], [40, 70]]),
+    JSON.stringify(dots_now()),
+  );
+  // ...and the drag's moves left no entries behind: ONE more undo is the third
+  // dot's ADD, not a half-way position of the drag
+  click(button(dom, "undo"));
+  tick();
+  check(
+    "the undos are one per gesture: the ADD is what comes off next",
+    shape_is([[20, 20], [50, 30]]),
+    JSON.stringify(dots_now()),
+  );
+  tap(dom, 120, 210); // seed the third dot again — the drawing has 2 now, so
+  // this is an ADD at empty space, not a grab
+  check(
+    "the drawing is seeded again",
+    shape_is([[20, 20], [50, 30], [40, 70]]),
+    JSON.stringify(dots_now()),
+  );
+  await sleep(360);
+  await settle();
+
+  // -- a click on a dot: no move, no dot, no undo, no preview -------------
+  const before_click = preview_calls();
+  tap(dom, 123, 208); // ~1.2 units from (40,70): inside the radius, no drag
+  check(
+    "a click on a dot adds nothing and moves nothing",
+    shape_is([[20, 20], [50, 30], [40, 70]]),
+    JSON.stringify(dots_now()),
+  );
+  await sleep(360);
+  await settle();
+  check(
+    "a click without a move schedules no preview",
+    preview_calls() === before_click,
+    "calls: " + before_click + " -> " + preview_calls(),
+  );
+  click(button(dom, "undo"));
+  tick();
+  check(
+    "the click left no undo entry (the ADD is still what undo pops)",
+    shape_is([[20, 20], [50, 30]]),
+    JSON.stringify(dots_now()),
+  );
+  tap(dom, 120, 210); // seed the third dot again
+  await sleep(360);
+  await settle();
+
+  // -- the right button deletes the dot in reach, and previews it -------
+  const before_delete = preview_calls();
+  tap(dom, 150, 92, 2); // ~0.7 units from (50,30) — the SECOND dot
+  check(
+    "a right press deletes the dot in reach, keeping the order",
+    shape_is([[20, 20], [40, 70]]),
+    JSON.stringify(dots_now()),
+  );
+  check(
+    "the hint recounts the drawing",
+    text(doc(dom).querySelector(".authoring .hint")).startsWith("2 dots"),
+    text(doc(dom).querySelector(".authoring .hint")),
+  );
+  await sleep(360);
+  await settle();
+  check(
+    "the delete feeds the panel's preview funnel",
+    preview_calls() === before_delete + 1,
+    "calls: " + before_delete + " -> " + preview_calls(),
+  );
+
+  // -- a right press on empty space deletes nothing ---------------------
+  const before_miss = preview_calls();
+  tap(dom, 290, 290, 2); // (96.67,96.67): nothing within reach
+  check(
+    "a right press away from every dot deletes nothing",
+    shape_is([[20, 20], [40, 70]]),
+    JSON.stringify(dots_now()),
+  );
+  await sleep(360);
+  await settle();
+  check(
+    "a missed right press schedules nothing",
+    preview_calls() === before_miss,
+    "calls: " + before_miss + " -> " + preview_calls(),
+  );
+
+  // -- the browser's context menu never opens on the panel --------------
+  const menu = new dom.window.MouseEvent("contextmenu", { bubbles: true, cancelable: true });
+  doc(dom).getElementById("draw-canvas").dispatchEvent(menu);
+  tick();
+  check("the context menu is prevented on the panel", menu.defaultPrevented);
+  check(
+    "the prevented right button changes nothing",
+    shape_is([[20, 20], [40, 70]]),
+    JSON.stringify(dots_now()),
+  );
   dom.window.close();
 }
 

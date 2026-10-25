@@ -59,6 +59,7 @@ fn model() -> admin_ui.Model {
     name: "",
     show_date: "",
     drawing: draw.empty(),
+    drag: None,
     play: None,
     armed: None,
     preview: None,
@@ -76,9 +77,11 @@ fn step(model: admin_ui.Model, msg: admin_ui.Msg) -> admin_ui.Model {
   next
 }
 
-/// A tap is a draw change: it schedules the next preview.
+/// A press on empty space is a draw change: it appends a dot, and appending
+/// schedules the next preview. (The release that follows a click is a no-op —
+/// no drag was opened — so a click here is one message and one generation.)
 fn tap(model: admin_ui.Model, point: #(Float, Float)) -> admin_ui.Model {
-  step(model, admin_ui.DotsTapped(point))
+  step(model, admin_ui.DotsDown(0, point))
 }
 
 /// One preview round trip: the drawing's timer fires, the request is in flight,

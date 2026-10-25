@@ -1,17 +1,32 @@
-//// The drawing under construction: an ordered dot list with undo/clear
-//// (PLAN-daily-puzzles.md §3 authoring, phase 4b).
+//// The drawing under construction: an ordered dot list with undo/clear, plus
+//// the family's node editing (PLAN-daily-puzzles.md §3 authoring, phase 4b).
 ////
-//// This is the editor's counterpart to fourier_sketch's sketch panel, but
-//// simpler on purpose: the admin draws a puzzle, it does not edit one dot at a
-//// time. So the gesture is "tap to append", `undo` pops the last dot, `clear`
-//// starts over, and there is no dragging or hit-testing.
+//// This is the editor's counterpart to fourier_sketch's sketch panel, and since
+//// the 2026-10-25 bug report ("the canvas for creating a puzzle lacks deletion
+//// and moving of existing nodes") it speaks the SKETCH's gesture vocabulary
+//// verbatim — grab / move / drop, hit-test inside a radius, right-click to
+//// delete — over the same 0..100 dot space:
 ////
-//// The one rule worth stating: a tap that lands (almost) on the previous dot is
-//// DROPPED. Pointer events fire `down` and then a `move`/`up` at the same spot,
-//// and without a proximity gate a single tap would append two dots and the
-//// shape would never close. The threshold is in sketch units (0..100), so it is
-//// resolution-independent — the FFI converts pixel positions into sketch space
-//// before anything reaches this module.
+////   press far from every dot  -> ADD (the original tap-to-append contract)
+////   press within `hit_radius` -> grab, then `set` freely, then `drop`
+////   press with the right button within `hit_radius` -> `remove`
+////
+//// The drag is TWO-PHASE, exactly as in sketch.gleam: `grab` pushes ONE
+//// snapshot and changes nothing, `set` moves the dot without touching history
+//// (so a long drag is one undo step), and `drop` closes the gesture. The admin
+//// has no redo stack, so its `drop` is the sketch's `cancel_grab` plus the one
+//// fact the redo-less sibling needs: did anything actually move? A press that
+//// never moved is a CLICK — the grab's own snapshot is popped, so it costs no
+//// undo entry and changes no dot.
+////
+//// Index space: every index this module takes or hands back is in DRAWING order
+//// (oldest first — the order `dots()` returns), never the internal newest-first
+//// cons order. The storage order stays newest-first because the append and the
+//// neighbour check are O(1) that way.
+////
+//// The other rule worth stating: an ADD that lands (almost) on the previous dot
+//// is DROPPED (`min_gap`). It guards a fold over loaded dots; the pointer layer
+//// never gets that close — a press that near is a grab.
 
 import admin_ui/score.{type Point}
 import gleam/float
@@ -34,6 +49,10 @@ pub const min_dots = 3
 
 /// Dots closer than this (sketch units) to the previous dot are ignored.
 pub const min_gap = 0.75
+
+/// How near (sketch units) a press must land to grab or delete a dot.
+/// fourier_sketch's `hit_radius`, the same number in the same space.
+pub const hit_radius = 3.0
 
 pub fn empty() -> Drawing {
   Drawing([], [])
@@ -70,6 +89,95 @@ pub fn add(drawing: Drawing, point: Point) -> Drawing {
       }
     }
   }
+}
+
+/// Index of the dot closest to `at`, if any lies within `max_dist` (inclusive).
+/// Squared distances throughout (no sqrt) and ties go to the EARLIEST index —
+/// fourier_sketch's `nearest_dot`, so grabbing the same spot always grabs the
+/// same dot. `points` is in drawing order, and the index is in that space.
+pub fn nearest(
+  points: List(Point),
+  at: Point,
+  max_dist: Float,
+) -> Result(Int, Nil) {
+  let limit = max_dist *. max_dist
+  let #(_, found) =
+    list.index_fold(points, #(limit, Error(Nil)), fn(acc, point, index) {
+      let #(dx, dy) = #(point.0 -. at.0, point.1 -. at.1)
+      let distance = { dx *. dx } +. { dy *. dy }
+      let closer = case acc.1 {
+        Ok(_) -> distance <. acc.0
+        Error(_) -> distance <=. acc.0
+      }
+      case closer {
+        True -> #(distance, Ok(index))
+        False -> acc
+      }
+    })
+  found
+}
+
+/// Delete the dot at `index` (drawing order): ONE undo step, the surviving
+/// dots keep their order. An index off either end is a silent no-op.
+pub fn remove(drawing: Drawing, index: Int) -> Drawing {
+  case in_bounds(drawing, index) {
+    False -> drawing
+    True -> {
+      let ordered = dots(drawing)
+      let kept =
+        list.append(list.take(ordered, index), list.drop(ordered, index + 1))
+      Drawing(list.reverse(kept), [drawing.dots, ..drawing.history])
+    }
+  }
+}
+
+/// Begin a drag on dot `index`: snapshot once, change nothing. The snapshot is
+/// the whole undo entry a drag will ever cost; `drop` takes it back if the drag
+/// never moved.
+pub fn grab(drawing: Drawing, index: Int) -> Drawing {
+  case in_bounds(drawing, index) {
+    False -> drawing
+    True -> Drawing(drawing.dots, [drawing.dots, ..drawing.history])
+  }
+}
+
+/// Move dot `index` during a drag: no history, no undo entry — the grab owns
+/// the single step.
+pub fn set(drawing: Drawing, index: Int, point: Point) -> Drawing {
+  case in_bounds(drawing, index) {
+    False -> drawing
+    True -> {
+      let ordered = dots(drawing)
+      let moved =
+        list.append(list.take(ordered, index), [
+          point,
+          ..list.drop(ordered, index + 1)
+        ])
+      Drawing(list.reverse(moved), drawing.history)
+    }
+  }
+}
+
+/// Close the drag on `drawing` (only ever the drawing an open `grab` made):
+/// returns the drawing and whether the drag actually moved.
+///
+/// A drag that never moved — a plain click, or a drag back to the exact start —
+/// is a click: the grab's own snapshot is popped, so nothing is left for undo
+/// and no preview needs scheduling. A real move keeps its snapshot: exactly one
+/// undo step for the whole drag.
+pub fn drop(drawing: Drawing) -> #(Drawing, Bool) {
+  case drawing.history {
+    [snapshot, ..rest] ->
+      case snapshot == drawing.dots {
+        True -> #(Drawing(drawing.dots, rest), False)
+        False -> #(drawing, True)
+      }
+    [] -> #(drawing, False)
+  }
+}
+
+fn in_bounds(drawing: Drawing, index: Int) -> Bool {
+  { index >= 0 } && { index < count(drawing) }
 }
 
 pub fn undo(drawing: Drawing) -> Drawing {
