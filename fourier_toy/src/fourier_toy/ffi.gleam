@@ -1,7 +1,12 @@
-//// External bindings for the canvas animation shell and page routing.
+//// External bindings: the canvas animation shell, the page theme, the
+//// hold-to-repeat input driver, and the daily puzzle's network/storage/
+//// telemetry (PLAN-daily-puzzles.md §1).
 
 import fourier_toy/shapes.{type TermState}
+import gleam/dynamic
+import gleam/dynamic/decode
 import gleam/list
+import gleam/result
 
 /// Push a shape's static data to the canvas: centroid, target trace, extras.
 /// Runs once per puzzle switch (cache-deduped on the JS side).
@@ -72,3 +77,84 @@ pub fn hold_init() -> Nil {
 
 @external(javascript, "../fourier_toy_ffi.mjs", "hold_init")
 fn js_hold_init() -> Nil
+
+// ---------- the daily puzzle (PLAN-daily-puzzles.md §1) ----------
+// Four concerns the pure core cannot own: reaching the API, the anonymous
+// identity, the stored attempt, and the two fire-and-forget POSTs. Each is a
+// thin binding over a guarded JS function — a toy with no storage, no fetch and
+// no network still boots into the quaver.
+
+/// The API's `tz` parameter: minutes to ADD to the visitor's UTC offset
+/// (UTC+2 ⇒ 120). The backend resolves the visitor's local date from it.
+pub fn tz_offset_minutes() -> Int {
+  js_tz_offset_minutes()
+}
+
+@external(javascript, "../fourier_toy_ffi.mjs", "tz_offset_minutes")
+fn js_tz_offset_minutes() -> Int
+
+/// Reading storage: `Error(Nil)` when the key is absent or storage is
+/// unavailable (private mode) — the caller treats both as "nothing stored".
+pub fn ls_get(key: String) -> Result(String, Nil) {
+  decode.run(js_ls_get(key), decode.string)
+  |> result.map_error(fn(_not_a_string) { Nil })
+}
+
+@external(javascript, "../fourier_toy_ffi.mjs", "ls_get")
+fn js_ls_get(key: String) -> dynamic.Dynamic
+
+/// Writing storage: False means it did not stick (private mode, quota). Every
+/// caller is best-effort, so nothing depends on the answer — but the smoke
+/// pins that the attempt is written at all.
+pub fn ls_set(key: String, value: String) -> Bool {
+  js_ls_set(key, value)
+}
+
+@external(javascript, "../fourier_toy_ffi.mjs", "ls_set")
+fn js_ls_set(key: String, value: String) -> Bool
+
+pub fn ls_del(key: String) -> Nil {
+  js_ls_del(key)
+}
+
+@external(javascript, "../fourier_toy_ffi.mjs", "ls_del")
+fn js_ls_del(key: String) -> Nil
+
+/// The site-wide anonymous identity (`j-uid`, plan Q16): the stored v4 uuid, or
+/// a fresh one that is stored for next time. Always v4-shaped — the backend
+/// validates it, and a rejected identity would silently lose every solve.
+pub fn uuid_ensure() -> String {
+  js_uuid_ensure()
+}
+
+@external(javascript, "../fourier_toy_ffi.mjs", "uuid_ensure")
+fn js_uuid_ensure() -> String
+
+/// `GET /api/puzzle/today?tz=…`, resolved as a message rather than returned:
+/// the answer has to travel through `update`. `on_error` fires on any failure
+/// (no fetch, network, non-2xx, unreadable body) and the toy falls back to the
+/// built-in quaver.
+pub fn fetch_puzzle(
+  tz_offset_min: Int,
+  on_ok: fn(String) -> Nil,
+  on_error: fn() -> Nil,
+) -> Nil {
+  js_fetch_puzzle(tz_offset_min, on_ok, on_error)
+}
+
+@external(javascript, "../fourier_toy_ffi.mjs", "fetch_puzzle")
+fn js_fetch_puzzle(
+  tz_offset_min: Int,
+  on_ok: fn(String) -> Nil,
+  on_error: fn() -> Nil,
+) -> Nil
+
+/// POST a telemetry body to `path`, calling `on_sent` only on a 2xx. Nothing
+/// retries here: an unsent solve is re-sent by the next boot from the stored
+/// attempt (`reported: false`), and an abandoned attempt is simply gone (Q21).
+pub fn post_telemetry(path: String, body: String, on_sent: fn() -> Nil) -> Nil {
+  js_post_telemetry(path, body, on_sent)
+}
+
+@external(javascript, "../fourier_toy_ffi.mjs", "post_telemetry")
+fn js_post_telemetry(path: String, body: String, on_sent: fn() -> Nil) -> Nil

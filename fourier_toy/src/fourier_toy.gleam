@@ -1,15 +1,33 @@
-//// fourier toy — the quaver puzzle: tune four Fourier terms (phase, radius,
-//// k) until the solid comet closes onto the dashed eighth-note target.
-//// Final v2 shape: ONE puzzle, no routing — the app boots straight into
-//// the board. The tested pure core (shapes + puzzle) owns the math; the
-//// canvas/RAF/theme/hold drivers live in the FFI (sibling patterns).
+//// fourier toy — the daily puzzle board: tune four Fourier terms (phase,
+//// radius, k) until the solid comet closes onto the dashed target.
+////
+//// One screen, no routing. Two sources feed it (PLAN-daily-puzzles.md §1):
+////
+////   * `Daily(date)` — today's published puzzle, fetched from
+////     `/api/puzzle/today` and decoded by `wire`; its attempt is stored and its
+////     solve is reported.
+////   * `Quaver` — the built-in quaver, which is what the board paints FIRST
+////     (deterministically, before any network answer) and what it falls back to
+////     when there is no puzzle today, the fetch fails, or the document is
+////     unusable. The fallback tells no telemetry and stores nothing: it has no
+////     date and no identity to report against.
+////
+//// The tested pure core owns the math (shapes + puzzle), the stored attempt's
+//// codec and transitions (attempt), and the served document's decoder (wire).
+//// This module owns the wiring between them and the FFI: canvas sync, storage,
+//// fetch, and the two POSTs. Its behaviour is pinned by
+//// scripts/artifact_smoke.mjs (S8), the house contract for the view/FFI layer.
 
+import fourier_toy/attempt
 import fourier_toy/ffi
 import fourier_toy/puzzle.{type Setup}
 import fourier_toy/shapes.{type TermState}
+import fourier_toy/wire
 import gleam/dynamic/decode
 import gleam/int
 import gleam/list
+import gleam/option.{type Option, None, Some}
+import gleam/result
 import lustre
 import lustre/attribute
 import lustre/effect.{type Effect}
@@ -22,20 +40,42 @@ type Msg {
   SlotStep(Int, Int)
   Reset
   ToggleTheme
+  /// The daily fetch settled: the body text of a 2xx, or a failure.
+  PuzzleFetched(Result(String, Nil))
+  /// A solve POST came back 2xx: the attempt has nothing left to report.
+  SolveReported
+}
+
+type Source {
+  /// The built-in quaver (the first paint, and the fallback).
+  Quaver
+  /// Today's published puzzle, by show date.
+  Daily(show_date: String)
 }
 
 type Model {
-  // the immutable fixture data is memoized once at init (a 512-point
+  // the immutable fixture data is memoized once per puzzle (a 512-point
   // synth_trace + the term table); the live match is computed once per step
   // and read by the view — never rebuilt per render
   Model(
     setup: Setup,
     shape: shapes.Shape,
+    source: Source,
     state: List(TermState),
     dark: Bool,
     moves: Int,
     solved_once: Bool,
     match: Float,
+    /// The site-wide anonymous identity (Q16) — empty only if the platform
+    /// gave us nothing, in which case nothing is reported.
+    uuid: String,
+    /// The live attempt for `source`. None while the board is the built-in
+    /// quaver: the fallback is not an attempt (no date, no storage, no POST).
+    attempt: Option(attempt.Attempt),
+    /// An attempt read from storage at boot, HELD until the fetch says which
+    /// puzzle today is. Applying it early would paint yesterday's dials under
+    /// today's name — and the board must paint the quaver first anyway.
+    stored: Option(attempt.Attempt),
   )
 }
 
@@ -58,14 +98,33 @@ fn init(_: Nil) -> #(Model, Effect(Msg)) {
     Model(
       setup: setup,
       shape: shape,
+      source: Quaver,
       state: state,
       dark: dark,
       moves: 0,
       solved_once: False,
       match: shapes.match_pct(shape, state),
+      uuid: ffi.uuid_ensure(),
+      attempt: None,
+      stored: ffi.ls_get(attempt.storage_key)
+        |> result.try(attempt.decode)
+        |> option.from_result,
     ),
-    effect.batch([hold_driver(), sync_effect(shape, state), theme_apply(dark)]),
+    batch([
+      hold_driver(),
+      sync_effect(shape, state),
+      theme_apply(dark),
+      fetch_effect(),
+    ]),
   )
+}
+
+/// Run effects in order; an empty list is no effect at all.
+fn batch(effects: List(Effect(Msg))) -> Effect(Msg) {
+  case effects {
+    [] -> effect.none()
+    _ -> effect.batch(effects)
+  }
 }
 
 /// Mirror the boot theme onto the page and the canvas palette.
@@ -83,8 +142,8 @@ fn hold_driver() -> Effect(Msg) {
   effect.from(fn(_dispatch) { ffi.hold_init() })
 }
 
-/// Push the canvas everything it needs: the (constant) quaver shape plus
-/// the current dial terms.
+/// Push the canvas everything it needs: this puzzle's shape plus the current
+/// dial terms.
 fn sync_effect(shape: shapes.Shape, state: List(TermState)) -> Effect(Msg) {
   effect.from(fn(_dispatch) {
     ffi.canvas_shape(shape)
@@ -96,58 +155,60 @@ fn push_terms(state: List(TermState)) -> Effect(Msg) {
   effect.from(fn(_dispatch) { ffi.canvas_terms(state) })
 }
 
+/// Ask for today's puzzle. `tz` is minutes to ADD to UTC (the API's spelling),
+/// so the backend resolves the visitor's own date.
+fn fetch_effect() -> Effect(Msg) {
+  effect.from(fn(dispatch) {
+    ffi.fetch_puzzle(
+      ffi.tz_offset_minutes(),
+      fn(text) { dispatch(PuzzleFetched(Ok(text))) },
+      fn() { dispatch(PuzzleFetched(Error(Nil))) },
+    )
+  })
+}
+
+/// Keep the attempt: after every step, and at the two boundaries (a fresh
+/// attempt, a reported solve). Best-effort — private mode just means the tab
+/// cannot resume.
+fn persist_effect(a: attempt.Attempt) -> Effect(Msg) {
+  effect.from(fn(_dispatch) {
+    let _ = ffi.ls_set(attempt.storage_key, attempt.encode(a))
+    Nil
+  })
+}
+
+fn saved(attempt_state: Option(attempt.Attempt)) -> List(Effect(Msg)) {
+  case attempt_state {
+    Some(a) -> [persist_effect(a)]
+    None -> []
+  }
+}
+
+/// POST the solve. Fire-and-forget: the answer only retires the pending report,
+/// and a solve that never lands is re-sent by the next boot (`reported: false`).
+fn solve_effect(uuid: String, a: attempt.Attempt) -> Effect(Msg) {
+  effect.from(fn(dispatch) {
+    ffi.post_telemetry("/api/solve", attempt.solve_body(uuid, a), fn() {
+      dispatch(SolveReported)
+    })
+  })
+}
+
+/// POST the abandonment of an unsolved attempt (Q21).
+fn abandon_effect(uuid: String, a: attempt.Attempt) -> Effect(Msg) {
+  effect.from(fn(_dispatch) {
+    ffi.post_telemetry(
+      "/api/attempts/abandon",
+      attempt.abandon_body(uuid, a),
+      fn() { Nil },
+    )
+  })
+}
+
 fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
   case msg {
-    SlotStep(slot, dir) -> {
-      let kind = kind_at(model.setup.dials, slot)
-      let stepped =
-        list.index_map(model.state, fn(s, i) {
-          case i == slot {
-            True -> puzzle.step(kind, s, dir, model.shape.dial_max_r)
-            False -> s
-          }
-        })
-      // the metric is computed ONCE per step: the solved_once gate and
-      // the view's score both read this result (was two 512-sample passes)
-      let match = shapes.match_pct(model.shape, stepped)
-      // the counter freezes at the FIRST solve: steps after that don't
-      // count — the number you solved in is the number you keep
-      let #(moves, solved_once) = case model.solved_once {
-        True -> #(model.moves, True)
-        False -> #(model.moves + 1, match >=. shapes.solved_at)
-      }
-      #(
-        Model(
-          ..model,
-          state: stepped,
-          match: match,
-          moves: moves,
-          solved_once: solved_once,
-        ),
-        push_terms(stepped),
-      )
-    }
-    Reset -> {
-      // the dials go back to start — and before any solve the counter
-      // zeroes; after a solve the record survives: the number you solved
-      // in is the number you keep, reset or not
-      let state = puzzle.initial(model.shape, model.setup.patches)
-      let match = shapes.match_pct(model.shape, state)
-      let #(moves, solved_once) = case model.solved_once {
-        True -> #(model.moves, True)
-        False -> #(0, False)
-      }
-      #(
-        Model(
-          ..model,
-          state: state,
-          match: match,
-          moves: moves,
-          solved_once: solved_once,
-        ),
-        push_terms(state),
-      )
-    }
+    SlotStep(slot, dir) -> slot_step(model, slot, dir)
+    Reset -> reset(model)
     ToggleTheme -> {
       let dark = case model.dark {
         True -> False
@@ -162,6 +223,233 @@ fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
           Nil
         }),
       )
+    }
+    PuzzleFetched(result) -> puzzle_fetched(model, result)
+    SolveReported -> solve_reported(model)
+  }
+}
+
+fn slot_step(model: Model, slot: Int, dir: Int) -> #(Model, Effect(Msg)) {
+  let kind = kind_at(model.setup.dials, slot)
+  let stepped =
+    list.index_map(model.state, fn(s, i) {
+      case i == slot {
+        True -> puzzle.step(kind, s, dir, model.shape.dial_max_r)
+        False -> s
+      }
+    })
+  // the metric is computed ONCE per step: the solved gate, the view's score
+  // and the attempt's `solved` flag all read this result
+  let match = shapes.match_pct(model.shape, stepped)
+  let solved_before = model.solved_once
+  // the counter freezes at the FIRST solve: steps after that don't count —
+  // the number you solved in is the number you keep
+  let moves = case solved_before {
+    True -> model.moves
+    False -> model.moves + 1
+  }
+  let solved_now = case solved_before {
+    True -> True
+    False -> match >=. shapes.solved_at
+  }
+  let next_attempt = case model.attempt {
+    None -> None
+    Some(a) -> {
+      // the move list stops at the first solve, like the counter
+      let a = case solved_before {
+        True -> a
+        False -> attempt.add_move(a, slot, dir)
+      }
+      Some(attempt.record(a, stepped, moves, solved_now))
+    }
+  }
+  let model =
+    Model(
+      ..model,
+      state: stepped,
+      match: match,
+      moves: moves,
+      solved_once: solved_now,
+      attempt: next_attempt,
+    )
+  // the solve moment is the one moment that posts — and it marks the attempt
+  // reported only when the server says it landed
+  let effects = case solved_before, next_attempt {
+    False, Some(a) if solved_now -> [solve_effect(model.uuid, a)]
+    _, _ -> []
+  }
+  #(
+    model,
+    batch(list.flatten([[push_terms(stepped)], effects, saved(next_attempt)])),
+  )
+}
+
+fn reset(model: Model) -> #(Model, Effect(Msg)) {
+  // the dials go back to start — and before any solve the counter zeroes and
+  // the attempt ends; after a solve the record survives (the number you solved
+  // in is the number you keep, reset or not)
+  let state = puzzle.initial(model.shape, model.setup.patches)
+  let match = shapes.match_pct(model.shape, state)
+  case model.solved_once {
+    True -> {
+      let next_attempt = case model.attempt {
+        Some(a) -> Some(attempt.record(a, state, model.moves, True))
+        None -> None
+      }
+      let model =
+        Model(..model, state: state, match: match, attempt: next_attempt)
+      #(model, batch(list.flatten([[push_terms(state)], saved(next_attempt)])))
+    }
+    False -> {
+      // an unsolved attempt that was actually played is ABANDONED before it is
+      // replaced (Q21): the backend keeps the day's record, so difficulty data
+      // is not biased toward the attempts that ended in a solve
+      let retire = case model.attempt {
+        Some(a) if a.count > 0 -> [abandon_effect(model.uuid, a)]
+        _ -> []
+      }
+      let model = Model(..model, state: state, match: match, moves: 0)
+      case model.source {
+        Daily(date) -> {
+          let fresh = attempt.fresh(date, state)
+          let model = Model(..model, attempt: Some(fresh))
+          #(
+            model,
+            batch(
+              list.flatten([
+                [push_terms(state)],
+                retire,
+                [persist_effect(fresh)],
+              ]),
+            ),
+          )
+        }
+        // the built-in fallback has no attempt to end
+        Quaver -> #(
+          Model(..model, attempt: None),
+          batch(list.flatten([[push_terms(state)], retire])),
+        )
+      }
+    }
+  }
+}
+
+fn puzzle_fetched(
+  model: Model,
+  result: Result(String, Nil),
+) -> #(Model, Effect(Msg)) {
+  // A failure or a "none" envelope leaves the board exactly as it is — the
+  // player may already be playing the quaver, and there is nothing to report.
+  let decoded =
+    result
+    |> result.try(wire.decode)
+  case decoded {
+    Error(Nil) -> #(model, effect.none())
+    Ok(daily) -> enter_daily(model, daily)
+  }
+}
+
+fn enter_daily(model: Model, daily: wire.DailyPuzzle) -> #(Model, Effect(Msg)) {
+  let start = puzzle.initial(daily.shape, daily.setup.patches)
+  let held = model.stored
+  let model =
+    Model(
+      ..model,
+      setup: daily.setup,
+      shape: daily.shape,
+      source: Daily(daily.show_date),
+      stored: None,
+    )
+  case held {
+    // today's attempt: resume exactly where it was left
+    Some(stored) if stored.date == daily.show_date -> resume(model, stored)
+    // an earlier day's attempt: retire it, then open today clean
+    Some(old_attempt) -> retire_then_open(model, old_attempt, daily, start)
+    None -> open_fresh(model, daily.show_date, start, [])
+  }
+}
+
+fn resume(model: Model, stored: attempt.Attempt) -> #(Model, Effect(Msg)) {
+  let model =
+    Model(
+      ..model,
+      state: stored.state,
+      match: shapes.match_pct(model.shape, stored.state),
+      moves: stored.count,
+      solved_once: stored.solved,
+      attempt: Some(stored),
+    )
+  // a solve that never reached the server (offline, closed tab) is re-sent now:
+  // the backend's solve REPLACES the row, so a duplicate costs nothing
+  let replay = case stored.solved, stored.reported {
+    True, False -> [solve_effect(model.uuid, stored)]
+    _, _ -> []
+  }
+  #(
+    model,
+    batch(list.flatten([[sync_effect(model.shape, stored.state)], replay])),
+  )
+}
+
+fn retire_then_open(
+  model: Model,
+  old_attempt: attempt.Attempt,
+  daily: wire.DailyPuzzle,
+  start: List(TermState),
+) -> #(Model, Effect(Msg)) {
+  let retire = case old_attempt.solved, old_attempt.reported {
+    // a solve from that day that never landed: report it before the day is
+    // forgotten (it is worth more than the abandon)
+    True, False -> [solve_effect(model.uuid, old_attempt)]
+    // started and dropped: the abandon record (Q21)
+    False, _ -> [abandon_effect(model.uuid, old_attempt)]
+    True, True -> []
+  }
+  open_fresh(model, daily.show_date, start, retire)
+}
+
+fn open_fresh(
+  model: Model,
+  show_date: String,
+  start: List(TermState),
+  before: List(Effect(Msg)),
+) -> #(Model, Effect(Msg)) {
+  let fresh = attempt.fresh(show_date, start)
+  let model =
+    Model(
+      ..model,
+      source: Daily(show_date),
+      state: start,
+      match: shapes.match_pct(model.shape, start),
+      moves: 0,
+      solved_once: False,
+      attempt: Some(fresh),
+    )
+  #(
+    model,
+    batch(
+      list.flatten([
+        before,
+        [sync_effect(model.shape, start)],
+        [persist_effect(fresh)],
+      ]),
+    ),
+  )
+}
+
+fn solve_reported(model: Model) -> #(Model, Effect(Msg)) {
+  case model.attempt {
+    None -> #(model, effect.none())
+    Some(a) -> {
+      case a.reported {
+        // a duplicate callback (or a stale one): nothing to store
+        True -> #(model, effect.none())
+        False -> {
+          let a = attempt.mark_reported(a)
+          let model = Model(..model, attempt: Some(a))
+          #(model, batch(saved(Some(a))))
+        }
+      }
     }
   }
 }
@@ -182,7 +470,10 @@ fn view(model: Model) -> Element(Msg) {
 fn board_view(model: Model) -> Element(Msg) {
   html.div([], [
     bar(model.match, model.moves, model.dark),
-    html.h2([attribute.class("pt")], [html.text(model.setup.title)]),
+    html.h2([attribute.class("pt")], [
+      html.text(model.setup.title),
+      when_tag(model.source),
+    ]),
     html.canvas([attribute.class("board"), attribute.id("toy-board")]),
     html.div(
       [attribute.class("rows")],
@@ -194,6 +485,17 @@ fn board_view(model: Model) -> Element(Msg) {
           dial_row(kind, i, s, model.shape.dial_max_r)
         }),
     ),
+  ])
+}
+
+/// The daily puzzle wears its date faintly beside its name, so a player can
+/// tell one day's board from the next (the built-in fallback has no date).
+fn when_tag(source: Source) -> Element(Msg) {
+  html.span([attribute.class("when")], [
+    html.text(case source {
+      Daily(show_date) -> " · " <> show_date
+      Quaver -> ""
+    }),
   ])
 }
 
@@ -278,7 +580,6 @@ fn dial_row(
     ]
   }
   html.div([attribute.class("row")], list.append(head, body))
-  |> keep
 }
 
 fn at_min(kind: puzzle.DialKind, s: TermState) -> Bool {
@@ -311,10 +612,6 @@ fn edge_button(i: Int, dir: Int, disabled_flag: Bool) -> Element(Msg) {
       }),
     ],
   )
-}
-
-fn keep(el: Element(Msg)) -> Element(Msg) {
-  el
 }
 
 /// One change per stepper step; the singular reads better at one.

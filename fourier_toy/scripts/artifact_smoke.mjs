@@ -81,7 +81,38 @@ function make_ctx() {
   };
 }
 
-function boot_dom({ stored = null, systemDark = false } = {}) {
+// The network half of the daily puzzle (PLAN-daily-puzzles.md §1). jsdom has no
+// fetch, so the smoke supplies one: `fetchMode` picks the answer to
+// GET /api/puzzle/today ("none" is the default — the empty calendar every
+// pre-daily scenario boots into), and every call is logged so the scenarios can
+// count and read the POSTs. POSTs answer 200 unless `postFails`.
+function install_fetch(window, { fetchMode = "none", fetchBody = null, postFails = false }) {
+  const calls = [];
+  window.__calls = calls;
+  window.fetch = (url, init = {}) => {
+    const method = (init.method || "GET").toUpperCase();
+    calls.push({ url: String(url), method, body: init.body === undefined ? null : init.body });
+    if (method !== "GET") {
+      if (postFails) return Promise.reject(new Error("offline"));
+      return Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve("{}") });
+    }
+    if (fetchMode === "reject") return Promise.reject(new Error("offline"));
+    if (fetchMode === "http500") {
+      return Promise.resolve({ ok: false, status: 500, text: () => Promise.resolve("") });
+    }
+    const body = fetchMode === "ok" ? fetchBody : JSON.stringify({ status: "none", fallback: true });
+    return Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve(body) });
+  };
+}
+
+function boot_dom({
+  stored = null,
+  systemDark = false,
+  seed = null,
+  fetchMode = "none",
+  fetchBody = null,
+  postFails = false,
+} = {}) {
   raf_q = [];
   NOW = 1000.0;
   const dom = new JSDOM(html, {
@@ -89,6 +120,7 @@ function boot_dom({ stored = null, systemDark = false } = {}) {
     runScripts: "dangerously",
     pretendToBeVisual: false,
     beforeParse(window) {
+      install_fetch(window, { fetchMode, fetchBody, postFails });
       window.devicePixelRatio = 2;
       window.requestAnimationFrame = (cb) => {
         raf_handle++;
@@ -108,6 +140,14 @@ function boot_dom({ stored = null, systemDark = false } = {}) {
         try {
           window.localStorage.setItem("f-toy-theme", stored);
         } catch (e) {}
+      }
+      // seed a stored attempt / identity (the daily puzzle's keys)
+      if (seed) {
+        for (const [key, value] of Object.entries(seed)) {
+          try {
+            window.localStorage.setItem(key, value);
+          } catch (e) {}
+        }
       }
       // ONE stable recording ctx per canvas element
       window.HTMLCanvasElement.prototype.getContext = function () {
@@ -574,6 +614,507 @@ console.log("S7 · theme persistence — stored choice beats system preference")
     "no stored choice: system preference applies (dark)",
     bodyTheme(noStoredSysDark) === "dark",
     "body " + bodyTheme(noStoredSysDark),
+  );
+}
+
+
+// ==== S8 · the daily puzzle: fetch → board → store → telemetry ==============
+// PLAN-daily-puzzles.md §1. The served document here is built from the toy's
+// own quaver numbers (dial truth, extras, target, centroid) with a DIFFERENT
+// name and start, so the board proves it took the fetched puzzle over: the
+// title changes, the date appears, and the dials sit where the served patches
+// put them. The wiring under test is the toy's, not the derivation's — the
+// derivation has its own gold tests in toy_admin.
+console.log("S8 · daily puzzle — fetch, resume, solve POST, abandon, new day");
+
+const DAILY_NAME = "the quaver, published";
+const DAILY_DATE = "2026-10-26";
+const OLD_DATE = "2026-10-25";
+
+// patch constructors, as the app's core would build them ([phase, radius%, k])
+const patches_of = (list) =>
+  toList([
+    puzzle.Patch$PhaseDeg(list[0]),
+    puzzle.Patch$RPct(list[1]),
+    puzzle.Patch$KSet(list[2]),
+    puzzle.Patch$Keep$const,
+  ]);
+const daily_start_patches = patches_of([90.0, 50.0, 2]);
+
+const daily_doc = () => ({
+  status: "ok",
+  puzzle: {
+    name: DAILY_NAME,
+    showDate: DAILY_DATE,
+    dots: [
+      [10, 50],
+      [90, 50],
+    ],
+    centroid: [shape.centroid[0], shape.centroid[1]],
+    dials: ["phase", "radius", "k", "fixed"],
+    dial: Array.from(shape.dial, (t) => ({ k: t.k, radius: t.r, phase: t.phase_deg })),
+    extras: Array.from(shape.extras, (t) => ({ k: t.k, radius: t.r, phase: t.phase_deg })),
+    patches: [
+      { kind: "phase", deg: 90.0 },
+      { kind: "radius", pct: 50.0 },
+      { kind: "k", k: 2 },
+      { kind: "keep" },
+    ],
+    target: Array.from(shape.target, (p) => [p[0], p[1]]),
+  },
+});
+const daily_json = () => JSON.stringify(daily_doc());
+
+// the app derives these client-side (shapes.from_parts) — the ground truth for
+// the daily board's score is the same derivation
+const daily_shape = shapes.from_parts(
+  DAILY_NAME,
+  shape.centroid,
+  shape.dial,
+  shape.extras,
+  shape.target,
+);
+const daily_initial = () => puzzle.initial(daily_shape, daily_start_patches);
+
+// the walk S4 performs through the UI, computed on the core: phase the
+// shortest way round, radius to its nearest step, then k — [[slot, dir], ...]
+function walk_moves(shape_, kinds, start) {
+  const cur = Array.from(start);
+  const truth = Array.from(shape_.dial);
+  const moves = [];
+  const push = (slot, dir) => {
+    cur[slot] = puzzle.step(kinds[slot], cur[slot], dir, shape_.dial_max_r);
+    moves.push([slot, dir]);
+  };
+  const up = ((truth[0].phase_deg - cur[0].phase_deg + 360) % 360) / 5;
+  const down = ((cur[0].phase_deg - truth[0].phase_deg + 360) % 360) / 5;
+  const pdir = up <= down ? 1 : -1;
+  for (let i = 0; i < Math.min(up, down); i++) push(0, pdir);
+  const unit = 0.02 * shape_.dial_max_r;
+  const rdir = truth[1].r - cur[1].r >= 0 ? 1 : -1;
+  const rsteps = Math.round(Math.abs(truth[1].r - cur[1].r) / unit); // snapshot too
+  for (let i = 0; i < rsteps; i++) push(1, rdir);
+  const kdir = truth[2].k >= cur[2].k ? 1 : -1;
+  const ksteps = Math.abs(truth[2].k - cur[2].k); // snapshot: push() mutates cur
+  for (let i = 0; i < ksteps; i++) push(2, kdir);
+  return { state: cur, moves };
+}
+const DAILY_KINDS = [
+  puzzle.DialKind$DialP$const,
+  puzzle.DialKind$DialR$const,
+  puzzle.DialKind$DialK$const,
+  puzzle.DialKind$DialFixed$const,
+];
+const daily_walk = walk_moves(daily_shape, DAILY_KINDS, daily_initial());
+
+// the stored attempt, in the app's own schema (`j-att`, see attempt.gleam)
+const attempt_json = (fields) =>
+  JSON.stringify({
+    v: 1,
+    date: fields.date,
+    state: (fields.state || Array.from(daily_initial())).map((s) => ({
+      k: s.k,
+      r: s.r,
+      phase: s.phase_deg,
+    })),
+    moves: fields.moves || [],
+    count: fields.count,
+    solved: !!fields.solved,
+    reported: !!fields.reported,
+  });
+
+const posts = (dom) => dom.window.__calls.filter((c) => c.method === "POST");
+const gets = (dom) => dom.window.__calls.filter((c) => c.method === "GET");
+const stored_attempt = (dom) => {
+  const raw = dom.window.localStorage.getItem("j-att");
+  return raw === null ? null : JSON.parse(raw);
+};
+const h2_text = (dom) => text(dom.window.document.querySelector("h2.pt"));
+const when_text = (dom) => text(dom.window.document.querySelector("h2.pt .when"));
+const uuid_now = (dom) => dom.window.localStorage.getItem("j-uid");
+
+// ==== S8a · nothing published — the quaver, and NO telemetry ================
+{
+  const dom = boot_dom(); // default fetchMode: {"status":"none"}
+  // the deterministic first paint, before the answer has settled
+  check(
+    "first paint is the quaver (before the fetch settles)",
+    h2_text(dom) === "quaver",
+    h2_text(dom),
+  );
+  await sleep(0); // let the fetch settle
+  tick();
+  check("no puzzle today: the board stays the quaver", h2_text(dom) === "quaver", h2_text(dom));
+  check("no date tag on the fallback", when_text(dom) === "", JSON.stringify(when_text(dom)));
+  check(
+    "the fallback tells no telemetry (no POST at all)",
+    posts(dom).length === 0,
+    JSON.stringify(posts(dom)),
+  );
+  check(
+    "the fallback stores no attempt ('j-att' untouched)",
+    stored_attempt(dom) === null,
+    JSON.stringify(stored_attempt(dom)),
+  );
+  const get = gets(dom)[0];
+  check(
+    "the fetch asked for today in the visitor's own tz (minutes to ADD)",
+    get && /^\/api\/puzzle\/today\?tz=-?\d+$/.test(get.url),
+    get ? get.url : "no GET",
+  );
+  check(
+    "the anonymous identity is created anyway (site-wide, Q16)",
+    /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(
+      uuid_now(dom) || "",
+    ),
+    String(uuid_now(dom)),
+  );
+}
+
+// ==== S8b · a fetched puzzle takes the board over ===========================
+let daily_dom = null;
+{
+  const dom = boot_dom({ fetchMode: "ok", fetchBody: daily_json() });
+  check(
+    "the quaver paints first even with a puzzle waiting",
+    h2_text(dom) === "quaver",
+    h2_text(dom),
+  );
+  await sleep(0);
+  tick();
+  daily_dom = dom;
+  check("the served puzzle's name is the title", h2_text(dom).startsWith(DAILY_NAME), h2_text(dom));
+  check("the show date rides beside the name", when_text(dom).includes(DAILY_DATE), when_text(dom));
+  check(
+    "the dials sit where the served patches put them (90° · 50% · k +2)",
+    row_val(dom, 0) === "90°" && row_val(dom, 1) === "50%" && row_val(dom, 2) === "k +2",
+    [row_val(dom, 0), row_val(dom, 1), row_val(dom, 2)].join(" · "),
+  );
+  check(
+    "the score is the core's match for the served start",
+    score_val(dom) === puzzle.fmt1(shapes.match_pct(daily_shape, daily_initial())) + "%",
+    score_val(dom),
+  );
+  check("a fresh attempt starts at zero", counter(dom) === "· 0 changes", JSON.stringify(counter(dom)));
+  check("no POST at boot (nothing solved, nothing abandoned)", posts(dom).length === 0);
+  const stored = stored_attempt(dom);
+  check(
+    "today's attempt is stored (date, zeroed counter, unsolved)",
+    stored &&
+      stored.date === DAILY_DATE &&
+      stored.count === 0 &&
+      stored.solved === false &&
+      stored.reported === false &&
+      stored.moves.length === 0,
+    JSON.stringify(stored),
+  );
+  const s0 = Array.from(daily_initial())[0];
+  check(
+    "the stored dial state is the served start",
+    stored &&
+      JSON.stringify(stored.state[0]) ===
+        JSON.stringify({ k: s0.k, r: s0.r, phase: s0.phase_deg }),
+    JSON.stringify(stored && stored.state[0]) + " vs " + JSON.stringify({ k: s0.k, r: s0.r, phase: s0.phase_deg }),
+  );
+  check("the canvas repainted for the new shape", canvas_ops(dom).arc >= 5, "arcs " + canvas_ops(dom).arc);
+}
+
+// ==== S8c · resume: a stored attempt from today =============================
+{
+  const seed_state = Array.from(daily_initial());
+
+  seed_state[0] = puzzle.step(DAILY_KINDS[0], seed_state[0], 1, daily_shape.dial_max_r);
+  seed_state[0] = puzzle.step(DAILY_KINDS[0], seed_state[0], 1, daily_shape.dial_max_r);
+  seed_state[0] = puzzle.step(DAILY_KINDS[0], seed_state[0], 1, daily_shape.dial_max_r);
+  const dom = boot_dom({
+    fetchMode: "ok",
+    fetchBody: daily_json(),
+    seed: {
+      "j-att": attempt_json({
+        date: DAILY_DATE,
+        state: seed_state,
+        moves: [
+          [0, 1],
+          [0, 1],
+          [0, 1],
+        ],
+        count: 3,
+      }),
+    },
+  });
+  await sleep(0);
+  tick();
+  check(
+    "the stored dials are restored (90° + 3 steps = 105°)",
+    row_val(dom, 0) === "105°",
+    row_val(dom, 0),
+  );
+  check("the stored counter is restored", counter(dom) === "· 3 changes", JSON.stringify(counter(dom)));
+  check(
+    "the restored score is the core's match for that state",
+    score_val(dom) === puzzle.fmt1(shapes.match_pct(daily_shape, toList(seed_state))) + "%",
+    score_val(dom),
+  );
+  check("resuming posts nothing", posts(dom).length === 0, JSON.stringify(posts(dom)));
+  const stored = stored_attempt(dom);
+  check(
+    "the stored attempt is left alone (count 3, still unsolved)",
+    stored && stored.count === 3 && stored.solved === false,
+    JSON.stringify(stored),
+  );
+}
+
+// ==== S8d · the solve moment posts ONCE =====================================
+{
+  const dom = daily_dom;
+  const uuid = uuid_now(dom);
+  for (const [slot, dir] of daily_walk.moves) {
+    const btn = row_button(dom, slot, dir);
+    if (!btn) break;
+    btn.click();
+    tick();
+  }
+  tick(34, 2);
+  check(
+    "the walk solves the board (badge shown)",
+    dom.window.document.querySelector(".score.solved") !== null,
+    "score " + score_val(dom),
+  );
+  const count = counter_n(dom);
+  let solve_calls = posts(dom).filter((c) => c.url === "/api/solve");
+  check("exactly one solve POST", solve_calls.length === 1, "got " + solve_calls.length);
+  const body = solve_calls.length ? JSON.parse(solve_calls[0].body) : {};
+  check(
+    "the solve body carries the identity, the date and the moves played",
+    body.uuid === uuid && body.puzzleDate === DAILY_DATE && Array.isArray(body.moves),
+    JSON.stringify({ uuid: body.uuid === uuid, date: body.puzzleDate, moves: body.moves && body.moves.length }),
+  );
+  check(
+    "the reported move list matches the frozen counter",
+    body.moves && body.moves.length === count && body.moves[0].slot !== undefined && "dir" in body.moves[0],
+    "moves " + (body.moves && body.moves.length) + " vs counter " + count,
+  );
+  // the solve POST is in flight: the record says solved-but-unreported until
+  // the answer lands (a solve that never confirms is re-sent next boot)
+  const inflight = stored_attempt(dom);
+  check(
+    "while the solve POST is in flight the attempt is stored unsent",
+    inflight && inflight.solved === true && inflight.reported === false && inflight.count === count,
+    JSON.stringify(inflight && { solved: inflight.solved, reported: inflight.reported, count: inflight.count }),
+  );
+  await sleep(0); // the stubbed POST settles on a microtask
+  tick();
+  const stored = stored_attempt(dom);
+  check(
+    "the confirmed solve is stored as solved + reported (nothing left to re-send)",
+    stored && stored.solved === true && stored.reported === true && stored.count === count,
+    JSON.stringify(stored && { solved: stored.solved, reported: stored.reported, count: stored.count }),
+  );
+  // further steps are free: the record is final and nothing is re-posted
+  row_button(dom, 0, 1).click();
+  tick(34, 2);
+  solve_calls = posts(dom).filter((c) => c.url === "/api/solve");
+  check("stepping after the solve re-posts nothing", solve_calls.length === 1, "got " + solve_calls.length);
+  check(
+    "and the counter stays frozen",
+    counter_n(dom) === count,
+    count + " → " + counter_n(dom),
+  );
+}
+
+// ==== S8e · reset before a solve abandons the attempt =======================
+{
+  const dom = boot_dom({ fetchMode: "ok", fetchBody: daily_json() });
+  await sleep(0);
+  tick();
+  const uuid = uuid_now(dom);
+  for (let i = 0; i < 4; i++) {
+    row_button(dom, 0, 1).click();
+    tick();
+  }
+  check("four steps counted", counter(dom) === "· 4 changes", JSON.stringify(counter(dom)));
+  check("no solve POST while unsolved", posts(dom).filter((c) => c.url === "/api/solve").length === 0);
+  dom.window.document.querySelector("button.reset").click();
+  tick(34, 2);
+  const abandons = posts(dom).filter((c) => c.url === "/api/attempts/abandon");
+  check("reset abandons the played attempt (one POST)", abandons.length === 1, "got " + abandons.length);
+  const body = abandons.length ? JSON.parse(abandons[0].body) : {};
+  check(
+    "the abandon body carries the OLD count and today's date",
+    body.uuid === uuid && body.puzzleDate === DAILY_DATE && body.moves === 4,
+    JSON.stringify({ date: body.puzzleDate, moves: body.moves }),
+  );
+  check("the counter zeroes on reset", counter(dom) === "· 0 changes", JSON.stringify(counter(dom)));
+  check("the dials go back to the served start", row_val(dom, 0) === "90°", row_val(dom, 0));
+  const stored = stored_attempt(dom);
+  check(
+    "a fresh attempt replaces it (same date, count 0)",
+    stored && stored.date === DAILY_DATE && stored.count === 0 && stored.moves.length === 0,
+    JSON.stringify(stored && { date: stored.date, count: stored.count, moves: stored.moves.length }),
+  );
+  // resetting an untouched attempt is not an abandonment
+  dom.window.document.querySelector("button.reset").click();
+  tick(34, 2);
+  check(
+    "a reset with nothing played abandons nothing",
+    posts(dom).filter((c) => c.url === "/api/attempts/abandon").length === 1,
+    "got " + posts(dom).filter((c) => c.url === "/api/attempts/abandon").length,
+  );
+}
+
+// ==== S8f · a new day retires yesterday's attempt ===========================
+{
+  const old_state = Array.from(daily_initial());
+  for (let i = 0; i < 7; i++) {
+    old_state[0] = puzzle.step(DAILY_KINDS[0], old_state[0], 1, daily_shape.dial_max_r);
+  }
+  const dom = boot_dom({
+    fetchMode: "ok",
+    fetchBody: daily_json(),
+    seed: {
+      "j-att": attempt_json({
+        date: OLD_DATE,
+        state: old_state,
+        moves: Array.from({ length: 7 }, () => [0, 1]),
+        count: 7,
+      }),
+    },
+  });
+  await sleep(0);
+  tick();
+  const abandons = posts(dom).filter((c) => c.url === "/api/attempts/abandon");
+  check(
+    "yesterday's unsolved attempt is abandoned when today opens",
+    abandons.length === 1,
+    "got " + abandons.length,
+  );
+  const body = abandons.length ? JSON.parse(abandons[0].body) : {};
+  check(
+    "the abandon names the OLD date and its 7 moves",
+    body.puzzleDate === OLD_DATE && body.moves === 7,
+    JSON.stringify({ date: body.puzzleDate, moves: body.moves }),
+  );
+  const stored = stored_attempt(dom);
+  check(
+    "today's attempt takes its place",
+    stored && stored.date === DAILY_DATE && stored.count === 0,
+    JSON.stringify(stored && { date: stored.date, count: stored.count }),
+  );
+  check(
+    "the board shows today's start, not yesterday's dials",
+    row_val(dom, 0) === "90°" && counter(dom) === "· 0 changes",
+    row_val(dom, 0) + " · " + counter(dom),
+  );
+}
+
+// ==== S8g · a solved day reloads solved — and re-reports only if it must ===
+{
+  const solved_state = daily_walk.state;
+  const solved_count = daily_walk.moves.length;
+  const dom = boot_dom({
+    fetchMode: "ok",
+    fetchBody: daily_json(),
+    seed: {
+      "j-att": attempt_json({
+        date: DAILY_DATE,
+        state: solved_state,
+        moves: daily_walk.moves,
+        count: solved_count,
+        solved: true,
+        reported: true,
+      }),
+    },
+  });
+  await sleep(0);
+  tick();
+  check(
+    "the solved badge is restored on reload",
+    dom.window.document.querySelector(".score.solved") !== null,
+    "score " + score_val(dom),
+  );
+  check(
+    "the solved-in number is restored",
+    counter_n(dom) === solved_count,
+    solved_count + " vs " + counter_n(dom),
+  );
+  check(
+    "an already-reported solve posts nothing",
+    posts(dom).length === 0,
+    JSON.stringify(posts(dom)),
+  );
+  const stored = stored_attempt(dom);
+  check(
+    "the stored record survives the reload untouched",
+    stored && stored.solved === true && stored.reported === true && stored.count === solved_count,
+    JSON.stringify(stored && { solved: stored.solved, reported: stored.reported, count: stored.count }),
+  );
+
+  // a solve whose POST never landed is re-sent on the next boot (the backend's
+  // solve REPLACES the row, so a duplicate costs nothing)
+  const unsent = boot_dom({
+    fetchMode: "ok",
+    fetchBody: daily_json(),
+    seed: {
+      "j-att": attempt_json({
+        date: DAILY_DATE,
+        state: solved_state,
+        moves: daily_walk.moves,
+        count: solved_count,
+        solved: true,
+        reported: false,
+      }),
+    },
+  });
+  await sleep(0);
+  tick();
+  const resends = posts(unsent).filter((c) => c.url === "/api/solve");
+  check("an unreported solve is re-sent exactly once", resends.length === 1, "got " + resends.length);
+  const body = resends.length ? JSON.parse(resends[0].body) : {};
+  check(
+    "the re-sent solve carries the stored moves and date",
+    body.puzzleDate === DAILY_DATE && body.moves && body.moves.length === solved_count,
+    JSON.stringify({ date: body.puzzleDate, moves: body.moves && body.moves.length }),
+  );
+  const after = stored_attempt(unsent);
+  check("the re-send marks the attempt reported", after && after.reported === true, JSON.stringify(after && after.reported));
+}
+
+// ==== S8h · network trouble is the fallback, not an error ===================
+{
+  for (const [label, opts] of [
+    ["a rejected request (offline)", { fetchMode: "reject" }],
+    ["a 500 from the API", { fetchMode: "http500" }],
+    ["a document this decoder cannot use", { fetchMode: "ok", fetchBody: "<html>tunnel</html>" }],
+  ]) {
+    const dom = boot_dom(opts);
+    await sleep(0);
+    tick();
+    check(
+      label + ": the quaver stays, nothing is posted",
+      h2_text(dom) === "quaver" && posts(dom).length === 0,
+      h2_text(dom) + " / posts " + posts(dom).length,
+    );
+  }
+  // a POST that fails changes nothing visible: the attempt stays unreported
+  const dom = boot_dom({ fetchMode: "ok", fetchBody: daily_json(), postFails: true });
+  await sleep(0);
+  tick();
+  for (const [slot, dir] of daily_walk.moves) {
+    const btn = row_button(dom, slot, dir);
+    if (!btn) break;
+    btn.click();
+    tick();
+  }
+  tick(34, 2);
+  const stored = stored_attempt(dom);
+  check(
+    "an unsent solve is stored as solved-but-unreported (the next boot retries)",
+    stored && stored.solved === true && stored.reported === false,
+    JSON.stringify(stored && { solved: stored.solved, reported: stored.reported }),
+  );
+  check(
+    "the badge still shows (the player solved it, whatever the network did)",
+    dom.window.document.querySelector(".score.solved") !== null,
   );
 }
 

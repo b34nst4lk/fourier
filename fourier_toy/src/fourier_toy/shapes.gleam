@@ -325,6 +325,35 @@ pub fn quaver() -> Shape {
   ])
 }
 
+// ---------- fetched shapes ----------
+
+/// A shape assembled from a served puzzle's own numbers (wire.gleam): the
+/// client-side half of `table_shape`. A fetched puzzle carries its dial truth,
+/// its extras, its centroid and its 512-point target — what it cannot carry
+/// without restating the shape is the metric's two scalars, so they are
+/// derived here exactly as the built-in shapes derive them:
+/// `dial_max_r` is the biggest DIALABLE radius (the radius dial's unit, and its
+/// 200% ceiling) and `rms_polar` is the target's polar RMS about the centroid.
+/// Same function, same numbers — a served puzzle and a built-in one behave
+/// identically.
+pub fn from_parts(
+  name name: String,
+  centroid centroid: #(Float, Float),
+  dial dial: List(TermState),
+  extras extras: List(TermState),
+  target target: List(#(Float, Float)),
+) -> Shape {
+  Shape(
+    name: name,
+    centroid: centroid,
+    dial: dial,
+    extras: extras,
+    dial_max_r: max_r(dial),
+    rms_polar: rms_polar_of(target, centroid.0, centroid.1),
+    target: target,
+  )
+}
+
 // ---------- small helpers ----------
 
 fn centroid_of(pts: List(#(Float, Float))) -> #(Float, Float) {
@@ -343,7 +372,12 @@ fn rms_polar_of(pts: List(#(Float, Float)), cx: Float, cy: Float) -> Float {
       let dy = p.1 -. cy
       sum +. dx *. dx +. dy *. dy
     })
-  let assert Ok(rms) = float.square_root(acc /. int.to_float(n_samples))
+  // Per point, not per the sample constant: built-in shapes always synthesise
+  // n_samples points (so this is the same number), but a fetched puzzle brings
+  // its own target and the mean square must follow its length.
+  let count = int.to_float(list.length(pts))
+  let assert True = count >. 0.0
+  let assert Ok(rms) = float.square_root(acc /. count)
   rms
 }
 

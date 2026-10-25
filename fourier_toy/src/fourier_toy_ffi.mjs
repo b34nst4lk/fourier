@@ -488,3 +488,154 @@ export function hold_init() {
     true,
   );
 }
+
+// ---- the daily puzzle: fetch, identity, storage, telemetry ------------------
+// PLAN-daily-puzzles.md §1. The toy is a static single file, so everything a
+// daily puzzle needs beyond the bundle is reached from here: the puzzle
+// itself over the API, an anonymous identity, the in-progress attempt, and the
+// two fire-and-forget POSTs. Every access is guarded — private-mode storage,
+// a missing fetch and a dead network are all ordinary conditions for a toy
+// that must still play.
+
+const UID_KEY = "j-uid";
+const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+// The API's `tz` is minutes to ADD to UTC (plan Q4) — the opposite sign of
+// Date#getTimezoneOffset, which is minutes to SUBTRACT. UTC+2 ⇒ 120.
+export function tz_offset_minutes() {
+  try {
+    const offset = new Date().getTimezoneOffset();
+    if (Number.isFinite(offset)) return -offset;
+  } catch (err) {
+    // no Date? treat as UTC
+  }
+  return 0;
+}
+
+export function ls_get(key) {
+  try {
+    const value = window.localStorage.getItem(key);
+    return value === null ? undefined : value;
+  } catch (err) {
+    return undefined;
+  }
+}
+
+export function ls_set(key, value) {
+  try {
+    window.localStorage.setItem(key, value);
+    return true;
+  } catch (err) {
+    return false;
+  }
+}
+
+export function ls_del(key) {
+  try {
+    window.localStorage.removeItem(key);
+  } catch (err) {
+    // best-effort: nothing to do
+  }
+}
+
+// The site-wide anonymous identity (plan Q16): created once, reused forever,
+// so a player's solves across days are recognised as one player. A stored
+// value that is not a v4 uuid (hand-edited, a different app's key) is replaced
+// — the backend refuses anything else.
+export function uuid_ensure() {
+  const stored = ls_get(UID_KEY);
+  if (typeof stored === "string" && UUID_V4.test(stored)) return stored;
+  const made = fresh_uuid();
+  ls_set(UID_KEY, made);
+  return made;
+}
+
+function fresh_uuid() {
+  try {
+    if (window.crypto && typeof window.crypto.randomUUID === "function") {
+      return window.crypto.randomUUID();
+    }
+  } catch (err) {
+    // fall through to the Math.random spelling
+  }
+  // Old browsers: the same v4 shape, weaker randomness — an anonymous toy
+  // identity, not a secret.
+  const hex = (n) => Math.floor(Math.random() * 16 ** n).toString(16).padStart(n, "0");
+  return (
+    hex(8) + "-" + hex(4) + "-4" + hex(3) + "-" +
+    ((8 + Math.floor(Math.random() * 4)).toString(16)) + hex(3) + "-" + hex(12)
+  );
+}
+
+// GET /api/puzzle/today?tz=… — resolve exactly once with the body text on a
+// 2xx, or with nothing on any failure (network, non-2xx, unreadable body).
+// The caller turns the body into a puzzle or a fallback; a daily fetch must
+// never throw into the boot path.
+export function fetch_puzzle(tz, on_ok, on_error) {
+  let settled = false;
+  const ok = (text) => {
+    if (settled) return;
+    settled = true;
+    on_ok(text);
+  };
+  const bad = () => {
+    if (settled) return;
+    settled = true;
+    on_error();
+  };
+  if (typeof window.fetch !== "function") {
+    bad();
+    return;
+  }
+  let pending;
+  try {
+    // no-store: today's puzzle is derived per request and a cached copy
+    // would survive a re-publish
+    pending = window.fetch("/api/puzzle/today?tz=" + encodeURIComponent(String(tz)), {
+      headers: { accept: "application/json" },
+      cache: "no-store",
+    });
+  } catch (err) {
+    bad();
+    return;
+  }
+  Promise.resolve(pending)
+    .then((res) => {
+      if (!res || res.ok === false) {
+        bad();
+        return;
+      }
+      return res.text().then(ok, bad);
+    })
+    .catch(bad);
+}
+
+// POST /api/solve or /api/attempts/abandon: fire-and-forget, but the solve's
+// arrival is the only thing that retires the pending report, so a 2xx calls
+// back. `keepalive` lets a solve survive the tab closing mid-request. No
+// retries: the next boot re-sends an unreported solve (plan §1).
+export function post_telemetry(path, body, on_sent) {
+  if (typeof window.fetch !== "function") return;
+  try {
+    Promise.resolve(
+      window.fetch(path, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: body,
+        keepalive: true,
+      }),
+    )
+      .then(
+        (res) => {
+          if (res && res.ok !== false) on_sent();
+        },
+        () => {
+          // dropped: nothing to retry here — the stored attempt still says
+          // unsolved/unreported, and the next boot tries again
+        },
+      )
+      .catch(() => {});
+  } catch (err) {
+    // same: silent by design
+  }
+}
