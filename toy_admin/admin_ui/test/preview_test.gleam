@@ -253,3 +253,17 @@ pub fn a_stale_fire_after_leaving_the_authoring_view_is_ignored_test() {
 fn count(haystack: String, needle: String) -> Int {
   string.split(haystack, needle) |> list.length |> fn(n) { n - 1 }
 }
+
+pub fn a_late_answer_must_not_kill_the_armed_timer_test() {
+  // request 1 is out; before it answers, a new tap arms generation 2's timer
+  let first = tap(model(), #(10.0, 10.0))
+  let first = step(first, admin_ui.PreviewFire(1))
+  let armed = tap(first, #(20.0, 10.0))
+  should.equal(True, armed.preview_scheduled.scheduled == Some(2))
+
+  // generation 1's answer lands while generation 2's timer is still armed —
+  // the answer must not wipe the armed slot, or the next fire dies silently
+  // and the panel stays empty even after more dots
+  let late = step(armed, admin_ui.PanelPreviewed(1, Ok(star())))
+  should.equal(Some(2), late.preview_scheduled.scheduled)
+}

@@ -623,8 +623,15 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
     PanelPreviewed(generation, Ok(fixture)) -> {
       case model.view, model.preview_scheduled.inflight {
         Authoring, Some(inflight) if inflight == generation -> {
+          // The answer owns only the inflight slot: the ARMED timer (a newer
+          // tap since the fire went out) must survive, or that fire dies and
+          // the panel stops updating.
           let clock =
-            PreviewClock(model.preview_scheduled.generation, None, None)
+            PreviewClock(
+              model.preview_scheduled.generation,
+              model.preview_scheduled.scheduled,
+              None,
+            )
           #(
             Model(
               ..model,
@@ -643,8 +650,14 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
     PanelPreviewed(generation, Error(_)) -> {
       case model.view, model.preview_scheduled.inflight {
         Authoring, Some(inflight) if inflight == generation -> {
+          // same rule as the Ok branch: only the inflight slot is the
+          // answer's to clear
           let clock =
-            PreviewClock(model.preview_scheduled.generation, None, None)
+            PreviewClock(
+              model.preview_scheduled.generation,
+              model.preview_scheduled.scheduled,
+              None,
+            )
           #(
             Model(
               ..model,
