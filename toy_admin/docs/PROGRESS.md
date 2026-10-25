@@ -174,7 +174,7 @@ Daily-puzzle backend + admin: per-feature plans, this rolling ledger.
   app inside the container — the runtime image has no curl). TWO findings,
   both fixed: (b8b5a81) GET /api/admin/puzzles/<id> nests the fixture inside
   "puzzle" while StartTest decoded a TOP-LEVEL fixture — 200s decoded as
-  BadResponse; new decode_saved_fixture reads ["puzzle","fixture]; the edit
+  BadResponse; new decode_saved_fixture reads ["puzzle","fixture"]; the edit
   flow's dots read already used the nested shape (its sibling). uismoke S8
   added: the stub had NO single-GET handling at all (the button was never
   smoke-driven — the same stub-shape gap class as the preview-body bug);
