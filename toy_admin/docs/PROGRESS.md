@@ -183,3 +183,22 @@ Daily-puzzle backend + admin: per-feature plans, this rolling ledger.
   logger level set to INFO at boot (the default NOTICE swallowed every
   line — verified empirically); '<status> METHOD path' lines now appear in
   the container logs through the tunnel.
+
+- **The puzzle schedule filled with 18 drafts (2026-10-25)**: the user drew
+  whale + octopus themselves (ids 5–6, 10-29/10-30); the remaining 18 of the
+  brainstorm landed as DRAFTS through the admin API (scripts/
+  draft-puzzles.mjs builds every polygon from arcs/lines and ASCII-renders
+  each silhouette for an eyeball gate before insertion; the heart is the
+  sketch package's own preset ported point for point). scripts/
+  insert-drafts.sh mints the fence token and POSTs each draft — the server's
+  derivation + degeneracy check is the shape gate (all 18 derived cleanly,
+  zero BadDrawing). Release order easy→hard: cloud, leaf, wave, heart,
+  mountains, island, mushroom, teacup, lightbulb, crown, bell, moon,
+  umbrella, pine tree, rocket, sun, snail (the seahorse attempt ASCII-rendered
+  as a squiggle and was swapped honestly), key — show dates 2026-10-31 through
+  2026-11-17, one per day, consecutive after the user's own rows (10-25..10-30).
+  All drafts are review-quality: the user re-dates or re-draws any row in the
+  admin (edit loads the drawing; the live panel previews the derivation; the
+  test button plays it). Future dates serve nothing early (/api/puzzle/today
+  serves the newest row dated ≤ the visitor's day — today 10-25 still serves
+  star).
