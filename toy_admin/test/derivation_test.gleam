@@ -159,3 +159,29 @@ pub fn degenerate_dot_count_yields_an_empty_fixture_test() {
   should.equal([], fixture.target)
   should.equal(#(0.0, 0.0), fixture.centroid)
 }
+
+pub fn can_derive_needs_three_dots_test() {
+  // The core's <3-dot gate, named for the admin route: a drawing with fewer
+  // than three dots cannot be saved as a puzzle.
+  should.equal(False, derivation.can_derive([]))
+  should.equal(False, derivation.can_derive([#(0.0, 0.0)]))
+  should.equal(False, derivation.can_derive([#(0.0, 0.0), #(1.0, 1.0)]))
+  should.equal(
+    True,
+    derivation.can_derive([#(0.0, 0.0), #(1.0, 1.0), #(2.0, 0.0)]),
+  )
+}
+
+pub fn is_degenerate_detects_the_gated_fixture_test() {
+  // The admin's save check reuses this rather than counting dots twice: the
+  // derived fixture is degenerate exactly when nothing could be rendered.
+  let degenerate =
+    derivation.derive_fixture([#(0.0, 0.0), #(1.0, 1.0)], "n", "2026-10-25")
+  should.be_true(derivation.is_degenerate(degenerate))
+  should.be_true(
+    derivation.is_degenerate(derivation.derive_fixture([], "n", "2026-10-25")),
+  )
+
+  let real = derivation.derive_fixture(sketch.star(), "star", "2026-10-25")
+  should.equal(False, derivation.is_degenerate(real))
+}

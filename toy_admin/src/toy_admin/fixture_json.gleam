@@ -24,6 +24,7 @@
 //// is lossless, so a re-served puzzle matches what the admin derived.
 
 import gleam/dynamic/decode
+import gleam/int
 import gleam/json
 import gleam/list
 import gleam/result
@@ -82,8 +83,16 @@ pub fn dots_to_json(dots: List(Dot)) -> json.Json {
 
 /// Read a stored drawing back.
 pub fn dots_from_json(from json_text: String) -> Result(List(Dot), Nil) {
-  json.parse(json_text, using: decode.list(point_decoder()))
+  json.parse(json_text, using: dots_decoder())
   |> result.map_error(fn(_error) { Nil })
+}
+
+/// The drawing decoder, for callers holding a Dynamic (the admin body field):
+/// a JSON array of [x, y] NUMBER pairs. Whole numbers arrive as ints from
+/// JavaScript's `JSON.stringify`, so both spellings decode and normalise to
+/// Floats; a one-element or three-element inner array is refused.
+pub fn dots_decoder() -> decode.Decoder(List(Dot)) {
+  decode.list(point_decoder())
 }
 
 // ---------- internals ----------
@@ -150,7 +159,7 @@ fn dial_decoder() -> decode.Decoder(Dial) {
 }
 
 fn point_decoder() -> decode.Decoder(Dot) {
-  decode.then(decode.list(decode.float), fn(values) {
+  decode.then(decode.list(number_decoder()), fn(values) {
     case values {
       [x, y] -> decode.success(#(x, y))
       _ -> decode.failure(#(0.0, 0.0), "an [x, y] pair")
@@ -158,7 +167,16 @@ fn point_decoder() -> decode.Decoder(Dot) {
   })
 }
 
-fn fixture_decoder() -> decode.Decoder(Fixture) {
+/// A JSON number as a Float: ints (what `JSON.stringify` emits for whole
+/// numbers) and floats both read as the sketch's coordinate type.
+fn number_decoder() -> decode.Decoder(Float) {
+  decode.one_of(decode.float, or: [decode.map(decode.int, int.to_float)])
+}
+
+/// The stored fixture document's decoder. Public because the admin API decodes
+/// the same document out of its own responses (the editor shows what it will
+/// serve) — one decoder for the format, not a second copy in the tests.
+pub fn fixture_decoder() -> decode.Decoder(Fixture) {
   use name <- decode.field("name", decode.string)
   use show_date <- decode.field("showDate", decode.string)
   use centroid <- decode.field("centroid", point_decoder())

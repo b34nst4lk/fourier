@@ -7,27 +7,28 @@
 ////   POST /api/solve             record a solve
 ////   POST /api/attempts/abandon  record an abandoned attempt
 ////
-//// Auth is Cloudflare Access at the tunnel (Q12) — nothing here authenticates,
-//// and it must not start doing so. Admin routes arrive in a later phase.
+//// Auth is Cloudflare Access at the tunnel (Q12). The PUBLIC routes above
+//// authenticate nothing and must not start doing so — they serve a puzzle and
+//// record an anonymous attempt. The /api/admin/* routes are fenced by
+//// toy_admin/access.gleam before any work happens there: a Cf-Access-Jwt-
+//// Assertion must be present, and when ADMIN_ACCESS_AUD is configured its
+//// audience and expiry are checked. That module does NOT verify the token's
+//// signature — its header explains why the tunnel is the wall and what the
+//// shelf item is.
 ////
 //// This is the umbrella's one Erlang-native piece (Q15): it runs inside the
 //// Docker image on the Erlang target, listening on $PORT (default 8080) bound
 //// to 0.0.0.0 so the tunnel ingress can resolve http://toy_admin:8080 across
 //// home_server-network. No host ports are published (Q13).
 ////
-//// Wire contract, in one place
-//// ---------------------------
-//// Every answer is JSON with a `status` field:
-////
-////   200 {"status":"ok", ...}                 the work happened
-////   200 {"status":"none","fallback":true}   nothing published — the client
-////                                           renders its built-in quaver (Q5)
-////   4xx/5xx {"status":"error","errors":[<stable names>]}
-////
-//// The names are the client's vocabulary (`BadUuid`, `BadPuzzleDate`,
-//// `TooManyMoves`, `BadSlot`, `BadDirection`, `UnknownPuzzle`, `BadTimezone`,
-//// `BadRequest`, `RateLimited`, `StoreError`) and are part of the contract: the
-//// toy maps them to copy, so they never change silently.
+//// Wire contract
+//// --------------
+//// The envelope itself lives in toy_admin/envelope.gleam (one module for both
+//// the public and the admin routes). In brief: `{"status":"ok", ...}` on
+//// success, `{"status":"none","fallback":true}` when nothing is published (Q5),
+//// `{"status":"error","errors":[<stable names>]}` otherwise, and 204 with no
+//// body for a delete. The error names are the client's vocabulary and part of
+//// the contract; the list, with phase 4a's additions, is in envelope.gleam.
 ////
 //// The timezone offset travels as `?tz=<minutes>` (the offset to ADD to UTC,
 //// i.e. the NEGATION of JavaScript's `getTimezoneOffset()`), as an explicit
@@ -56,9 +57,13 @@ import gleam/list
 import gleam/option
 import gleam/result
 import gleam/string
+import logging
 import mist
+import toy_admin/access
+import toy_admin/admin
 import toy_admin/clock
 import toy_admin/dates
+import toy_admin/envelope
 import toy_admin/fixture_json
 import toy_admin/ingest
 import toy_admin/store
@@ -91,6 +96,12 @@ pub fn main() -> Nil {
   let assert Ok(Nil) = store.init(database)
   // One table for the limiter, created before any request can race for it.
   throttle.setup()
+  // The one place the access fence's configuration speaks up: an unset
+  // ADMIN_ACCESS_AUD downgrades the admin fence to presence-only, and that must
+  // not be a silent surprise discovered during an incident (access.gleam).
+  access.announce_at_boot(access.configured_audience(), fn(line) {
+    logging.log(logging.Warning, line)
+  })
   let assert Ok(_) =
     handle_request
     |> wisp_mist.handler(secret_key_base())
@@ -114,12 +125,17 @@ pub fn handle_request(request: wisp.Request) -> wisp.Response {
       wisp.require_method(request, http.Post, fn() { solve(request) })
     ["api", "attempts", "abandon"] ->
       wisp.require_method(request, http.Post, fn() { abandon(request) })
+    // Admin (phase 4a). Both handlers run the access fence FIRST — before the
+    // method check, so an unfenced caller learns nothing, not even which
+    // methods exist.
+    ["api", "admin", "puzzles"] -> admin.puzzles(request)
+    ["api", "admin", "puzzles", id] -> admin.puzzle(request, id)
     _ -> wisp.not_found()
   }
 }
 
 fn health() -> wisp.Response {
-  ok_empty()
+  envelope.ok_empty()
 }
 
 // ---------- GET /api/puzzle/today ----------
@@ -127,14 +143,14 @@ fn health() -> wisp.Response {
 fn today(request: wisp.Request) -> wisp.Response {
   let path = store.path_from_env()
   case tz_offset(request) {
-    Error(_) -> error_response(400, ["BadTimezone"])
+    Error(_) -> envelope.error_response(400, ["BadTimezone"])
     Ok(tz) ->
       case store.newest_published(path) {
-        Error(_) -> error_response(500, ["StoreError"])
+        Error(_) -> envelope.error_response(500, ["StoreError"])
         Ok(newest) -> {
           let local = dates.visitor_local_date(clock.now_seconds(), tz)
           case dates.serve_date(local, newest) {
-            option.None -> none_response()
+            option.None -> envelope.none_response()
             option.Some(show_date) -> serve_puzzle(path, show_date)
           }
         }
@@ -144,11 +160,11 @@ fn today(request: wisp.Request) -> wisp.Response {
 
 fn serve_puzzle(path: String, show_date: String) -> wisp.Response {
   case store.puzzle_by_date(path, show_date) {
-    Error(_) -> error_response(500, ["StoreError"])
+    Error(_) -> envelope.error_response(500, ["StoreError"])
     Ok(option.None) ->
       // Nothing is scheduled for that date (a gap in the calendar): the visitor
       // gets the fallback, exactly as if nothing were published.
-      none_response()
+      envelope.none_response()
     Ok(option.Some(puzzle)) -> serve_stored(puzzle)
   }
 }
@@ -177,7 +193,7 @@ fn serve_stored(puzzle: store.Puzzle) -> wisp.Response {
       ])
       |> json.to_string
       |> wisp.json_response(200)
-    _, _ -> error_response(500, ["StoreError"])
+    _, _ -> envelope.error_response(500, ["StoreError"])
   }
 }
 
@@ -189,31 +205,22 @@ fn tz_offset(request: wisp.Request) -> Result(Int, Nil) {
   }
 }
 
-fn none_response() -> wisp.Response {
-  json.object([
-    #("status", json.string("none")),
-    #("fallback", json.bool(True)),
-  ])
-  |> json.to_string
-  |> wisp.json_response(200)
-}
-
 // ---------- POST /api/solve ----------
 
 fn solve(request: wisp.Request) -> wisp.Response {
   case ip_fence(request) {
-    Error(retry_after) -> rate_limited(retry_after)
+    Error(retry_after) -> envelope.rate_limited(retry_after)
     Ok(Nil) ->
       wisp.require_string_body(request, fn(body) {
         case parse_solve(body) {
-          Error(_) -> error_response(400, ["BadRequest"])
+          Error(_) -> envelope.error_response(400, ["BadRequest"])
           Ok(Solve(uuid, puzzle_date, moves)) ->
             case ingest.validate_solve(uuid, puzzle_date, moves) {
               Error(problems) ->
-                error_response(400, list.map(problems, problem_name))
+                envelope.error_response(400, list.map(problems, problem_name))
               Ok(Nil) ->
                 case uuid_fence(uuid) {
-                  Error(retry_after) -> rate_limited(retry_after)
+                  Error(retry_after) -> envelope.rate_limited(retry_after)
                   Ok(Nil) -> record_solve(uuid, puzzle_date, moves)
                 }
             }
@@ -239,10 +246,11 @@ fn record_solve(
       moves_json,
     )
   {
-    Ok(Nil) -> ok_empty()
-    Error(store.UnknownPuzzle(_)) -> error_response(404, ["UnknownPuzzle"])
-    Error(store.InvalidMoves(_)) -> error_response(400, ["BadRequest"])
-    Error(_) -> error_response(500, ["StoreError"])
+    Ok(Nil) -> envelope.ok_empty()
+    Error(store.UnknownPuzzle(_)) ->
+      envelope.error_response(404, ["UnknownPuzzle"])
+    Error(store.InvalidMoves(_)) -> envelope.error_response(400, ["BadRequest"])
+    Error(_) -> envelope.error_response(500, ["StoreError"])
   }
 }
 
@@ -254,19 +262,19 @@ fn move_to_json(move: ingest.Move) -> json.Json {
 
 fn abandon(request: wisp.Request) -> wisp.Response {
   case ip_fence(request) {
-    Error(retry_after) -> rate_limited(retry_after)
+    Error(retry_after) -> envelope.rate_limited(retry_after)
     Ok(Nil) ->
       wisp.require_string_body(request, fn(body) {
         case parse_abandon(body) {
-          Error(_) -> error_response(400, ["BadRequest"])
+          Error(_) -> envelope.error_response(400, ["BadRequest"])
           Ok(Abandon(uuid, puzzle_date, move_count)) ->
             case abandon_problems(uuid, puzzle_date, move_count) {
               [] ->
                 case uuid_fence(uuid) {
-                  Error(retry_after) -> rate_limited(retry_after)
+                  Error(retry_after) -> envelope.rate_limited(retry_after)
                   Ok(Nil) -> record_abandon(uuid, puzzle_date, move_count)
                 }
-              problems -> error_response(400, problems)
+              problems -> envelope.error_response(400, problems)
             }
         }
       })
@@ -286,9 +294,10 @@ fn record_abandon(
       move_count,
     )
   {
-    Ok(Nil) -> ok_empty()
-    Error(store.UnknownPuzzle(_)) -> error_response(404, ["UnknownPuzzle"])
-    Error(_) -> error_response(500, ["StoreError"])
+    Ok(Nil) -> envelope.ok_empty()
+    Error(store.UnknownPuzzle(_)) ->
+      envelope.error_response(404, ["UnknownPuzzle"])
+    Error(_) -> envelope.error_response(500, ["StoreError"])
   }
 }
 
@@ -418,28 +427,6 @@ fn problem_name(problem: ingest.Problem) -> String {
     ingest.BadSlot(_, _) -> "BadSlot"
     ingest.BadDirection(_, _) -> "BadDirection"
   }
-}
-
-// ---------- responses ----------
-
-fn ok_empty() -> wisp.Response {
-  json.object([#("status", json.string("ok"))])
-  |> json.to_string
-  |> wisp.json_response(200)
-}
-
-fn error_response(status: Int, errors: List(String)) -> wisp.Response {
-  json.object([
-    #("status", json.string("error")),
-    #("errors", json.array(errors, of: json.string)),
-  ])
-  |> json.to_string
-  |> wisp.json_response(status)
-}
-
-fn rate_limited(retry_after_seconds: Int) -> wisp.Response {
-  error_response(429, ["RateLimited"])
-  |> wisp.set_header("retry-after", int.to_string(retry_after_seconds))
 }
 
 // ---------- configuration ----------

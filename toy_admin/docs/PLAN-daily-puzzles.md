@@ -170,3 +170,91 @@ these live:
   uuid fence → store.
 - **DB**: `DB_PATH` env (default `data/toy_admin.sqlite3`); compose mounts
   named volume `toy_admin-data` at `/app/data`.
+
+## 9. Implementation decisions (phase 4a — admin API, recorded 2026-10-25)
+
+The fence, CRUD and stats layer. Same discipline as §8: the decisions the
+worker had to make, with the reasoning, so the plan stays the one place they
+live. The admin UI half of phase 4 (draw canvas, menu, test-play) is still
+open; this section governs the backend it will talk to.
+
+- **Fence semantics (Q12)**: `Cf-Access-Jwt-Assertion` presence is required
+  (missing/blank → **401 `Unauthorized`**). With `ADMIN_ACCESS_AUD` set, the
+  payload must be a JSON object whose `aud` contains that value (string or
+  array, RFC 7519) and whose `exp >= now`; refusal is **403 `Forbidden`** for
+  every claim failure (the UI's reaction to all of them is "log in again", so
+  they share one name; `access.Failure` keeps the diagnostic).
+  **No signature verification** — documented loudly in `access.gleam`: the
+  tunnel is the only ingress (no host ports, Q13), Access minted the token for
+  an admitted request, and full JWKS verification stays on the shelf (§7).
+  Expiry is checked before audience: a stale certificate is stale whoever it
+  names.
+- **`ADMIN_ACCESS_AUD` unset/blank = presence-only**, and it *logs once at
+  boot* (`logging.log(Warning, ...)` from `main`, text pinned by a test). It
+  fails toward "still needs a Cloudflare token", never toward "wide open": an
+  unauthenticated caller who never passed Access has no header and gets 401.
+  A value of spaces is treated as unset, not as "the empty audience matches
+  everything".
+- **base64url**: no new dependency and no hand-written codec — gleam_stdlib
+  1.x already ships `bit_array.base64_url_encode/decode` on both targets. The
+  brief's "implement it pure IF the stdlib lacks it" condition is not met, so
+  the tests instead PIN the RFC 4648 vectors, the URL-safe alphabet swap
+  (`+/` ↔ `-_`), and unpadded decode (JWT segments are unpadded, RFC 7515) —
+  a stdlib bump that changes any of them goes RED next to the explanation.
+- **Drawing wire format**: `dots` is a JSON array of `[x, y]` NUMBER pairs, in
+  and out (`fixture_json.dots_decoder` / `dots_to_json`). It accepts **ints**
+  as well as floats: JavaScript's `JSON.stringify` emits `10`, not `10.0`, and
+  the canvas sends whole-number coordinates all day. Both spellings normalise
+  to the sketch's `#(Float, Float)`. Stored `dots` keeps the same encoding, so
+  stored = served = authored.
+- **Create/update validation** (`admin.gleam`): `name` non-empty after
+  **trimming** (`BadName`; a body with no `name` is a blank name, not a broken
+  request), `showDate` valid (`BadPuzzleDate`), `dots` non-empty array of pairs
+  **and** deriving to a non-degenerate fixture (`BadDrawing`, decided by
+  `derivation.is_degenerate`, i.e. by the empty fixture that the core's 3-dot
+  gate produces — one gate, not two). All present-and-bad fields are reported
+  in ONE envelope, in field order, so the editor underlines both at once.
+  Only an undecodable body is `BadRequest`.
+- **Update is partial** (`name?`, `showDate?`, `dots?`): absent fields are
+  left alone, and `{}` is a coherent no-op (the store writes nothing and does
+  not bump `updated_at`). A **dots change re-derives** the fixture from the
+  new drawing with the effective name/date (Q2/Q3); a name/date change rewrites
+  the fixture's embedded copy without re-running the DFT (the numbers do not
+  depend on the labels — the served document takes identity from the row).
+  A collision with ANOTHER puzzle's show_date is **409 `DuplicateShowDate`**;
+  keeping its own date is fine. Unknown id → **404 `UnknownPuzzle`** for GET,
+  PUT and DELETE; a non-numeric id is 404 whatever the method.
+- **Delete is 204 with an EMPTY body**, and the puzzle's attempt rows are
+  KEPT (no FK, no cascade): deleting a calendar entry must not rewrite history.
+- **Stats (Q23)**: `attempts` = attempt rows (solves + abandons), `solves` =
+  solved rows, `solvePct` = one decimal computed in integer tenths, half-up
+  (`"97.3"`), **null** when `attempts = 0`; `medianMoves` = median of ALL
+  attempts' `move_count` — **an abandon counts with its own reported count**
+  (the question is "how many moves does this puzzle take", not "how many did
+  the winners need") — as a Float (even counts average the middle two),
+  **null** when `attempts = 0`. Null, never `0`/`"0.0"`: "no data" is not "0%".
+  The list route reads stats per puzzle (2 small queries each, N+1 by design);
+  if the calendar ever grows to thousands this is the one place to fold into
+  a `GROUP BY`.
+- **Admin responses**: `GET /api/admin/puzzles` → `{"status":"ok","puzzles":
+  [{id,name,showDate,attempts,solves,solvePct,medianMoves}, ...]}`, newest
+  `show_date` first (then id). `POST` → **201** `{"status":"ok","puzzle":
+  <full row>}`; `GET <id>` and `PUT <id>` → **200** with the same full-row
+  document: `{id,name,showDate,dots,fixture,createdAt,updatedAt}` where
+  `dots` and `fixture` are PARSED back out for the editor and the timestamps
+  are **epoch seconds** (the store's unit; no ISO strings, no timezone in a
+  number). New error names `BadName` and `BadDrawing` join the §8 vocabulary.
+- **Envelope**: `ok_empty` / `ok_with` / `created_with` / `error_response` /
+  `rate_limited` / `none_response` moved into `src/toy_admin/envelope.gleam`
+  (public routes and admin routes answer in the same vocabulary — one module,
+  checked once). 405s come from wisp (`method_not_allowed` with an accurate
+  `allow` header, plain text exactly as on the public routes).
+- **Order of operations, every admin route**: fence → path id → method →
+  body → validation → derivation → store. The fence runs BEFORE the method
+  check, so an unfenced caller learns nothing — not even which methods a path
+  takes.
+- **Config**: `ADMIN_ACCESS_AUD` (new; the Access application's audience tag),
+  alongside `DB_PATH` and `THROTTLE_*`. Header name: `Cf-Access-Jwt-Assertion`
+  (lowercase in code, HTTP headers being case-insensitive). `compose.yml`
+  carries the variable as a commented line — set it from the Access dashboard
+  at deploy; leaving it out is the presence-only mode described above.

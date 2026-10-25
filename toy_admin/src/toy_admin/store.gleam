@@ -93,6 +93,19 @@ pub type Puzzle {
   )
 }
 
+/// A partial update from the admin editor (phase 4a). `None` means "leave this
+/// column as it is". A drawing change always arrives paired with its
+/// re-derived fixture — the route layer owns derivation, so the store never
+/// stores dots without the fixture that belongs to them.
+pub type PuzzleUpdate {
+  PuzzleUpdate(
+    name: option.Option(String),
+    show_date: option.Option(String),
+    dots_json: option.Option(String),
+    fixture_json: option.Option(String),
+  )
+}
+
 /// A stored attempt row: one per (uuid, puzzle_date).
 pub type Attempt {
   Attempt(
@@ -120,6 +133,8 @@ pub type Error {
   InvalidMoves(detail: String)
   /// No puzzle is published for that date (nothing may be recorded for it).
   UnknownPuzzle(show_date: String)
+  /// No puzzle row holds that id (admin reads/edits/deletes by id).
+  UnknownPuzzleId(id: Int)
 }
 
 // ---------- paths ----------
@@ -275,6 +290,121 @@ pub fn puzzle_by_date(
   with_connection(path, fn(connection) { find_puzzle(connection, show_date) })
 }
 
+/// The puzzle with exactly that id, if any.
+pub fn puzzle_by_id(
+  path: String,
+  id: Int,
+) -> Result(option.Option(Puzzle), Error) {
+  with_connection(path, fn(connection) { find_puzzle_by_id(connection, id) })
+}
+
+/// Update the PROVIDED columns of one puzzle (phase 4a): `None` leaves a column
+/// alone. `updated_at` moves, `created_at` never does.
+///
+/// Refusals: an unknown id (`UnknownPuzzleId`), an invalid date
+/// (`InvalidShowDate`), and a show_date another puzzle already holds
+/// (`DuplicateShowDate`, Q17). A puzzle holding its own date is NOT a
+/// collision — the UNIQUE constraint only sees other rows, so a no-op date
+/// change succeeds. The constraint is still the authority: a racing update
+/// loses to it and is reported the same way.
+pub fn update_puzzle(
+  path: String,
+  id: Int,
+  changes changes: PuzzleUpdate,
+) -> Result(Puzzle, Error) {
+  case changes.show_date {
+    option.Some(show_date) ->
+      case dates.is_valid_date(show_date) {
+        False -> Error(InvalidShowDate(show_date))
+        True -> write_update(path, id, changes)
+      }
+    option.None -> write_update(path, id, changes)
+  }
+}
+
+fn write_update(
+  path: String,
+  id: Int,
+  changes: PuzzleUpdate,
+) -> Result(Puzzle, Error) {
+  with_connection(path, fn(connection) {
+    use existing <- result.try(require_puzzle_id(connection, id))
+    case
+      changes.name,
+      changes.show_date,
+      changes.dots_json,
+      changes.fixture_json
+    {
+      // Nothing provided: a coherent no-op. The row comes back unchanged and
+      // `updated_at` does not move — nothing was edited.
+      option.None, option.None, option.None, option.None -> Ok(existing)
+      _, _, _, _ -> {
+        let name = option.unwrap(changes.name, existing.name)
+        let show_date = option.unwrap(changes.show_date, existing.show_date)
+        let dots = option.unwrap(changes.dots_json, existing.dots_json)
+        let fixture = option.unwrap(changes.fixture_json, existing.fixture_json)
+        case
+          sqlight.query(
+            "UPDATE puzzles
+               SET name = ?, show_date = ?, dots = ?, fixture = ?,
+                   updated_at = ?
+             WHERE id = ?",
+            on: connection,
+            with: [
+              sqlight.text(name),
+              sqlight.text(show_date),
+              sqlight.text(dots),
+              sqlight.text(fixture),
+              sqlight.int(clock.now_seconds()),
+              sqlight.int(id),
+            ],
+            expecting: decode.success(Nil),
+          )
+        {
+          Ok(_) -> {
+            use updated <- result.try(find_puzzle_by_id(connection, id))
+            case updated {
+              option.Some(puzzle) -> Ok(puzzle)
+              // Cannot happen: the UPDATE above just matched this id.
+              option.None -> Error(Database("puzzle vanished after update"))
+            }
+          }
+          Error(error) ->
+            case is_unique_violation(error) {
+              True -> Error(DuplicateShowDate(show_date))
+              False -> Error(db_error(error))
+            }
+        }
+      }
+    }
+  })
+}
+
+/// Delete one puzzle. `Ok(False)` when no row holds that id.
+///
+/// Attempts are KEPT: there is no foreign key and no cascade (see the schema
+/// note at the top) — telemetry outlives the puzzle it describes.
+pub fn delete_puzzle(path: String, id: Int) -> Result(Bool, Error) {
+  with_connection(path, fn(connection) {
+    use found <- result.try(find_puzzle_by_id(connection, id))
+    case found {
+      option.None -> Ok(False)
+      option.Some(_) ->
+        case
+          query(
+            "DELETE FROM puzzles WHERE id = ?",
+            on: connection,
+            with: [sqlight.int(id)],
+            expecting: decode.success(Nil),
+          )
+        {
+          Ok(_) -> Ok(True)
+          Error(error) -> Error(error)
+        }
+    }
+  })
+}
+
 pub fn count_puzzles(path: String) -> Result(Int, Error) {
   with_connection(path, fn(connection) {
     use rows <- result.try(query(
@@ -417,6 +547,22 @@ pub fn stats(path: String, puzzle_id: Int) -> Result(#(Int, Int), Error) {
 
 // ---------- internals ----------
 
+/// The raw move counts of every attempt for one puzzle, ascending. The median
+/// is computed in Gleam (`stats.gleam`) because SQLite has no median
+/// aggregate; this primitive keeps the calculation testable and the SQL trivial.
+pub fn move_counts(path: String, puzzle_id: Int) -> Result(List(Int), Error) {
+  with_connection(path, fn(connection) {
+    query(
+      "SELECT move_count FROM attempts
+        WHERE puzzle_id = ?
+        ORDER BY move_count ASC",
+      on: connection,
+      with: [sqlight.int(puzzle_id)],
+      expecting: move_count_decoder(),
+    )
+  })
+}
+
 fn puzzle_columns() -> String {
   "SELECT id, name, show_date, dots, fixture, created_at, updated_at"
 }
@@ -432,6 +578,30 @@ fn find_puzzle(
     expecting: puzzle_decoder(),
   ))
   Ok(head(rows))
+}
+
+fn find_puzzle_by_id(
+  connection: sqlight.Connection,
+  id: Int,
+) -> Result(option.Option(Puzzle), Error) {
+  use rows <- result.try(query(
+    puzzle_columns() <> " FROM puzzles WHERE id = ?",
+    on: connection,
+    with: [sqlight.int(id)],
+    expecting: puzzle_decoder(),
+  ))
+  Ok(head(rows))
+}
+
+fn require_puzzle_id(
+  connection: sqlight.Connection,
+  id: Int,
+) -> Result(Puzzle, Error) {
+  use found <- result.try(find_puzzle_by_id(connection, id))
+  case found {
+    option.Some(puzzle) -> Ok(puzzle)
+    option.None -> Error(UnknownPuzzleId(id))
+  }
 }
 
 fn require_puzzle(
@@ -498,6 +668,11 @@ fn count_decoder() -> decode.Decoder(Int) {
 fn newest_decoder() -> decode.Decoder(option.Option(String)) {
   use newest <- decode.field(0, decode.optional(decode.string))
   decode.success(newest)
+}
+
+fn move_count_decoder() -> decode.Decoder(Int) {
+  use move_count <- decode.field(0, decode.int)
+  decode.success(move_count)
 }
 
 fn stats_decoder() -> decode.Decoder(#(Int, Int)) {

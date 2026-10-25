@@ -10,6 +10,7 @@
 //// - a solve/abandon requires the puzzle for that exact show-date to exist;
 //// - an abandon never overwrites a solved row (a late abandon is a no-op).
 
+import gleam/erlang/process
 import gleam/list
 import gleam/option
 import gleam/result
@@ -17,6 +18,7 @@ import gleeunit/should
 import helpers
 import toy_admin/store.{
   DuplicateShowDate, InvalidMoves, InvalidShowDate, UnknownPuzzle,
+  UnknownPuzzleId,
 }
 
 const dots = "[[0.0,0.0],[10.0,0.0],[10.0,10.0]]"
@@ -312,4 +314,218 @@ pub fn stats_count_attempts_and_solves_per_puzzle_test() {
   should.equal(Ok(#(1, 0)), store.stats(path, second.id))
   // A puzzle id with no attempts at all is (0, 0), not an error.
   should.equal(Ok(#(0, 0)), store.stats(path, first.id + 100))
+}
+
+// ---------- phase 4a: admin CRUD primitives ----------
+
+pub fn puzzle_by_id_reads_the_row_test() {
+  let #(path, puzzle) = with_puzzle("by-id", day)
+  should.equal(Ok(option.Some(puzzle)), store.puzzle_by_id(path, puzzle.id))
+  // An id nobody holds is a `None`, not a driver error: the route turns it
+  // into a 404.
+  should.equal(Ok(option.None), store.puzzle_by_id(path, puzzle.id + 100))
+}
+
+pub fn update_changes_only_the_provided_fields_test() {
+  // Partial update is the editor's contract: a name-only rename must leave the
+  // drawing and the derived fixture byte-identical.
+  let #(path, puzzle) = with_puzzle("update-partial", day)
+  let assert Ok(updated) =
+    store.update_puzzle(
+      path,
+      puzzle.id,
+      store.PuzzleUpdate(
+        name: option.Some("Renamed"),
+        show_date: option.None,
+        dots_json: option.None,
+        fixture_json: option.None,
+      ),
+    )
+
+  should.equal("Renamed", updated.name)
+  should.equal(puzzle.show_date, updated.show_date)
+  should.equal(puzzle.dots_json, updated.dots_json)
+  should.equal(puzzle.fixture_json, updated.fixture_json)
+  should.equal(puzzle.created_at, updated.created_at)
+  should.equal(Ok(option.Some(updated)), store.puzzle_by_id(path, puzzle.id))
+}
+
+pub fn update_replaces_the_drawing_and_fixture_test() {
+  let #(path, puzzle) = with_puzzle("update-dots", day)
+  let new_dots = "[[5.0,5.0],[15.0,5.0],[15.0,15.0],[5.0,15.0]]"
+  let new_fixture = "{\"name\":\"Star\",\"showDate\":\"2026-10-25\"}"
+  let assert Ok(updated) =
+    store.update_puzzle(
+      path,
+      puzzle.id,
+      store.PuzzleUpdate(
+        name: option.None,
+        show_date: option.None,
+        dots_json: option.Some(new_dots),
+        fixture_json: option.Some(new_fixture),
+      ),
+    )
+
+  should.equal(new_dots, updated.dots_json)
+  should.equal(new_fixture, updated.fixture_json)
+}
+
+pub fn update_bumps_updated_at_but_not_created_at_test() {
+  // Wall-clock seconds: the strict bump needs a real second to pass, so this
+  // one test sleeps. The distinction matters — "solved at" reads created_at,
+  // "last edited" reads updated_at.
+  let #(path, puzzle) = with_puzzle("update-bump", day)
+  process.sleep(1050)
+  let assert Ok(updated) =
+    store.update_puzzle(
+      path,
+      puzzle.id,
+      store.PuzzleUpdate(
+        name: option.Some("Renamed"),
+        show_date: option.None,
+        dots_json: option.None,
+        fixture_json: option.None,
+      ),
+    )
+
+  should.equal(puzzle.created_at, updated.created_at)
+  should.be_true(updated.updated_at > puzzle.created_at)
+}
+
+pub fn update_may_keep_its_own_show_date_test() {
+  // A no-op date change must not trip the UNIQUE constraint against itself:
+  // the constraint is on other rows.
+  let #(path, puzzle) = with_puzzle("update-self-date", day)
+  should.equal(
+    Ok(day),
+    result.map(
+      store.update_puzzle(
+        path,
+        puzzle.id,
+        store.PuzzleUpdate(
+          name: option.None,
+          show_date: option.Some(day),
+          dots_json: option.None,
+          fixture_json: option.None,
+        ),
+      ),
+      fn(updated) { updated.show_date },
+    ),
+  )
+}
+
+pub fn update_refuses_another_puzzles_show_date_test() {
+  // Q17 applies to edits too: two puzzles on one day would make "the day's
+  // puzzle" ambiguous.
+  let path = setup("update-duplicate")
+  let assert Ok(first) =
+    store.insert_puzzle(path, "A", "2026-10-25", dots, fixture)
+  let assert Ok(second) =
+    store.insert_puzzle(path, "B", "2026-10-26", dots, fixture)
+
+  should.equal(
+    Error(DuplicateShowDate("2026-10-25")),
+    store.update_puzzle(
+      path,
+      second.id,
+      store.PuzzleUpdate(
+        name: option.None,
+        show_date: option.Some("2026-10-25"),
+        dots_json: option.None,
+        fixture_json: option.None,
+      ),
+    ),
+  )
+  // ...and the first puzzle still owns the date.
+  should.equal(Ok(option.Some(first)), store.puzzle_by_id(path, first.id))
+}
+
+pub fn update_refuses_an_invalid_show_date_test() {
+  let #(path, puzzle) = with_puzzle("update-invalid-date", day)
+  should.equal(
+    Error(InvalidShowDate("2026-02-30")),
+    store.update_puzzle(
+      path,
+      puzzle.id,
+      store.PuzzleUpdate(
+        name: option.None,
+        show_date: option.Some("2026-02-30"),
+        dots_json: option.None,
+        fixture_json: option.None,
+      ),
+    ),
+  )
+}
+
+pub fn update_of_an_unknown_id_is_refused_test() {
+  let #(path, puzzle) = with_puzzle("update-unknown", day)
+  should.equal(
+    Error(UnknownPuzzleId(puzzle.id + 100)),
+    store.update_puzzle(
+      path,
+      puzzle.id + 100,
+      store.PuzzleUpdate(
+        name: option.Some("Nope"),
+        show_date: option.None,
+        dots_json: option.None,
+        fixture_json: option.None,
+      ),
+    ),
+  )
+}
+
+pub fn delete_removes_the_puzzle_but_keeps_telemetry_test() {
+  // No FK, by design: the attempts table outlives the puzzle it describes
+  // (store header). Deleting is not a cascade.
+  let #(path, puzzle) = with_puzzle("delete", day)
+  let assert Ok(Nil) = store.attempt_record_solve(path, uuid_a, day, "[]")
+
+  should.equal(Ok(True), store.delete_puzzle(path, puzzle.id))
+  should.equal(Ok(option.None), store.puzzle_by_id(path, puzzle.id))
+  should.equal(Ok(0), store.count_puzzles(path))
+  // The telemetry row is still there, under its original puzzle_id.
+  should.equal(Ok(#(1, 1)), store.stats(path, puzzle.id))
+}
+
+pub fn delete_of_an_unknown_id_says_so_test() {
+  let path = setup("delete-absent")
+  should.equal(Ok(False), store.delete_puzzle(path, 42))
+}
+
+pub fn move_counts_are_sorted_and_include_abandons_test() {
+  // The median is computed in Gleam from this raw list (SQLite has no median):
+  // every attempt counts, and an abandon brings its own move_count.
+  let #(path, puzzle) = with_puzzle("move-counts", day)
+  let assert Ok(Nil) =
+    store.attempt_record_solve(path, uuid_a, day, three_moves())
+  let assert Ok(Nil) = store.attempt_record_abandon(path, uuid_b, day, 2)
+  let assert Ok(Nil) =
+    store.attempt_record_solve(
+      path,
+      "3f2504e0-4f89-41d3-9a0c-0305e82c3302",
+      day,
+      one_move(),
+    )
+
+  should.equal(Ok([1, 2, 3]), store.move_counts(path, puzzle.id))
+}
+
+pub fn move_counts_of_a_single_attempt_test() {
+  let #(path, puzzle) = with_puzzle("move-counts-single", day)
+  let assert Ok(Nil) = store.attempt_record_abandon(path, uuid_a, day, 7)
+  should.equal(Ok([7]), store.move_counts(path, puzzle.id))
+}
+
+pub fn move_counts_of_no_attempts_is_empty_test() {
+  let #(path, puzzle) = with_puzzle("move-counts-empty", day)
+  should.equal(Ok([]), store.move_counts(path, puzzle.id))
+  should.equal(Ok([]), store.move_counts(path, puzzle.id + 100))
+}
+
+fn one_move() -> String {
+  "[{\"slot\":0,\"dir\":1}]"
+}
+
+fn three_moves() -> String {
+  "[{\"slot\":0,\"dir\":1},{\"slot\":2,\"dir\":-1},{\"slot\":1,\"dir\":1}]"
 }

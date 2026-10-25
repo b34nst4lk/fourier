@@ -72,6 +72,20 @@ pub fn standard_dial_arrangement() -> List(DialKind) {
   [DialPhase, DialRadius, DialK, DialFixed]
 }
 
+/// The core's 3-dot gate (terms.compute), named for callers outside the
+/// pipeline: a drawing with fewer than three dots has no polygon, so there is
+/// nothing to derive. The admin route refuses to save such a drawing.
+pub fn can_derive(dots: List(Dot)) -> Bool {
+  list.length(dots) >= 3
+}
+
+/// True when derivation hit the gate: nothing renderable came out (empty dial,
+/// extras and target). The admin's save check asks this of the FIXTURE rather
+/// than counting dots a second time — the empty fixture is the observable.
+pub fn is_degenerate(fixture: Fixture) -> Bool {
+  fixture.dial == [] && fixture.extras == [] && fixture.target == []
+}
+
 /// Derive the fixture for a drawing. Below the core's 3-dot gate
 /// (terms.compute) there is no spectrum: the result is empty rather than a
 /// crash — the admin refuses to save such a drawing.
@@ -80,7 +94,7 @@ pub fn derive_fixture(
   name: String,
   show_date: String,
 ) -> Fixture {
-  case list.length(dots) >= 3 {
+  case can_derive(dots) {
     False -> Fixture(name, show_date, #(0.0, 0.0), [], [], [], [])
     True -> {
       let samples = resample.resample_closed(dots, sample_count)

@@ -15,8 +15,11 @@
 //// standard pattern in v1), so the client never hard-codes which slot is
 //// phase/radius/k/fixed.
 
+import gleam/dynamic
+import gleam/dynamic/decode as dynamic_decode
 import gleam/json
 import gleam/list
+import gleam/result
 import gleeunit/should
 import helpers.{be_close}
 import sketch
@@ -131,4 +134,38 @@ pub fn public_puzzle_carries_the_row_identity_and_dots_test() {
     "{\"name\":\"Star (row)\",\"showDate\":\"2026-10-26\",\"dots\":[[3.0,4.0]],\"centroid\":[1.5,-2.25],\"dials\":[\"phase\",\"radius\",\"k\",\"fixed\"],\"dial\":[{\"k\":2,\"radius\":27.57,\"phase\":90.0}],\"extras\":[{\"k\":-1,\"radius\":0.5,\"phase\":180.0}],\"target\":[[0.0,0.0],[1.5,-2.25]]}",
     served,
   )
+}
+
+pub fn dots_decode_accepts_integer_coordinates_test() {
+  // THE JAVASCRIPT BRIDGE: `JSON.stringify` of a whole-number coordinate emits
+  // `10`, not `10.0`. The admin canvas sends ints for most dots, so the wire
+  // reader must accept both spellings of "a number" and normalise to floats
+  // (sketch.Dot is #(Float, Float)).
+  should.equal(
+    Ok([#(0.0, 0.0), #(10.0, 5.0)]),
+    fixture_json.dots_from_json("[[0,0],[10,5]]"),
+  )
+  // Mixed spellings in one drawing are fine too.
+  should.equal(
+    Ok([#(1.0, 2.5), #(3.0, 4.0)]),
+    fixture_json.dots_from_json("[[1,2.5],[3.0,4]]"),
+  )
+}
+
+pub fn dots_decoder_reads_a_dynamic_value_test() {
+  // The admin route decodes the body field as Dynamic first (so a malformed
+  // drawing is BadDrawing, not BadRequest) and runs this decoder on it.
+  let assert Ok(value) =
+    json.parse("[[1,2],[3.5,4]]", using: dynamic_decode.dynamic)
+  should.equal(Ok([#(1.0, 2.0), #(3.5, 4.0)]), decode_run(value))
+}
+
+pub fn dots_decoder_refuses_a_non_list_test() {
+  let assert Ok(value) = json.parse("{\"x\":1}", using: dynamic_decode.dynamic)
+  should.equal(Error(Nil), decode_run(value))
+}
+
+fn decode_run(value: dynamic.Dynamic) -> Result(List(sketch.Dot), Nil) {
+  dynamic_decode.run(value, fixture_json.dots_decoder())
+  |> result.map_error(fn(_errors) { Nil })
 }

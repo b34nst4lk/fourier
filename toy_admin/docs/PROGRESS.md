@@ -8,7 +8,9 @@ Daily-puzzle backend + admin: per-feature plans, this rolling ledger.
 | 1 | Scaffold | ✅ done (2026-10-24, coder subagent deepseek-v4.1-flash:cloud, reviewed) | gleam project, mist/wisp, Dockerfile, compose on the bridge network; /api/health live; 46 tests |
 | 2 | Puzzle store + derivation | ✅ done (2026-10-25, coder subagent deepseek-v4.1-flash:cloud, reviewed 2026-10-24: gates re-run (build green — 108 tests inside), wire probes verified from the network (health/none/BadTimezone 400/BadUuid 400), store+throttle+fixture-json code read line-by-line) | derivation (star gold 27.57/6.59/2.93/0.54, lossless split) + dates (clamp ±14h, Hinnant civil-from-days, never-past) + ingest (uuid v4, 500-cap, adversarial) + SQLite store (sqlight): `puzzles` / `attempts`, solve/abandon upsert, per-day stats |
 | 3 | Public API | ✅ done (2026-10-25, coder subagent deepseek-v4.1-flash:cloud, reviewed 2026-10-24: gates re-run (build green — 108 tests inside), wire probes verified from the network (health/none/BadTimezone 400/BadUuid 400), store+throttle+fixture-json code read line-by-line) | puzzle/today (Wordle-style clamp, `?tz=`), solve + abandon ingest with stable error names, per-uuid + per-IP fixed-window fences (ETS, env-tuned); DB_PATH on the `toy_admin-data` volume |
-| 4 | Admin API + UI | ⬜ | CRUD + menu stats + draw authoring + test-play, Access JWT sanity check |
+| 4a | Admin API | ✅ done (2026-10-25, coder subagent deepseek-v4.1-flash:cloud, **reviewed 2026-10-25**) | fence (`Cf-Access-Jwt-Assertion`, audience `ADMIN_ACCESS_AUD`, expiry; NO signature check — documented) + CRUD `/api/admin/puzzles[/<id>]` (create re-derives, edit re-derives on dots change, delete keeps telemetry) + Q23 menu stats (solvePct one decimal, medianMoves of all attempts incl. abandons, nulls on no data) + `envelope.gleam`; 192 tests green in the Docker gate; live wire probes with a hand-crafted JWT |
+| 4b | Admin UI | ⬜ | draw authoring, menu, test-play — against the 4a API |
+| 5 | Deploy | ⬜ | tunnel ingress rule, user's CF dashboard steps (Access, rate limit, bot fight), compose up; set `ADMIN_ACCESS_AUD` |
 | 5 | Deploy | ⬜ | tunnel ingress rule, user's CF dashboard steps (Access, rate limit, bot fight), compose up |
 
 ## Notes
@@ -40,8 +42,28 @@ Daily-puzzle backend + admin: per-feature plans, this rolling ledger.
   tunnel, Q12). Order on the write routes is IP fence → body read → validation
   → uuid fence → store, so an over-limit caller can never make the server
   parse a junk body.
+- Admin API (2026-10-25, phase 4a): decisions with their reasoning live in
+  plan §9 — fence semantics + the presence-only fail-safe, the base64url
+  finding (stdlib has it; the tests pin RFC 4648 instead), the int-or-float
+  drawing wire format from `JSON.stringify`, one-envelope field validation,
+  re-derive on dots change, 204-with-no-body delete that keeps telemetry, and
+  the Q23 numbers (median of ALL attempts; null, never 0, when there are none).
 - Reviewer notes (2026-10-24): plan §8 records the implementation decisions
   the worker left unfolded. The API-layer RED was captured by route-table
   reversion, not natural order (the worker disclosed this; the store/
   fixture/throttle suites ran natural RED-to-GREEN). Fence defaults-on and
   the solved-never-overwritten guard verified in SQL.
+
+- Reviewer notes (4a, 2026-10-25): fence verified on the REAL wire — hand-crafted
+  JWTs with a docker-run-set ADMIN_ACCESS_AUD: wrong aud 403, expired 403,
+  good aud 200, no token 401 (an earlier 200 came from the probe's env not
+  reaching compose-up containers — presence-only fallback, not a code bug;
+  the fence also logs presence-only mode once at boot). Full CRUD matrix over
+  the wire: save 201, duplicate 409, public solve 200, list stats live
+  (attempts/solves/solvePct/medianMoves from a real 2-move solve), PUT 200,
+  DELETE 204, unknown id 404. Code read: fence fails safe (presence-only
+  without ADMIN_ACCESS_AUD, announced at boot; exp-before-aud justified;
+  RFC 7519 aud string-or-array leniency), operation order enforced in one
+  fenced() wrapper, stats use exact integer tenths (no float-print drift),
+  median includes abandons with the policy documented, no-op restating is a
+  true store no-op. Plan §9 folded by the worker itself.

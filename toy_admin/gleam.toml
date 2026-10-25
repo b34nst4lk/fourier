@@ -22,6 +22,11 @@ sqlight = ">= 1.2.0 and < 2.0.0"
 envoy = ">= 1.2.0 and < 2.0.0"
 # process.sleep_forever keeps the mist supervisor alive (the mist docs' idiom).
 gleam_erlang = ">= 1.0.0 and < 2.0.0"
+# The boot warning about an unset ADMIN_ACCESS_AUD goes through the OTP logger
+# (access.announce_at_boot -> logging.log): a warning that only reaches stdout
+# is not a log. Already in the lock as a transitive dep of wisp/mist; declared
+# because toy_admin now imports it directly (phase 4a).
+logging = ">= 1.5.0 and < 2.0.0"
 # The math core (complex / resample / dft / terms / sketch presets) is shared
 # with the toys — fixture derivation must not fork it (Q2/Q15).
 fourier_sketch = { path = "../fourier_sketch" }
