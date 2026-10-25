@@ -52,8 +52,14 @@ RUN gleam export erlang-shipment
 FROM erlang:29.1.2-alpine AS runtime
 WORKDIR /app
 COPY --from=build /app/toy_admin/build/erlang-shipment/ /app/
+# The SQLite directory. compose mounts the named volume `toy_admin-data` here
+# (DB_PATH=/app/data/toy_admin.sqlite3); creating it in the image keeps the app
+# working when the volume is absent (a bare `docker run`), because SQLite will
+# not create a missing directory for you.
+RUN mkdir -p /app/data
 # The wisp app reads PORT (default 8080) and binds 0.0.0.0 so the tunnel's
 # ingress can resolve http://toy_admin:8080 across home_server-network.
 ENV PORT=8080
+ENV DB_PATH=/app/data/toy_admin.sqlite3
 EXPOSE 8080
 CMD ["./entrypoint.sh", "run"]

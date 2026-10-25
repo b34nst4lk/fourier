@@ -22,9 +22,31 @@ services:
     environment:
       # The wisp app binds 0.0.0.0 and reads PORT (8080 default in code too).
       PORT: "8080"
+      # Where the SQLite file lives (store.database_path_env). Inside the
+      # volume, so puzzles and attempts survive `up -d --build` and restarts;
+      # the app runs schema migrations (CREATE ... IF NOT EXISTS) at boot.
+      DB_PATH: /app/data/toy_admin.sqlite3
+      # The request fences (throttle.gleam). Unset = the plan's defaults:
+      # 20 solves per uuid per 5 minutes, 60 per IP per 5 minutes. Set either
+      # window to tune; a non-positive value falls back to the default rather
+      # than switching the fence off.
+      # THROTTLE_UUID_LIMIT: "20"
+      # THROTTLE_UUID_WINDOW_SECONDS: "300"
+      # THROTTLE_IP_LIMIT: "60"
+      # THROTTLE_IP_WINDOW_SECONDS: "300"
+    volumes:
+      # Named volume, not a bind mount: the database is the container's own
+      # state and must survive `up --build` (which recreates the container)
+      # and not appear in the repo checkout. Inspect it with
+      #   docker compose exec toy_admin ...
+      # or `docker volume inspect toy_admin_toy_admin-data`.
+      - toy_admin-data:/app/data
     networks:
       - home_server-network
     restart: unless-stopped
+
+volumes:
+  toy_admin-data:
 
 networks:
   # The tunnel's network, created by the HOME SERVER's own compose project —

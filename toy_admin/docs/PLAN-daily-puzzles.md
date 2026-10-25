@@ -140,3 +140,33 @@ grilled before building.
 - Access JWT full signature verification (Q12) — if the ingress surface
   ever grows beyond the tunnel.
 - fourier-sketch telemetry on the site-wide uuid (Q16) — free when wanted.
+## 8. Implementation decisions (phases 2–3, recorded 2026-10-24)
+
+Decisions made during phase 2/3 (store + public API), folded from the
+coder subagent's work post-review — the plan of record is the one place
+these live:
+
+- **Attempts rows**: one per `(uuid, puzzle_date)`; columns `solved` + a
+  SPLIT storage — `moves` (JSON list, solve rows only) and `move_count`
+  (always an integer: solve = the list's length; abandon = the client's
+  count). Every row's count stays queryable as a number. `created_at`
+  preserved on upsert; re-sent solves REPLACE (idempotent).
+- **Solve/abandon require a published puzzle** for that exact show_date
+  (`UnknownPuzzle`); a solved row is never overwritten by a later abandon
+  (silently `Ok` — a non-event).
+- **Envelope + error names are contract**: `{"status":"ok"|"none"|"error",
+  "errors":[names]}`; names: `BadUuid`, `BadPuzzleDate`, `TooManyMoves`,
+  `BadSlot`, `BadDirection`, `UnknownPuzzle`, `BadTimezone`, `BadRequest`
+  (undecodable body), `StoreError` (500), `RateLimited` (429 + Retry-After).
+- **tz as `?tz=<minutes>`** — offset to ADD to UTC (the negation of JS
+  `getTimezoneOffset`); absent = UTC; unparsable = 400, never a silent
+  UTC guess. A calendar gap or a puzzle deleted between store reads
+  serves `{"status":"none"}` (the client's quaver fallback), not an error.
+- **Fences**: in-memory ETS fixed-window counters (not persisted, forgotten
+  on restart — accepted); uuid 20/300s + IP 60/300s defaults,
+  env-configurable (`THROTTLE_*`), unparsable/non-positive values fall
+  back to defaults (a compose typo must not disable a fence). Request
+  order on writes: method → IP fence (headers only) → body → validation →
+  uuid fence → store.
+- **DB**: `DB_PATH` env (default `data/toy_admin.sqlite3`); compose mounts
+  named volume `toy_admin-data` at `/app/data`.
