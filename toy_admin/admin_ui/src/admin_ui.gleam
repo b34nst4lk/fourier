@@ -2,8 +2,10 @@
 ////
 //// Three views over one API, one page:
 ////
-////   MENU       the calendar: every puzzle with its Q23 numbers, and the three
-////              verbs that act on a row (test / edit / delete)
+////   MENU       the calendar: every puzzle with its Q23 numbers, its place in
+////              the schedule (a draft badge until it has a date, the author's
+////              chip when an agent filed it), two filters that segment the list,
+////              and the verbs that act on a row (test / edit / approve / delete)
 ////   AUTHORING  draw dots, name the puzzle, pick a show date, save it — and see
 ////              a LIVE panel of the toy's board while drawing; anything can be
 ////              test-played full-size, unsaved (POST /api/admin/preview)
@@ -22,6 +24,12 @@
 ////   - Delete is armed, not confirmed twice-from-nowhere: the button becomes
 ////     `sure?` for two seconds and a second click inside that window deletes. A
 ////     stray click costs nothing; a deliberate second click is still one.
+////   - A DRAFT is approved, not edited-in-place: the row opens its own date
+////     field, prefilled with the calendar's next free day (schedule.gleam), and
+////     confirming sends the one-field PUT (wire.approve_body). The agent's
+////     drawing and author are never re-sent, so approving cannot alter what it
+////     approves. The same prefilled date is what a NEW puzzle starts with: a date
+////     publishes, clearing it keeps a draft.
 ////   - The DRAWING PANEL speaks fourier_sketch's gesture vocabulary, not a
 ////     reduced one: left press on empty space appends, left press within
 ////     `draw.hit_radius` grabs (then move, then drop), right press deletes the
@@ -35,6 +43,7 @@
 
 import admin_ui/dial
 import admin_ui/draw
+import admin_ui/schedule
 import admin_ui/score
 import admin_ui/wire
 import gleam/dynamic
@@ -122,6 +131,30 @@ pub type View {
   TestPlay
 }
 
+/// The menu's two segments, each its own axis (they compose): the schedule state
+/// of a row, and who filed it. "you" is the one human author there is
+/// (wire.creator_human); "agents" is everyone else, whose rows carry an agent id.
+pub type StatusFilter {
+  AnyStatus
+  PublishedOnly
+  DraftsOnly
+}
+
+pub type CreatorFilter {
+  AnyCreator
+  MineOnly
+  AgentsOnly
+}
+
+/// What a row offers, decided by the row's own state: a draft cannot be played
+/// (it has no day) and a dated puzzle has nothing to approve.
+pub type RowAction {
+  PlayAction
+  EditAction
+  ApproveAction
+  DeleteAction
+}
+
 /// A test-play session: the fixture the server derived, the player's dials, and
 /// the score computed from them (never from the server: the toy scores in the
 /// browser, so the editor does too).
@@ -158,6 +191,10 @@ pub type Model {
   Model(
     view: View,
     rows: List(wire.Row),
+    // the menu's two segments; they survive a trip through the editor, so a
+    // filtered calendar is still filtered when the human comes back
+    status_filter: StatusFilter,
+    creator_filter: CreatorFilter,
     busy: Bool,
     flash: Option(String),
     failure: Option(wire.Failure),
@@ -171,6 +208,11 @@ pub type Model {
     drag: Option(Int),
     play: Option(Play),
     armed: Option(Int),
+    // the open approve: WHICH row, and the date field it is showing. One row at a
+    // time (the row it belongs to is the row whose buttons it replaces), and
+    // never at the same time as an armed delete.
+    approving: Option(Int),
+    approve_date: String,
     preview: Option(wire.Fixture),
     preview_pending: Bool,
     preview_stale: Bool,
@@ -213,6 +255,13 @@ pub type Msg {
   DisarmDelete(Int)
   Delete(Int)
   Deleted(Result(Nil, wire.Failure))
+  FilterStatus(StatusFilter)
+  FilterCreator(CreatorFilter)
+  StartApprove(Int)
+  ApproveDateChanged(String)
+  Approve
+  Approved(Result(Nil, wire.Failure))
+  CancelApprove
   // the contextmenu handler's only job is prevent_default (the right button
   // must not open the browser menu); it dispatches nothing
   Ignored
@@ -231,6 +280,8 @@ fn init(_: Nil) -> #(Model, Effect(Msg)) {
     Model(
       view: Menu,
       rows: [],
+      status_filter: AnyStatus,
+      creator_filter: AnyCreator,
       busy: True,
       flash: None,
       failure: None,
@@ -241,6 +292,8 @@ fn init(_: Nil) -> #(Model, Effect(Msg)) {
       drag: None,
       play: None,
       armed: None,
+      approving: None,
+      approve_date: "",
       preview: None,
       preview_pending: False,
       preview_stale: False,
@@ -411,13 +464,18 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
           view: Authoring,
           editing: None,
           name: "",
-          show_date: "",
+          // The field's own rule: a date publishes, no date drafts. So it opens
+          // on the calendar's next free day — saving is the one-click path, and
+          // clearing it is the deliberate one.
+          show_date: next_free(model),
           drawing: draw.empty(),
           drag: None,
           flash: None,
           failure: None,
           play: None,
           armed: None,
+          approving: None,
+          approve_date: "",
           preview: None,
           preview_pending: False,
           preview_stale: False,
@@ -448,6 +506,8 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
           failure: None,
           play: None,
           armed: None,
+          approving: None,
+          approve_date: "",
           preview: None,
           preview_pending: False,
           preview_stale: False,
@@ -624,6 +684,8 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
           play: None,
           flash: Some("saved"),
           failure: None,
+          approving: None,
+          approve_date: "",
           preview: None,
           preview_pending: False,
           preview_stale: False,
@@ -837,7 +899,8 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
     }
 
     ArmDelete(id) -> {
-      let armed = Model(..model, armed: Some(id))
+      let armed =
+        Model(..model, armed: Some(id), approving: None, approve_date: "")
       let timed =
         effect.from(fn(dispatch) {
           after(arm_ms, fn() { dispatch(DisarmDelete(id)) })
@@ -872,6 +935,78 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
       effect.none(),
     )
 
+    FilterStatus(filter) -> #(
+      Model(..model, status_filter: filter),
+      effect.none(),
+    )
+
+    FilterCreator(filter) -> #(
+      Model(..model, creator_filter: filter),
+      effect.none(),
+    )
+
+    StartApprove(id) -> {
+      // The row's date field opens on the next free day (schedule.gleam), and
+      // the delete arm closes: one row shows one thing at a time.
+      let opened =
+        Model(
+          ..model,
+          approving: Some(id),
+          approve_date: next_free(model),
+          armed: None,
+          failure: None,
+          flash: None,
+        )
+      #(opened, effect.none())
+    }
+
+    ApproveDateChanged(date) -> #(
+      Model(..model, approve_date: date),
+      effect.none(),
+    )
+
+    Approve ->
+      case model.approving {
+        None -> #(model, effect.none())
+        Some(id) -> #(
+          Model(..model, busy: True, failure: None, flash: None),
+          request(
+            "PUT",
+            api_puzzles <> "/" <> int.to_string(id),
+            // ONE field: the drawing and the author are not re-sent, so
+            // approving cannot change what it approves.
+            wire.approve_body(model.approve_date),
+            fn(status, text) { Approved(wire.decode_nothing(status, text)) },
+          ),
+        )
+      }
+
+    Approved(Ok(_)) -> {
+      // a dated row is a published one: back to the calendar, which now shows it
+      let done =
+        Model(
+          ..model,
+          busy: True,
+          approving: None,
+          approve_date: "",
+          flash: Some("approved"),
+          failure: None,
+        )
+      #(done, load_rows())
+    }
+
+    Approved(Error(failure)) -> #(
+      // the row stays open with the refused date: a taken day costs a re-pick,
+      // never the state (the banner names the day's problem)
+      Model(..model, busy: False, failure: Some(failure)),
+      effect.none(),
+    )
+
+    CancelApprove -> #(
+      Model(..model, approving: None, approve_date: "", failure: None),
+      effect.none(),
+    )
+
     Ignored -> #(model, effect.none())
   }
 }
@@ -901,6 +1036,80 @@ pub fn play_from(fixture: wire.Fixture) -> Play {
     moves: 0,
     solved_once: False,
   )
+}
+
+// ---------- the calendar's readings ----------
+//
+// Pure functions over state, so the view below stays layout and the rules above
+// are testable without a browser (app_test drives these directly).
+
+/// The rows the menu is showing: the two segments applied to the loaded
+/// calendar. Filtering never asks the server — the whole calendar is in hand.
+pub fn visible_rows(model: Model) -> List(wire.Row) {
+  list.filter(model.rows, fn(row) {
+    matches_status(model.status_filter, row)
+    && matches_creator(model.creator_filter, row)
+  })
+}
+
+fn matches_status(filter: StatusFilter, row: wire.Row) -> Bool {
+  case filter {
+    AnyStatus -> True
+    PublishedOnly -> !wire.is_draft(row)
+    DraftsOnly -> wire.is_draft(row)
+  }
+}
+
+fn matches_creator(filter: CreatorFilter, row: wire.Row) -> Bool {
+  case filter {
+    AnyCreator -> True
+    MineOnly -> row.creator == wire.creator_human
+    AgentsOnly -> row.creator != wire.creator_human
+  }
+}
+
+/// The days the calendar holds, as the schedule maths wants them: one string per
+/// row, drafts included (they carry the empty date, which occupies no day).
+pub fn taken_dates(rows: List(wire.Row)) -> List(String) {
+  list.map(rows, fn(row) { row.show_date })
+}
+
+/// The calendar's next free day, from the rows in hand.
+fn next_free(model: Model) -> String {
+  schedule.next_available(taken_dates(model.rows), schedule.today())
+}
+
+/// A row's verbs, in order. The row's state decides: a draft has no day to play
+/// and offers approve; a published puzzle has nothing to approve.
+pub fn row_actions(row: wire.Row) -> List(RowAction) {
+  case wire.is_draft(row) {
+    True -> [EditAction, ApproveAction, DeleteAction]
+    False -> [PlayAction, EditAction, DeleteAction]
+  }
+}
+
+/// The creator chip's text: an agent's id, so the human knows who filed the
+/// sketch. None for the human — the default author is not news.
+pub fn creator_badge(row: wire.Row) -> Option(String) {
+  case row.creator == wire.creator_human {
+    True -> None
+    False -> Some(row.creator)
+  }
+}
+
+/// Is the row an undated draft? (The badge the date column shows instead of a
+/// date.)
+pub fn draft_badge(row: wire.Row) -> Bool {
+  wire.is_draft(row)
+}
+
+/// What an EMPTY date field means, said where the field is: nothing, while the
+/// field holds a date.
+pub fn date_hint(show_date: String) -> String {
+  case show_date {
+    "" -> "no date — this saves as a draft"
+    _ -> ""
+  }
 }
 
 fn row_of(rows: List(wire.Row), id: Int) -> Option(wire.Row) {
@@ -1021,6 +1230,7 @@ fn menu_view(model: Model) -> Element(Msg) {
         ],
       ),
     ]),
+    menu_filters(model),
     case model.rows {
       [] ->
         case model.busy {
@@ -1033,12 +1243,65 @@ fn menu_view(model: Model) -> Element(Msg) {
               html.text("no puzzles yet — draw one"),
             ])
         }
-      rows -> row_table(rows, model.armed)
+      _ ->
+        case visible_rows(model) {
+          [] ->
+            html.p([attribute.class("empty")], [
+              html.text("no puzzles match these two filters"),
+            ])
+          shown -> row_table(shown, model)
+        }
     },
   ])
 }
 
-fn row_table(rows: List(wire.Row), armed: Option(Int)) -> Element(Msg) {
+/// The two segments above the calendar: the schedule state and the author. Two
+/// axes, so they compose (agent drafts is one row of the grid, my drafts
+/// another) — which is why they are two groups and not one list of five.
+fn menu_filters(model: Model) -> Element(Msg) {
+  html.div([attribute.class("filters")], [
+    html.div([attribute.class("seg")], [
+      html.span([attribute.class("label")], [html.text("status")]),
+      segment("all", model.status_filter == AnyStatus, FilterStatus(AnyStatus)),
+      segment(
+        "published",
+        model.status_filter == PublishedOnly,
+        FilterStatus(PublishedOnly),
+      ),
+      segment(
+        "drafts",
+        model.status_filter == DraftsOnly,
+        FilterStatus(DraftsOnly),
+      ),
+    ]),
+    html.div([attribute.class("seg")], [
+      html.span([attribute.class("label")], [html.text("by")]),
+      segment(
+        "all",
+        model.creator_filter == AnyCreator,
+        FilterCreator(AnyCreator),
+      ),
+      segment("you", model.creator_filter == MineOnly, FilterCreator(MineOnly)),
+      segment(
+        "agents",
+        model.creator_filter == AgentsOnly,
+        FilterCreator(AgentsOnly),
+      ),
+    ]),
+  ])
+}
+
+fn segment(label: String, on: Bool, msg: Msg) -> Element(Msg) {
+  html.button(
+    [
+      attribute.classes([#("btn", True), #("small", True), #("on", on)]),
+      event.on_click(msg),
+    ],
+    [html.text(label)],
+  )
+}
+
+fn row_table(rows: List(wire.Row), model: Model) -> Element(Msg) {
   html.table([attribute.class("rows")], [
     html.thead([], [
       html.tr([], [
@@ -1051,7 +1314,7 @@ fn row_table(rows: List(wire.Row), armed: Option(Int)) -> Element(Msg) {
         head_cell(""),
       ]),
     ]),
-    html.tbody([], list.map(rows, fn(row) { row_line(row, armed) })),
+    html.tbody([], list.map(rows, fn(row) { row_line(row, model) })),
   ])
 }
 
@@ -1059,14 +1322,24 @@ fn head_cell(text: String) -> Element(Msg) {
   html.th([], [html.text(text)])
 }
 
-fn row_line(row: wire.Row, armed: Option(Int)) -> Element(Msg) {
-  let is_armed = case armed {
-    Some(id) -> id == row.id
-    None -> False
-  }
+fn row_line(row: wire.Row, model: Model) -> Element(Msg) {
   html.tr([], [
-    html.td([attribute.class("name")], [html.text(row.name)]),
-    html.td([], [html.text(row.show_date)]),
+    html.td([attribute.class("name")], [
+      html.text(row.name),
+      // who filed it: an agent's id, and nothing at all for the human
+      case creator_badge(row) {
+        Some(agent) -> html.span([attribute.class("chip")], [html.text(agent)])
+        None -> html.text("")
+      },
+    ]),
+    // the date column carries the draft badge: a draft's show_date IS empty, and
+    // an empty cell would read as missing data rather than as a state
+    html.td([], [
+      case draft_badge(row) {
+        True -> html.span([attribute.class("badge mut")], [html.text("draft")])
+        False -> html.text(row.show_date)
+      },
+    ]),
     html.td([attribute.class("num")], [html.text(int.to_string(row.attempts))]),
     html.td([attribute.class("num")], [html.text(int.to_string(row.solves))]),
     html.td([attribute.class("num")], [
@@ -1075,15 +1348,74 @@ fn row_line(row: wire.Row, armed: Option(Int)) -> Element(Msg) {
     html.td([attribute.class("num")], [
       html.text(optional_number(row.median_moves)),
     ]),
-    html.td([attribute.class("acts")], [
+    actions_cell(row, model),
+  ])
+}
+
+/// The row's buttons — or, while this row's approve is open, the date field and
+/// its two answers. One row shows one thing at a time.
+fn actions_cell(row: wire.Row, model: Model) -> Element(Msg) {
+  case model.approving {
+    Some(id) if id == row.id ->
+      html.td([attribute.class("acts")], [
+        html.input([
+          attribute.classes([#("input", True), #("date", True)]),
+          attribute.type_("date"),
+          attribute.value(model.approve_date),
+          event.on_input(ApproveDateChanged),
+        ]),
+        html.button(
+          [
+            attribute.class("btn small primary"),
+            attribute.disabled(model.busy || model.approve_date == ""),
+            event.on_click(Approve),
+          ],
+          [html.text("approve")],
+        ),
+        html.button(
+          [attribute.class("btn small"), event.on_click(CancelApprove)],
+          [html.text("back")],
+        ),
+      ])
+    _ ->
+      html.td(
+        [attribute.class("acts")],
+        list.map(row_actions(row), fn(action) {
+          action_button(row, action, model)
+        }),
+      )
+  }
+}
+
+fn action_button(
+  row: wire.Row,
+  action: RowAction,
+  model: Model,
+) -> Element(Msg) {
+  let is_armed = case model.armed {
+    Some(id) -> id == row.id
+    None -> False
+  }
+  case action {
+    PlayAction ->
       html.button(
         [attribute.class("btn small"), event.on_click(StartTest(row.id))],
         [html.text("test")],
-      ),
+      )
+    EditAction ->
       html.button(
         [attribute.class("btn small"), event.on_click(StartEdit(row.id))],
         [html.text("edit")],
-      ),
+      )
+    ApproveAction ->
+      html.button(
+        [
+          attribute.class("btn small primary"),
+          event.on_click(StartApprove(row.id)),
+        ],
+        [html.text("approve")],
+      )
+    DeleteAction ->
       html.button(
         [
           attribute.classes([
@@ -1102,9 +1434,8 @@ fn row_line(row: wire.Row, armed: Option(Int)) -> Element(Msg) {
             False -> "delete"
           }),
         ],
-      ),
-    ]),
-  ])
+      )
+  }
 }
 
 fn optional_text(value: Option(String), fallback: String) -> String {
@@ -1147,6 +1478,15 @@ fn authoring_view(model: Model) -> Element(Msg) {
         attribute.value(model.show_date),
         event.on_input(ShowDateChanged),
       ]),
+      // the field's own rule, said where it applies: an empty date is a draft,
+      // for a new puzzle and for an existing one alike
+      case date_hint(model.show_date) {
+        "" -> html.text("")
+        hint ->
+          html.p([attribute.classes([#("hint", True), #("date-hint", True)])], [
+            html.text(hint),
+          ])
+      },
       html.div([attribute.class("tools")], [
         html.button(
           [

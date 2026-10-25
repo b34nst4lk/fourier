@@ -41,6 +41,15 @@ services:
       # and expiry enforced; unset (no .env or no key) -> presence-only
       # fail-safe, announced once at boot.
       ADMIN_ACCESS_AUD: ${ADMIN_ACCESS_AUD}
+      # The agent fence (agent.gleam, PLAN §13): ONE shared key the local
+      # agent presents as 'Authorization: Bearer <key>', and the id its drafts
+      # are credited to. Values live in the gitignored .env beside this file
+      # (AGENT_API_KEY / AGENT_ID) — the repo is public. Interpolated:
+      # set -> the two /api/agent routes answer the bearer key; unset or
+      # blank -> those routes answer 401 AgentAuth, announced once at boot
+      # (fail-safe in the same direction as the AUD fence).
+      AGENT_API_KEY: ${AGENT_API_KEY:-}
+      AGENT_ID: ${AGENT_ID:-agent}
     volumes:
       # Named volume, not a bind mount: the database is the container's own
       # state and must survive `up --build` (which recreates the container)
@@ -50,6 +59,7 @@ services:
       - toy_admin-data:/app/data
     networks:
       - home_server-network
+      - br-pi
     restart: unless-stopped
 
 volumes:
@@ -63,3 +73,9 @@ networks:
   home_server-network:
     external: true
     name: home_server_home_server-network
+  # The local agent's network (hermes-jacksim lives here): attaching toy_admin
+  # to it lets the agent call /api/agent/* by container name, with the shared
+  # key as the door. Nothing is host-published for this.
+  br-pi:
+    external: true
+    name: br-pi

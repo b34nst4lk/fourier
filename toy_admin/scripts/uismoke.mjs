@@ -143,6 +143,8 @@ const ROWS = [
     id: 7,
     name: "the quaver",
     showDate: "2026-10-24",
+    status: "published",
+    creator: "human",
     attempts: 12,
     solves: 5,
     solvePct: "41.7",
@@ -152,9 +154,40 @@ const ROWS = [
     id: 8,
     name: "the star",
     showDate: "2026-10-25",
+    status: "published",
+    creator: "human",
     attempts: 3,
     solves: 0,
     solvePct: "0.0",
+    medianMoves: null,
+  },
+];
+
+// Agent drafts (2026-10-25): a local agent files undated rows, a human dates them.
+// The same list as ROWS plus one agent draft and one human draft, so every
+// segment and every badge has something to discriminate on.
+const DRAFT_ROWS = [
+  ...ROWS,
+  {
+    id: 9,
+    name: "the snail",
+    showDate: "",
+    status: "draft",
+    creator: "hermes",
+    attempts: 0,
+    solves: 0,
+    solvePct: null,
+    medianMoves: null,
+  },
+  {
+    id: 10,
+    name: "my sketch",
+    showDate: "",
+    status: "draft",
+    creator: "human",
+    attempts: 0,
+    solves: 0,
+    solvePct: null,
     medianMoves: null,
   },
 ];
@@ -451,6 +484,22 @@ function tap(dom, px, py, button = 0) {
 const by_text = (dom, selector, label) =>
   [...doc(dom).querySelectorAll(selector)].find((el) => text(el) === label) || null;
 const button = (dom, label) => by_text(dom, "button", label);
+// a word inside one node (the calendar's two filter groups share the label
+// "all", so a bare button(label) would be ambiguous)
+const in_node = (node, label) =>
+  node
+    ? [...node.querySelectorAll("button")].find((el) => text(el) === label) || null
+    : null;
+// the menu's rows and one row's cell: the table is re-rendered on every answer,
+// so a row element is looked up fresh each time
+const menu_rows = (dom) => [...doc(dom).querySelectorAll(".rows tbody tr")];
+const menu_row = (dom, index) => menu_rows(dom)[index] || null;
+const filter_group = (dom, index) =>
+  doc(dom).querySelectorAll(".filters .seg")[index] || null;
+const filter_button = (dom, group, label) =>
+  in_node(filter_group(dom, group), label);
+const is_iso_date = (value) =>
+  typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value);
 const canvas_ops = (dom, id) => {
   const el = doc(dom).getElementById(id);
   return el && el.__ctx ? el.__ctx.ops : null;
@@ -1150,6 +1199,228 @@ console.log("S8 · the menu's test button — the saved document's nested fixtur
   // preview rows skip the fixed slot)
   const play_rows_count = [...doc(dom).querySelectorAll(".panel.dials .row")].length;
   check("the play rows render from the nested fixture", play_rows_count === 4, "rows: " + play_rows_count);
+  dom.window.close();
+}
+
+// ==== S9 · the calendar's two segments ======================================
+// The menu grew a second axis when drafts arrived: WHAT a row is (published or a
+// draft) and WHO filed it (the human, or an agent whose row carries its id). Both
+// filters are client-side (the whole calendar is in hand), so a stale filter must
+// never survive as "the list looks right but is wrong".
+console.log("S9 · the calendar — status and author segments, badges, draft verbs");
+{
+  const dom = boot_dom({ rows: DRAFT_ROWS });
+  await settle();
+
+  check("the calendar lists drafts next to dated rows", menu_rows(dom).length === 4, "rows: " + menu_rows(dom).length);
+
+  const dated = menu_row(dom, 0);
+  const agent_draft = menu_row(dom, 2);
+  check(
+    "a dated row shows its date and carries no badges",
+    text(dated.querySelectorAll("td")[1]) === "2026-10-24" &&
+      dated.querySelector(".badge") === null &&
+      dated.querySelector(".chip") === null,
+    dated ? dated.textContent.replace(/\s+/g, " ").trim() : "missing",
+  );
+  check(
+    "an agent draft shows a DRAFT badge where its date would be",
+    text(agent_draft.querySelector(".badge")) === "draft",
+    text(agent_draft.querySelector(".badge")),
+  );
+  check(
+    "and the author's chip names the agent that filed it",
+    text(agent_draft.querySelector(".chip")) === "hermes",
+    text(agent_draft.querySelector(".chip")),
+  );
+  check(
+    "the human's own draft carries no creator chip",
+    menu_row(dom, 3).querySelector(".chip") === null,
+    text(menu_row(dom, 3).querySelector(".chip")),
+  );
+  check(
+    "a draft offers approve and no test; a dated row offers test and no approve",
+    in_node(agent_draft, "approve") !== null &&
+      in_node(agent_draft, "test") === null &&
+      in_node(dated, "test") !== null &&
+      in_node(dated, "approve") === null,
+  );
+
+  click(filter_button(dom, 0, "drafts"));
+  tick();
+  check("the drafts segment narrows the list to the undated rows", menu_rows(dom).length === 2, "rows: " + menu_rows(dom).length);
+  click(filter_button(dom, 1, "agents"));
+  tick();
+  check(
+    "the two segments compose: agent drafts is one row",
+    menu_rows(dom).length === 1 && text(menu_row(dom, 0).querySelector(".name")).startsWith("the snail"),
+    "rows: " + menu_rows(dom).length,
+  );
+  click(filter_button(dom, 0, "published"));
+  tick();
+  check(
+    "an empty intersection says so instead of pretending to be 'all'",
+    menu_rows(dom).length === 0 &&
+      text(doc(dom).querySelector(".menu .empty")) === "no puzzles match these two filters",
+    text(doc(dom).querySelector(".menu .empty")),
+  );
+  click(filter_button(dom, 1, "all"));
+  click(filter_button(dom, 0, "all"));
+  tick();
+  check("clearing both segments restores the whole calendar", menu_rows(dom).length === 4, "rows: " + menu_rows(dom).length);
+  dom.window.close();
+}
+
+// ==== S10 · approving a draft ===============================================
+// The one write the whole feature exists for: a draft becomes a daily by gaining
+// a date, and NOTHING else is re-sent — the agent's drawing and authorship are
+// what the human is signing off, so approving must not be able to alter them.
+console.log("S10 · approve — a draft gains a date, and only a date");
+{
+  const posted = [];
+  const dom = boot_dom({
+    rows: DRAFT_ROWS,
+    saves: [{ status: 200, body: { status: "ok" } }],
+    onSave: (path, method, body) => posted.push({ path, method, body }),
+  });
+  await settle();
+
+  click(in_node(menu_row(dom, 2), "approve")); // the snail — the agent's draft
+  tick();
+  const field = menu_row(dom, 2).querySelector("input[type=date]");
+  check("approve opens the row's own date field", field !== null);
+  const prefilled = field ? field.value : null;
+  check(
+    "it is prefilled with the next free day (a real date no row holds)",
+    is_iso_date(prefilled) && !DRAFT_ROWS.some((row) => row.showDate === prefilled),
+    String(prefilled),
+  );
+  check(
+    "and the row offers confirm and back, not its usual verbs",
+    in_node(menu_row(dom, 2), "approve") !== null &&
+      in_node(menu_row(dom, 2), "back") !== null &&
+      in_node(menu_row(dom, 2), "delete") === null,
+  );
+
+  click(in_node(menu_row(dom, 2), "approve")); // confirm
+  await settle();
+  const put = posted[0] || {};
+  check(
+    "approve PUTs exactly that row",
+    put.method === "PUT" && put.path === "/api/admin/puzzles/9",
+    JSON.stringify(put.path) + " " + JSON.stringify(put.method),
+  );
+  check(
+    "the body is ONE field — the date, no name and no dots",
+    put.body === JSON.stringify({ showDate: prefilled }),
+    String(put.body),
+  );
+  check(
+    "the calendar comes back and says what happened",
+    text(doc(dom).querySelector(".flash")) === "approved",
+    text(doc(dom).querySelector(".flash")),
+  );
+
+  // back closes the field without writing: a stray approve costs nothing
+  const before_back = posted.length;
+  click(in_node(menu_row(dom, 3), "approve")); // my sketch
+  tick();
+  click(in_node(menu_row(dom, 3), "back"));
+  tick();
+  check(
+    "back closes the approve and writes nothing",
+    posted.length === before_back &&
+      menu_row(dom, 3).querySelector("input[type=date]") === null &&
+      in_node(menu_row(dom, 3), "delete") !== null,
+  );
+  dom.window.close();
+}
+
+// ==== S11 · the editor's date field: a date publishes, empty drafts =========
+// The unified rule, on the authoring side: a new puzzle opens on the next free
+// day (saving is the one-click path), clearing the date says what that means,
+// and the save that follows posts the EMPTY date — the backend turns it into a
+// draft. Opening a draft shows the same empty field and the same hint.
+console.log("S11 · authoring — the date field drafts when it is empty");
+{
+  const posted = [];
+  const dom = boot_dom({
+    rows: DRAFT_ROWS,
+    saves: [{ status: 201, body: { status: "ok" } }],
+    singles: [
+      {
+        status: 200,
+        body: {
+          status: "ok",
+          puzzle: {
+            id: 9,
+            name: "the snail",
+            showDate: "",
+            status: "draft",
+            creator: "hermes",
+            dots: [[10, 10], [90, 10], [50, 90]],
+            fixture: FIXTURE,
+            createdAt: 1,
+            updatedAt: 2,
+          },
+        },
+      },
+    ],
+    onSave: (path, method, body) => posted.push({ path, method, body }),
+  });
+  await settle();
+
+  // the date field's own hint — its class, not "the first .hint in the form",
+  // so the panel's standing prose cannot be mistaken for it
+  const form_hint = () => text(doc(dom).querySelector(".panel.form .date-hint"));
+  const date_field = () =>
+    [...doc(dom).querySelectorAll(".panel.form input")].find((el) => el.type === "date") ||
+    null;
+
+  click(button(dom, "new puzzle"));
+  tick();
+  check(
+    "a new puzzle prefills the next free day (a save publishes)",
+    is_iso_date(date_field().value),
+    String(date_field() && date_field().value),
+  );
+  check(
+    "while it holds a date there is no draft hint",
+    form_hint() === null,
+    String(form_hint()),
+  );
+
+  const field = date_field();
+  field.value = "";
+  field.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
+  tick();
+  check(
+    "clearing the date says the save will be a draft",
+    form_hint() === "no date — this saves as a draft",
+    String(form_hint()),
+  );
+
+  tap(dom, 60, 60);
+  tap(dom, 150, 90);
+  tap(dom, 120, 210);
+  click(button(dom, "save puzzle"));
+  await settle();
+  check(
+    "the POST carries the empty date (the backend drafts it)",
+    posted.length === 1 && posted[0].body.includes('"showDate":""'),
+    String(posted[0] && posted[0].body),
+  );
+
+  // a draft opens with its own (empty) date and the same hint
+  click(in_node(menu_row(dom, 2), "edit"));
+  await settle();
+  check(
+    "editing a draft opens the field empty and says what that keeps",
+    date_field() !== null &&
+      date_field().value === "" &&
+      form_hint() === "no date — this saves as a draft",
+    String(date_field() && date_field().value) + " / " + String(form_hint()),
+  );
   dom.window.close();
 }
 

@@ -52,6 +52,8 @@ fn model() -> admin_ui.Model {
   admin_ui.Model(
     view: admin_ui.Authoring,
     rows: [],
+    status_filter: admin_ui.AnyStatus,
+    creator_filter: admin_ui.AnyCreator,
     busy: False,
     flash: None,
     failure: None,
@@ -62,6 +64,8 @@ fn model() -> admin_ui.Model {
     drag: None,
     play: None,
     armed: None,
+    approving: None,
+    approve_date: "",
     preview: None,
     preview_pending: False,
     preview_stale: False,

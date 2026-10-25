@@ -20,14 +20,36 @@
 ////   puzzles(
 ////     id         INTEGER PRIMARY KEY,
 ////     name       TEXT NOT NULL,
-////     show_date  TEXT NOT NULL UNIQUE,   -- ISO "YYYY-MM-DD"; lexicographic
+////     show_date  TEXT NOT NULL,          -- ISO "YYYY-MM-DD", or '' for a
+////                                        -- DRAFT (see below); lexicographic
 ////                                        -- order == calendar order
 ////                                        -- (dates.gleam's convention)
 ////     dots       TEXT NOT NULL,          -- JSON: the drawing, source of truth
 ////     fixture    TEXT NOT NULL,          -- JSON: the derived fixture (Q2/Q19)
 ////     created_at INTEGER NOT NULL,       -- epoch seconds
-////     updated_at INTEGER NOT NULL
+////     updated_at INTEGER NOT NULL,
+////     status     TEXT NOT NULL DEFAULT 'published',  -- 'published' | 'draft'
+////     creator    TEXT NOT NULL DEFAULT 'human'       -- 'human' | an agent id
 ////   )
+////   CREATE UNIQUE INDEX puzzles_published_date
+////     ON puzzles (show_date) WHERE status = 'published';
+////
+//// Drafts (agent drafts, 2026-10-25)
+//// --------------------------------
+//// A DRAFT is a puzzle with no date: a local agent (Hermes) inserts undated
+//// shapes with `insert_draft`, a human approves one by giving it a date
+//// (`publish`), and `unpublish` takes the date away again. The two facts are
+//// kept apart on purpose — `show_date = ''` is what the schedule reads, and
+//// `status` is what the row is — because every query that must not see a draft
+//// filters on `status`, and every human-facing screen shows both.
+////
+//// Why the uniqueness had to move: phase 4a declared `show_date TEXT NOT NULL
+//// UNIQUE` inline, which makes every draft collide with every other draft on
+//// ''. SQLite cannot drop an inline constraint, so the migration REBUILDS the
+//// table (see `migrate_puzzles`) and installs the date rule as a PARTIAL index
+//// that only covers published rows. The index stays the authority, exactly as
+//// the table constraint was: a racing publish loses to it and is reported as
+//// DuplicateShowDate.
 ////   attempts(
 ////     uuid        TEXT NOT NULL,         -- anonymous v4 identity (Q16)
 ////     puzzle_date TEXT NOT NULL,         -- ISO date; the puzzle's show_date
@@ -53,10 +75,12 @@
 ////
 //// Refusals that live here rather than in the route layer
 //// -----------------------------------------------------
-//// - a show_date that `dates.is_valid_date` rejects (a free-form date would
-////   poison ordering and every per-date aggregate);
-//// - a DUPLICATE show_date (Q17) — the UNIQUE constraint is the authority, so a
-////   race cannot slip a second puzzle in;
+//// - a show_date that `dates.is_valid_date` rejects on the CREATE path (a
+////   free-form date would poison ordering and every per-date aggregate). The
+////   date-format rule is the ROUTE's for the schedule actions (publish takes
+////   whatever date the route validated — see its own note);
+//// - a DUPLICATE show_date among PUBLISHED puzzles (Q17) — the partial unique
+////   index is the authority, so a race cannot slip a second puzzle onto a day;
 //// - a solve/abandon for a date with no puzzle (`UnknownPuzzle`): telemetry for
 ////   an unpublished day would corrupt the aggregates;
 //// - an abandon that would overwrite a solved row: solved stays solved.
@@ -90,13 +114,33 @@ pub type Puzzle {
     fixture_json: String,
     created_at: Int,
     updated_at: Int,
+    /// See the schema note: 'published' or 'draft'.
+    status: String,
+    /// 'human', or the agent id that drafted the puzzle.
+    creator: String,
   )
 }
+
+/// The two statuses a row can be in. Named constants because they are compared
+/// in queries and in the route layer, and a typo in a string literal would be a
+/// silent behaviour change rather than a compile error.
+pub const status_published = "published"
+
+pub const status_draft = "draft"
+
+/// The creator of every puzzle a human saved. An agent's drafts carry the
+/// agent's id (AGENT_ID) instead.
+pub const creator_human = "human"
 
 /// A partial update from the admin editor (phase 4a). `None` means "leave this
 /// column as it is". A drawing change always arrives paired with its
 /// re-derived fixture — the route layer owns derivation, so the store never
 /// stores dots without the fixture that belongs to them.
+///
+/// `show_date` carries the whole schedule: `Some("")` means DRAFT (no date, and
+/// the same write may still change the name, the dots and the fixture), `Some`
+/// a date means PUBLISHED on it. `None` leaves the schedule untouched, so a
+/// name-only edit of a draft does not silently publish it.
 pub type PuzzleUpdate {
   PuzzleUpdate(
     name: option.Option(String),
@@ -161,23 +205,35 @@ pub fn path_from(get: fn(String) -> option.Option(String)) -> String {
 
 // ---------- schema ----------
 
-/// Create the tables if they are not there yet. Idempotent: a container restart
-/// runs this again against the same volume.
+/// Create the tables if they are not there yet, and bring an older database up
+/// to the current shape. Idempotent: a container restart runs this again
+/// against the same volume.
+///
+/// Order matters. The tables come first (so a fresh database needs no
+/// migration), then `migrate_puzzles` (which finds nothing to do on a fresh
+/// one), then the indexes — the partial unique index names a `status` column
+/// that only exists after the migration.
 pub fn init(path: String) -> Result(Nil, Error) {
-  with_connection(path, fn(connection) { exec(schema_sql(), on: connection) })
+  with_connection(path, fn(connection) {
+    use Nil <- result.try(exec(tables_sql(), on: connection))
+    use Nil <- result.try(migrate_puzzles(connection))
+    exec(indexes_sql(), on: connection)
+  })
 }
 
-fn schema_sql() -> String {
+fn tables_sql() -> String {
   [
     "PRAGMA busy_timeout = 5000;",
     "CREATE TABLE IF NOT EXISTS puzzles (
        id INTEGER PRIMARY KEY,
        name TEXT NOT NULL,
-       show_date TEXT NOT NULL UNIQUE,
+       show_date TEXT NOT NULL,
        dots TEXT NOT NULL,
        fixture TEXT NOT NULL,
        created_at INTEGER NOT NULL,
-       updated_at INTEGER NOT NULL
+       updated_at INTEGER NOT NULL,
+       status TEXT NOT NULL DEFAULT 'published',
+       creator TEXT NOT NULL DEFAULT 'human'
      );",
     "CREATE TABLE IF NOT EXISTS attempts (
        uuid TEXT NOT NULL,
@@ -190,15 +246,82 @@ fn schema_sql() -> String {
        updated_at INTEGER NOT NULL,
        PRIMARY KEY (uuid, puzzle_date)
      );",
-    "CREATE INDEX IF NOT EXISTS attempts_by_puzzle ON attempts (puzzle_id);",
   ]
   |> string.concat
 }
 
+fn indexes_sql() -> String {
+  [
+    "CREATE INDEX IF NOT EXISTS attempts_by_puzzle ON attempts (puzzle_id);",
+    // Q17, as a PARTIAL index: two published puzzles may not share a day, but
+    // every draft shares '' — which is why the old table-level UNIQUE had to
+    // go (see the header).
+    "CREATE UNIQUE INDEX IF NOT EXISTS puzzles_published_date
+       ON puzzles (show_date) WHERE status = 'published';",
+  ]
+  |> string.concat
+}
+
+/// The phase-4a -> drafts migration. A database created before drafts has no
+/// `status` column; adding the two columns would be enough for the data, but the
+/// inline `UNIQUE(show_date)` would keep every draft colliding with every other
+/// draft, and SQLite cannot drop an inline constraint. So this is the documented
+/// rebuild: rename, create the current shape, copy the rows across (the new
+/// columns take their defaults in the INSERT), drop the old table. The old
+/// table's indexes go with it when it is dropped, and `indexes_sql` — which runs
+/// after this — installs the current set.
+///
+/// The `status` column's presence IS the version marker: the schema is
+/// otherwise declarative (CREATE ... IF NOT EXISTS), and this is the one
+/// question the database has to be asked. The four statements run in ONE
+/// transaction: a failure that lands between RENAME and DROP must roll fully
+/// back, or the next boot would see a fresh empty `puzzles` with the `status`
+/// column, treat the migration as done, and strand the data in
+/// `puzzles_phase_4a` forever.
+fn migrate_puzzles(connection: sqlight.Connection) -> Result(Nil, Error) {
+  use columns <- result.try(puzzle_columns_of(connection))
+  case list.contains(columns, "status") {
+    True -> Ok(Nil)
+    False -> exec("BEGIN IMMEDIATE;
+         ALTER TABLE puzzles RENAME TO puzzles_phase_4a;
+         CREATE TABLE puzzles (
+           id INTEGER PRIMARY KEY,
+           name TEXT NOT NULL,
+           show_date TEXT NOT NULL,
+           dots TEXT NOT NULL,
+           fixture TEXT NOT NULL,
+           created_at INTEGER NOT NULL,
+           updated_at INTEGER NOT NULL,
+           status TEXT NOT NULL DEFAULT 'published',
+           creator TEXT NOT NULL DEFAULT 'human'
+         );
+         INSERT INTO puzzles
+           (id, name, show_date, dots, fixture, created_at, updated_at,
+            status, creator)
+         SELECT id, name, show_date, dots, fixture, created_at, updated_at,
+                '" <> status_published <> "', '" <> creator_human <> "'
+         FROM puzzles_phase_4a;
+         DROP TABLE puzzles_phase_4a;
+         COMMIT;", on: connection)
+  }
+}
+
+fn puzzle_columns_of(
+  connection: sqlight.Connection,
+) -> Result(List(String), Error) {
+  query(
+    "PRAGMA table_info(puzzles)",
+    on: connection,
+    with: [],
+    expecting: column_name_decoder(),
+  )
+}
+
 // ---------- puzzles ----------
 
-/// Save a puzzle. Refuses an invalid date (`InvalidShowDate`) and a date that is
-/// already taken (`DuplicateShowDate`, Q17).
+/// Save a PUBLISHED, human-authored puzzle. Refuses an invalid date
+/// (`InvalidShowDate`) and a date that is already taken (`DuplicateShowDate`,
+/// Q17).
 pub fn insert_puzzle(
   path: String,
   name name: String,
@@ -213,39 +336,66 @@ pub fn insert_puzzle(
         use existing <- result.try(find_puzzle(connection, show_date))
         case existing {
           option.Some(_) -> Error(DuplicateShowDate(show_date))
-          option.None -> {
-            use Nil <- result.try(insert_puzzle_row(
+          option.None ->
+            insert_puzzle_row(
               connection,
               name,
               show_date,
               dots_json,
               fixture_json,
-            ))
-            use inserted <- result.try(find_puzzle(connection, show_date))
-            case inserted {
-              option.Some(puzzle) -> Ok(puzzle)
-              // Cannot happen: the insert just succeeded on this connection.
-              option.None -> Error(Database("puzzle vanished after insert"))
-            }
-          }
+              status_published,
+              creator_human,
+            )
         }
       })
   }
 }
 
+/// Save an UNDATED draft (agent drafts, 2026-10-25): no show_date at all, so it
+/// cannot be served and cannot collide with a published day. `creator` is the
+/// agent id that drew it (`AGENT_ID`); a human's puzzle is `creator_human`.
+///
+/// No date rule applies here — there is no date. Everything else the route
+/// layer validated (a non-empty name, a drawing that derives a usable fixture)
+/// arrives already checked, because derivation belongs to the routes.
+pub fn insert_draft(
+  path: String,
+  name name: String,
+  dots_json dots_json: String,
+  fixture_json fixture_json: String,
+  creator creator: String,
+) -> Result(Puzzle, Error) {
+  with_connection(path, fn(connection) {
+    insert_puzzle_row(
+      connection,
+      name,
+      "",
+      dots_json,
+      fixture_json,
+      status_draft,
+      creator,
+    )
+  })
+}
+
+/// The one INSERT for both kinds of row; returns the row it wrote. The date
+/// uniqueness comes from the partial index rather than a pre-check alone, so a
+/// racing insert loses to the database and is still reported as a duplicate.
 fn insert_puzzle_row(
   connection: sqlight.Connection,
   name: String,
   show_date: String,
   dots_json: String,
   fixture_json: String,
-) -> Result(Nil, Error) {
+  status: String,
+  creator: String,
+) -> Result(Puzzle, Error) {
   let now = clock.now_seconds()
   case
     sqlight.query(
       "INSERT INTO puzzles
-         (name, show_date, dots, fixture, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?)",
+         (name, show_date, dots, fixture, created_at, updated_at, status, creator)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
       on: connection,
       with: [
         sqlight.text(name),
@@ -254,19 +404,38 @@ fn insert_puzzle_row(
         sqlight.text(fixture_json),
         sqlight.int(now),
         sqlight.int(now),
+        sqlight.text(status),
+        sqlight.text(creator),
       ],
       expecting: decode.success(Nil),
     )
   {
-    Ok(_) -> Ok(Nil)
+    Ok(_) -> row_by_rowid(connection)
     Error(error) ->
-      // The UNIQUE constraint is the real guard — a racing insert can slip
-      // between the check above and this statement. A duplicate is still a
+      // The partial unique index is the real guard — a racing insert can slip
+      // between a check elsewhere and this statement. A duplicate is still a
       // duplicate.
       case is_unique_violation(error) {
         True -> Error(DuplicateShowDate(show_date))
         False -> Error(db_error(error))
       }
+  }
+}
+
+/// The row the previous statement on this connection wrote. `last_insert_rowid()`
+/// rather than RETURNING keeps the INSERT statement readable; both are read on
+/// the same connection, so no other write can interleave.
+fn row_by_rowid(connection: sqlight.Connection) -> Result(Puzzle, Error) {
+  use rows <- result.try(query(
+    puzzle_columns() <> " FROM puzzles WHERE id = last_insert_rowid()",
+    on: connection,
+    with: [],
+    expecting: puzzle_decoder(),
+  ))
+  case head(rows) {
+    option.Some(puzzle) -> Ok(puzzle)
+    // Cannot happen: the insert just succeeded on this connection.
+    option.None -> Error(Database("puzzle vanished after insert"))
   }
 }
 
@@ -301,11 +470,16 @@ pub fn puzzle_by_id(
 /// Update the PROVIDED columns of one puzzle (phase 4a): `None` leaves a column
 /// alone. `updated_at` moves, `created_at` never does.
 ///
+/// The schedule half is `show_date` (see PuzzleUpdate): `Some("")` drafts the
+/// puzzle (no date, status 'draft'), `Some(date)` publishes it on that date,
+/// `None` leaves both alone.
+///
 /// Refusals: an unknown id (`UnknownPuzzleId`), an invalid date
-/// (`InvalidShowDate`), and a show_date another puzzle already holds
-/// (`DuplicateShowDate`, Q17). A puzzle holding its own date is NOT a
-/// collision — the UNIQUE constraint only sees other rows, so a no-op date
-/// change succeeds. The constraint is still the authority: a racing update
+/// (`InvalidShowDate` — the empty date is not an invalid date, it is the draft
+/// marker), and a show_date another PUBLISHED puzzle already holds
+/// (`DuplicateShowDate`, Q17, from the partial unique index). A puzzle holding
+/// its own date is NOT a collision — the index only sees other rows, so a no-op
+/// date change succeeds. The index is still the authority: a racing update
 /// loses to it and is reported the same way.
 pub fn update_puzzle(
   path: String,
@@ -313,12 +487,62 @@ pub fn update_puzzle(
   changes changes: PuzzleUpdate,
 ) -> Result(Puzzle, Error) {
   case changes.show_date {
+    option.Some("") -> write_update(path, id, changes)
     option.Some(show_date) ->
       case dates.is_valid_date(show_date) {
         False -> Error(InvalidShowDate(show_date))
         True -> write_update(path, id, changes)
       }
     option.None -> write_update(path, id, changes)
+  }
+}
+
+/// Give an undated draft its show-date: the human's approval. A thin spelling
+/// of `update_puzzle(id, PuzzleUpdate(show_date: Some(date)))`, so approve and
+/// edit share one write path (and one uniqueness rule).
+///
+/// The date FORMAT is not checked here: the route layer validates the schedule
+/// actions before calling (see the header's note on refusals), and publish is
+/// also how an already-published puzzle moves to another day.
+pub fn publish(
+  path: String,
+  id: Int,
+  show_date: String,
+) -> Result(Puzzle, Error) {
+  update_puzzle(
+    path,
+    id,
+    PuzzleUpdate(
+      name: option.None,
+      show_date: option.Some(show_date),
+      dots_json: option.None,
+      fixture_json: option.None,
+    ),
+  )
+}
+
+/// Take the show-date away again: the row becomes a draft. Its attempts stay
+/// (telemetry is keyed by puzzle_date, and unpublishing never deletes).
+pub fn unpublish(path: String, id: Int) -> Result(Puzzle, Error) {
+  update_puzzle(
+    path,
+    id,
+    PuzzleUpdate(
+      name: option.None,
+      show_date: option.Some(""),
+      dots_json: option.None,
+      fixture_json: option.None,
+    ),
+  )
+}
+
+/// The status a row must carry once `show_date` has the value the caller asked
+/// for: a date means published, '' means draft. The two columns are derived
+/// together on every write, so they cannot drift apart.
+fn status_of_show_date(show_date: String) -> String {
+  case show_date {
+    "" -> status_draft
+    _ -> status_published
   }
 }
 
@@ -343,10 +567,13 @@ fn write_update(
         let show_date = option.unwrap(changes.show_date, existing.show_date)
         let dots = option.unwrap(changes.dots_json, existing.dots_json)
         let fixture = option.unwrap(changes.fixture_json, existing.fixture_json)
+        // The schedule and the status are written together: see
+        // status_of_show_date.
+        let status = status_of_show_date(show_date)
         case
           sqlight.query(
             "UPDATE puzzles
-               SET name = ?, show_date = ?, dots = ?, fixture = ?,
+               SET name = ?, show_date = ?, dots = ?, fixture = ?, status = ?,
                    updated_at = ?
              WHERE id = ?",
             on: connection,
@@ -355,6 +582,7 @@ fn write_update(
               sqlight.text(show_date),
               sqlight.text(dots),
               sqlight.text(fixture),
+              sqlight.text(status),
               sqlight.int(clock.now_seconds()),
               sqlight.int(id),
             ],
@@ -417,14 +645,19 @@ pub fn count_puzzles(path: String) -> Result(Int, Error) {
   })
 }
 
-/// The newest published show_date — the never-past ceiling of the serving rule
-/// (Q11). `None` when nothing is published yet.
+/// The newest PUBLISHED show_date — the never-past ceiling of the serving rule
+/// (Q11). Drafts are invisible to it: a dateless draft has no date to be the
+/// ceiling, and an approved one enters the ceiling the moment it is published.
+/// `None` when nothing is published yet.
+///
+/// The "never newer than today" half of the rule is `dates.serve_date`'s (it
+/// clamps the visitor's local date), so this query is only the maximum.
 pub fn newest_published(path: String) -> Result(option.Option(String), Error) {
   with_connection(path, fn(connection) {
     use rows <- result.try(query(
-      "SELECT MAX(show_date) AS newest FROM puzzles",
+      "SELECT MAX(show_date) AS newest FROM puzzles WHERE status = ?",
       on: connection,
-      with: [],
+      with: [sqlight.text(status_published)],
       expecting: newest_decoder(),
     ))
     Ok(head(rows) |> option.unwrap(option.None))
@@ -564,7 +797,7 @@ pub fn move_counts(path: String, puzzle_id: Int) -> Result(List(Int), Error) {
 }
 
 fn puzzle_columns() -> String {
-  "SELECT id, name, show_date, dots, fixture, created_at, updated_at"
+  "SELECT id, name, show_date, dots, fixture, created_at, updated_at, status, creator"
 }
 
 fn find_puzzle(
@@ -625,6 +858,8 @@ fn puzzle_decoder() -> decode.Decoder(Puzzle) {
   use fixture <- decode.field(4, decode.string)
   use created_at <- decode.field(5, decode.int)
   use updated_at <- decode.field(6, decode.int)
+  use status <- decode.field(7, decode.string)
+  use creator <- decode.field(8, decode.string)
   decode.success(Puzzle(
     id: id,
     name: name,
@@ -633,7 +868,15 @@ fn puzzle_decoder() -> decode.Decoder(Puzzle) {
     fixture_json: fixture,
     created_at: created_at,
     updated_at: updated_at,
+    status: status,
+    creator: creator,
   ))
+}
+
+fn column_name_decoder() -> decode.Decoder(String) {
+  // PRAGMA table_info: column 1 is the column's name.
+  use name <- decode.field(1, decode.string)
+  decode.success(name)
 }
 
 fn attempt_decoder() -> decode.Decoder(Attempt) {

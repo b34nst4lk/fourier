@@ -15,7 +15,7 @@ import gleeunit/should
 import test_helpers.{close}
 
 const rows_ok =
-  "{\"status\":\"ok\",\"puzzles\":[{\"id\":7,\"name\":\"the star\",\"showDate\":\"2026-10-25\",\"attempts\":12,\"solves\":5,\"solvePct\":\"41.7\",\"medianMoves\":37.0},{\"id\":6,\"name\":\"untouched\",\"showDate\":\"2026-10-24\",\"attempts\":0,\"solves\":0,\"solvePct\":null,\"medianMoves\":null}]}"
+  "{\"status\":\"ok\",\"puzzles\":[{\"id\":7,\"name\":\"the star\",\"showDate\":\"2026-10-25\",\"status\":\"published\",\"creator\":\"human\",\"attempts\":12,\"solves\":5,\"solvePct\":\"41.7\",\"medianMoves\":37.0},{\"id\":6,\"name\":\"untouched\",\"showDate\":\"2026-10-24\",\"status\":\"published\",\"creator\":\"human\",\"attempts\":0,\"solves\":0,\"solvePct\":null,\"medianMoves\":null}]}"
 
 const fixture_ok =
   "{\"status\":\"ok\",\"fixture\":{\"name\":\"the star\",\"showDate\":\"2026-10-25\",\"centroid\":[50.0,49.999824523925774],\"dials\":[\"phase\",\"radius\",\"k\",\"fixed\"],\"dial\":[{\"k\":1,\"radius\":27.574653306648354,\"phase\":270.0},{\"k\":-4,\"radius\":6,\"phase\":270.0},{\"k\":6,\"radius\":3,\"phase\":270.0},{\"k\":-14,\"radius\":0.5,\"phase\":270.0}],\"extras\":[],\"target\":[[50.0,10.0],[60.0,40.0]]}}"
@@ -40,6 +40,29 @@ pub fn the_menu_rows_decode_with_and_without_stats_test() {
   should.equal(None, second.solve_pct)
   should.equal(None, second.median_moves)
   should.equal(0, second.attempts)
+
+  // the row's place in the calendar rides along: published, by the human
+  should.equal("published", first.status)
+  should.equal(wire.creator_human, first.creator)
+}
+
+pub fn a_draft_row_decodes_with_its_author_test() {
+  // An agent's draft: no show date, status draft, the agent's id as the author
+  // (agent drafts, 2026-10-25). The menu badges and filters on exactly these.
+  let text =
+    "{\"status\":\"ok\",\"puzzles\":[{\"id\":9,\"name\":\"sketch\",\"showDate\":\"\",\"status\":\"draft\",\"creator\":\"hermes\",\"attempts\":0,\"solves\":0,\"solvePct\":null,\"medianMoves\":null}]}"
+  let assert Ok([draft]) = wire.decode_rows(200, text)
+  should.equal("", draft.show_date)
+  should.equal("draft", draft.status)
+  should.equal("hermes", draft.creator)
+  should.equal(True, wire.is_draft(draft))
+}
+
+pub fn the_approve_body_is_only_a_date_test() {
+  // Approving a draft is a PUT of one field: the editor sends NO name and NO
+  // dots, so the row keeps its drawing and its author and only gains a date
+  // (admin.gleam: an empty/absent date drafts, a date publishes).
+  should.equal("{\"showDate\":\"2026-11-18\"}", wire.approve_body("2026-11-18"))
 }
 
 pub fn a_fixture_carries_its_starting_patches_test() {

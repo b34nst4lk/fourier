@@ -9,8 +9,9 @@
 ////   {"status":"error","errors":[names]} -> Error(Failure(status, names))
 ////
 //// The names are the contract too — `DuplicateShowDate`, `BadName`,
-//// `BadPuzzleDate`, `BadDrawing`, `BadRequest`, `UnknownPuzzle`, `Unauthorized`
-//// — and `failure_text` is the ONE place that turns them into words. A name it
+//// `BadPuzzleDate`, `BadDrawing`, `BadRequest`, `UnknownPuzzle`, `Unauthorized`,
+//// `StoreError` — and `failure_text` is the ONE place that turns them into
+//// words. A name it
 //// does not know is shown verbatim rather than swallowed: an unmapped error is a
 //// bug in this file, and hiding it would make the bug invisible.
 
@@ -23,18 +24,37 @@ import gleam/list
 import gleam/option.{type Option, None}
 import gleam/result
 
-/// One row of the menu: identity, schedule, and the Q23 numbers (nulls while a
-/// puzzle has no attempts).
+/// A published puzzle holds its day; a draft has none (see `is_draft`).
+pub const status_published = "published"
+
+/// The store's date-less marker, as a badge and a filter.
+pub const status_draft = "draft"
+
+/// The one human author there is (the admin behind the fence). An agent's row
+/// carries the agent's id instead, which is what the menu badges on.
+pub const creator_human = "human"
+
+/// One row of the menu: identity, schedule, WHO filed it, and the Q23 numbers
+/// (nulls while a puzzle has no attempts).
 pub type Row {
   Row(
     id: Int,
     name: String,
     show_date: String,
+    status: String,
+    creator: String,
     attempts: Int,
     solves: Int,
     solve_pct: Option(String),
     median_moves: Option(Float),
   )
+}
+
+/// An undated row: an agent's (or a human's) sketch waiting for a date. The
+/// store derives the status from the date, so this is a reading of `show_date`,
+/// not a second fact that could disagree with it.
+pub fn is_draft(row: Row) -> Bool {
+  row.status == status_draft
 }
 
 /// A puzzle as the editor uses it: the drawing (when the API sent one) plus the
@@ -137,6 +157,8 @@ fn row_decoder() -> decode.Decoder(Row) {
   use id <- decode.field("id", decode.int)
   use name <- decode.field("name", decode.string)
   use show_date <- decode.field("showDate", decode.string)
+  use status <- decode.field("status", decode.string)
+  use creator <- decode.field("creator", decode.string)
   use attempts <- decode.field("attempts", decode.int)
   use solves <- decode.field("solves", decode.int)
   use solve_pct <- decode.field("solvePct", decode.optional(decode.string))
@@ -148,6 +170,8 @@ fn row_decoder() -> decode.Decoder(Row) {
     id,
     name,
     show_date,
+    status,
+    creator,
     attempts,
     solves,
     solve_pct,
@@ -267,6 +291,15 @@ pub fn preview_body(
   dots: List(score.Point),
 ) -> String {
   puzzle_body(name, show_date, dots)
+}
+
+/// The approve body: ONE field. A PUT that mentions only `showDate` dates a
+/// draft without touching its name or its drawing (admin.gleam's schedule rule)
+/// — the row keeps its author, so the agent that filed it stays on the record
+/// after the human signs off.
+pub fn approve_body(show_date: String) -> String {
+  json.object([#("showDate", json.string(show_date))])
+  |> json.to_string
 }
 
 fn point_json(point: score.Point) -> json.Json {

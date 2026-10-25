@@ -31,6 +31,7 @@ import sketch
 import toy_admin
 import toy_admin/access
 import toy_admin/admin_ui
+import toy_admin/agent
 import toy_admin/clock
 import toy_admin/dates
 import toy_admin/derivation
@@ -259,6 +260,46 @@ pub fn create_refuses_a_body_that_is_not_json_test() {
   )
 }
 
+pub fn create_with_an_empty_date_creates_a_draft_test() {
+  // The editor's unified rule, backend side: date = published, empty = draft.
+  // A save with the date field cleared is a draft, not a BadPuzzleDate.
+  let path = fresh_admin_db("admin-create-draft")
+  configure_audience()
+  let response = post_puzzle(create_body("The Snail", "", triangle))
+  should.equal(201, response.status)
+  let assert Ok(puzzle) = response_puzzle(simulate.read_body(response))
+  should.equal("", puzzle.show_date)
+  should.equal(store.status_draft, puzzle.status)
+  should.equal(store.creator_human, puzzle.creator)
+
+  let assert Ok(Some(row)) = store.puzzle_by_id(path, puzzle.id)
+  should.equal(store.status_draft, row.status)
+  // Derivation runs against the row the draft will have: no date yet.
+  should.equal(
+    fixture_json.to_string(derivation.derive_fixture(
+      [#(0.0, 0.0), #(10.0, 0.0), #(10.0, 10.0)],
+      "The Snail",
+      "",
+    )),
+    row.fixture_json,
+  )
+  // And nothing is published.
+  should.equal(Ok(option.None), store.newest_published(path))
+}
+
+pub fn create_without_a_date_creates_a_draft_test() {
+  // A create body that does not mention the date at all means the same thing:
+  // there is no date to keep, so there is nothing to invent (BadPuzzleDate was
+  // the old answer; a draft is the useful one).
+  let path = fresh_admin_db("admin-create-no-date")
+  configure_audience()
+  let response = post_puzzle("{\"name\":\"Snail\",\"dots\":" <> triangle <> "}")
+  should.equal(201, response.status)
+  let assert Ok(puzzle) = response_puzzle(simulate.read_body(response))
+  should.equal(store.status_draft, puzzle.status)
+  should.equal(Ok(1), store.count_puzzles(path))
+}
+
 // ---------- GET /api/admin/puzzles/<id> ----------
 
 pub fn read_returns_the_full_row_for_the_editor_test() {
@@ -456,6 +497,161 @@ pub fn restating_the_same_values_is_also_a_no_op_test() {
   should.equal(triangle, stored.dots_json)
 }
 
+// ---------- drafts and the schedule (agent drafts, 2026-10-25) ----------
+//
+// The editor's date field IS the schedule: a date publishes the row, an EMPTY
+// date drafts it (no date, status 'draft'), and a body that does not mention the
+// date at all leaves the schedule alone. The last part is what keeps a partial
+// update a partial update: if an absent `showDate` drafted the row, `{}` — the
+// documented no-op — would silently unpublish a live puzzle, and the two
+// contracts cannot both hold. The admin UI always sends both fields, so the
+// explicit empty string is how a human drafts a puzzle.
+
+pub fn update_with_an_empty_date_drafts_the_puzzle_test() {
+  let path = fresh_admin_db("admin-update-draft")
+  configure_audience()
+  let assert Ok(row) =
+    store.insert_puzzle(path, "Star", show_date, triangle, fixture_text())
+
+  let response = put_puzzle(row.id, "{\"showDate\":\"\"}")
+  should.equal(200, response.status)
+  let assert Ok(puzzle) = response_puzzle(simulate.read_body(response))
+  should.equal("", puzzle.show_date)
+  should.equal(store.status_draft, puzzle.status)
+
+  // The schedule lost the row: nothing is published on that day any more, and
+  // the never-past ceiling drops back to whatever else is published (nothing).
+  should.equal(Ok(option.None), store.puzzle_by_date(path, show_date))
+  should.equal(Ok(option.None), store.newest_published(path))
+  // ...while the drawing and its fixture's numbers are untouched: drafting is a
+  // schedule change, not a redraw.
+  let assert Ok(Some(stored)) = store.puzzle_by_id(path, row.id)
+  should.equal(triangle, stored.dots_json)
+  let assert Ok(fixture) = fixture_json.decode(stored.fixture_json)
+  let assert Ok(before) = fixture_json.decode(row.fixture_json)
+  should.equal(before.dial, fixture.dial)
+}
+
+pub fn a_partial_update_that_does_not_mention_the_date_leaves_the_schedule_alone_test() {
+  // Pinned on purpose: PUT is partial, so "not mentioned" cannot also mean
+  // "draft" (see the section note). A published row stays published...
+  let path = fresh_admin_db("admin-update-partial")
+  configure_audience()
+  let assert Ok(published) =
+    store.insert_puzzle(path, "Star", show_date, triangle, fixture_text())
+  let renamed = put_puzzle(published.id, "{\"name\":\"The Star\"}")
+  should.equal(200, renamed.status)
+  let assert Ok(Some(after)) = store.puzzle_by_id(path, published.id)
+  should.equal(show_date, after.show_date)
+  should.equal(store.status_published, after.status)
+  // ...and a draft stays a draft.
+  let assert Ok(draft) =
+    store.insert_draft(path, "Sketch", triangle, fixture_text(), "hermes")
+  let drafted = put_puzzle(draft.id, "{\"name\":\"The Sketch\"}")
+  should.equal(200, drafted.status)
+  let assert Ok(Some(kept)) = store.puzzle_by_id(path, draft.id)
+  should.equal("", kept.show_date)
+  should.equal(store.status_draft, kept.status)
+}
+
+pub fn update_with_a_date_approves_a_draft_and_keeps_its_author_test() {
+  let path = fresh_admin_db("admin-approve")
+  configure_audience()
+  let assert Ok(draft) =
+    store.insert_draft(path, "Snail", triangle, fixture_text(), "hermes")
+  let assert Ok(before) = fixture_json.decode(draft.fixture_json)
+
+  // The approve payload, in full: a date, nothing else.
+  let response = put_puzzle(draft.id, "{\"showDate\":\"2026-11-18\"}")
+  should.equal(200, response.status)
+  let assert Ok(puzzle) = response_puzzle(simulate.read_body(response))
+  should.equal("2026-11-18", puzzle.show_date)
+  should.equal(store.status_published, puzzle.status)
+
+  let assert Ok(Some(stored)) = store.puzzle_by_id(path, draft.id)
+  // The agent's authorship survives the human's approval — the audit trail is
+  // the point of the column.
+  should.equal("hermes", stored.creator)
+  should.equal("Snail", stored.name)
+  should.equal(triangle, stored.dots_json)
+  should.equal(Ok(option.Some("2026-11-18")), store.newest_published(path))
+  should.equal(
+    Ok(option.Some(stored)),
+    store.puzzle_by_date(path, "2026-11-18"),
+  )
+  // No DFT ran (the drawing did not change), but the fixture's embedded copy
+  // now says the date the row does.
+  let assert Ok(after) = fixture_json.decode(stored.fixture_json)
+  should.equal(before.dial, after.dial)
+  should.equal(before.target, after.target)
+  should.equal("2026-11-18", after.show_date)
+}
+
+pub fn approving_a_draft_onto_a_taken_date_is_409_test() {
+  let path = fresh_admin_db("admin-approve-clash")
+  configure_audience()
+  let assert Ok(taken) =
+    store.insert_puzzle(path, "Taken", "2026-11-18", triangle, fixture_text())
+  let assert Ok(draft) =
+    store.insert_draft(path, "Snail", triangle, fixture_text(), "hermes")
+
+  let response = put_puzzle(draft.id, "{\"showDate\":\"2026-11-18\"}")
+  should.equal(409, response.status)
+  should.equal(
+    "{\"status\":\"error\",\"errors\":[\"DuplicateShowDate\"]}",
+    simulate.read_body(response),
+  )
+  // The refusal is total: the draft is still a draft and the day still belongs
+  // to the puzzle that had it.
+  let assert Ok(Some(unchanged)) = store.puzzle_by_id(path, draft.id)
+  should.equal("", unchanged.show_date)
+  should.equal(store.status_draft, unchanged.status)
+  should.equal(Ok(option.Some(taken)), store.puzzle_by_date(path, "2026-11-18"))
+}
+
+pub fn update_with_an_impossible_date_is_bad_puzzle_date_test() {
+  let path = fresh_admin_db("admin-update-bad-date")
+  configure_audience()
+  let assert Ok(row) =
+    store.insert_puzzle(path, "Star", show_date, triangle, fixture_text())
+
+  let response = put_puzzle(row.id, "{\"showDate\":\"2026-02-30\"}")
+  should.equal(400, response.status)
+  should.equal(
+    "{\"status\":\"error\",\"errors\":[\"BadPuzzleDate\"]}",
+    simulate.read_body(response),
+  )
+  let assert Ok(Some(stored)) = store.puzzle_by_id(path, row.id)
+  should.equal(show_date, stored.show_date)
+}
+
+pub fn update_changes_the_drawing_and_the_date_in_one_write_test() {
+  // "Approve and tidy it up" is one PUT: the dots and the date must land
+  // together, with the fixture derived from the dots AND labelled with the date
+  // the row is being given.
+  let path = fresh_admin_db("admin-update-dots-and-date")
+  configure_audience()
+  let assert Ok(draft) =
+    store.insert_draft(path, "Snail", triangle, fixture_text(), "hermes")
+
+  let response =
+    put_puzzle(
+      draft.id,
+      "{\"showDate\":\"2026-11-20\",\"dots\":" <> star_dots <> "}",
+    )
+  should.equal(200, response.status)
+
+  let expected = derivation.derive_fixture(star_points(), "Snail", "2026-11-20")
+  let assert Ok(puzzle) = response_puzzle(simulate.read_body(response))
+  should.equal(expected, puzzle.fixture)
+  should.equal(star_points(), puzzle.dots)
+  should.equal(store.status_published, puzzle.status)
+
+  let assert Ok(Some(stored)) = store.puzzle_by_id(path, draft.id)
+  should.equal(fixture_json.to_string(expected), stored.fixture_json)
+  should.equal(fixture_json.dots_to_string(star_points()), stored.dots_json)
+}
+
 // ---------- DELETE /api/admin/puzzles/<id> ----------
 
 pub fn delete_removes_the_puzzle_but_keeps_its_telemetry_test() {
@@ -540,6 +736,31 @@ pub fn the_list_is_newest_first_with_the_q23_numbers_test() {
   assert_row(rows, 2, "Oldest", 0, 0, None, None)
 }
 
+pub fn the_list_shows_drafts_with_their_author_test() {
+  // The menu badges and filters on these two fields, so the list must carry
+  // them: a draft is listed (it is part of the calendar) with its creator, and
+  // it sorts after every dated row (drafts share the empty date).
+  let path = fresh_admin_db("admin-list-drafts")
+  configure_audience()
+  let assert Ok(_published) =
+    store.insert_puzzle(path, "Star", "2026-01-03", triangle, fixture_text())
+  let assert Ok(draft) =
+    store.insert_draft(path, "Sketch", triangle, fixture_text(), "hermes")
+
+  let response = call(Some(good_token()), http.Get, "/api/admin/puzzles", None)
+  should.equal(200, response.status)
+  let assert Ok(#("ok", rows)) =
+    json.parse(simulate.read_body(response), using: list_decoder())
+  let assert [first, second, ..] = rows
+  should.equal("Star", first.name)
+  should.equal(store.status_published, first.status)
+  should.equal(store.creator_human, first.creator)
+  should.equal("Sketch", second.name)
+  should.equal(store.status_draft, second.status)
+  should.equal("hermes", second.creator)
+  should.equal(draft.id, second.id)
+}
+
 pub fn an_empty_calendar_lists_nothing_test() {
   fresh_admin_db("admin-list-empty")
   configure_audience()
@@ -598,7 +819,7 @@ const ui_html =
   "<!doctype html>\n<title>admin · puzzles</title>\n<p data-x=\"1\">ünïcode ✓ &amp; </p>\n"
 
 fn ui_state() -> toy_admin.App {
-  toy_admin.App(admin_ui: Some(ui_html))
+  toy_admin.App(admin_ui: Some(ui_html), agent: agent.Disabled)
 }
 
 pub fn the_admin_ui_is_fenced_like_the_api_it_drives_test() {
@@ -640,7 +861,7 @@ pub fn a_failed_boot_read_is_a_500_not_a_blank_page_test() {
   configure_audience()
   let response =
     call_with(
-      toy_admin.App(admin_ui: None),
+      toy_admin.App(admin_ui: None, agent: agent.Disabled),
       Some(good_token()),
       http.Get,
       "/api/admin",
@@ -971,6 +1192,8 @@ type AdminPuzzle {
     id: Int,
     name: String,
     show_date: String,
+    status: String,
+    creator: String,
     dots: List(sketch.Dot),
     fixture: derivation.Fixture,
     created_at: Int,
@@ -992,6 +1215,8 @@ fn puzzle_decoder() -> decode.Decoder(AdminPuzzle) {
   use id <- decode.field("id", decode.int)
   use name <- decode.field("name", decode.string)
   use show_date <- decode.field("showDate", decode.string)
+  use status <- decode.field("status", decode.string)
+  use creator <- decode.field("creator", decode.string)
   use dots <- decode.field("dots", fixture_json.dots_decoder())
   use fixture <- decode.field("fixture", fixture_json.fixture_decoder())
   use created_at <- decode.field("createdAt", decode.int)
@@ -1000,6 +1225,8 @@ fn puzzle_decoder() -> decode.Decoder(AdminPuzzle) {
     id: id,
     name: name,
     show_date: show_date,
+    status: status,
+    creator: creator,
     dots: dots,
     fixture: fixture,
     created_at: created_at,
@@ -1012,6 +1239,8 @@ type MenuRow {
     id: Int,
     name: String,
     show_date: String,
+    status: String,
+    creator: String,
     attempts: Int,
     solves: Int,
     solve_pct: Option(String),
@@ -1029,6 +1258,8 @@ fn row_decoder() -> decode.Decoder(MenuRow) {
   use id <- decode.field("id", decode.int)
   use name <- decode.field("name", decode.string)
   use show_date <- decode.field("showDate", decode.string)
+  use status <- decode.field("status", decode.string)
+  use creator <- decode.field("creator", decode.string)
   use attempts <- decode.field("attempts", decode.int)
   use solves <- decode.field("solves", decode.int)
   use solve_pct <- decode.field("solvePct", decode.optional(decode.string))
@@ -1037,6 +1268,8 @@ fn row_decoder() -> decode.Decoder(MenuRow) {
     id: id,
     name: name,
     show_date: show_date,
+    status: status,
+    creator: creator,
     attempts: attempts,
     solves: solves,
     solve_pct: solve_pct,
@@ -1060,6 +1293,10 @@ fn assert_row(
   should.equal(solve_pct, row.solve_pct)
   should.equal(median_moves, row.median_moves)
   should.be_true(row.id > 0)
+  // A row inserted through store.insert_puzzle is a published, human puzzle;
+  // the draft half is the_list_shows_drafts_with_their_author_test.
+  should.equal(store.status_published, row.status)
+  should.equal(store.creator_human, row.creator)
 }
 
 fn list_at(rows: List(a), index: Int) -> Result(a, Nil) {

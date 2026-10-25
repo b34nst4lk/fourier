@@ -6,6 +6,8 @@
 ////   GET  /api/puzzle/today      which puzzle to serve this visitor
 ////   POST /api/solve             record a solve
 ////   POST /api/attempts/abandon  record an abandoned attempt
+////   GET  /api/agent/schedule    the calendar, read-only (agent drafts, 2026-10-25)
+////   POST /api/agent/puzzle      leave an UNDATED draft for a human to approve
 ////
 //// Auth is Cloudflare Access at the tunnel (Q12). The PUBLIC routes above
 //// authenticate nothing and must not start doing so — they serve a puzzle and
@@ -17,6 +19,13 @@
 //// shelf item is. The admin UI page (`GET /api/admin`) sits behind the SAME
 //// fence as the JSON API it drives: the page is the control panel, not a
 //// public artifact.
+////
+//// The /api/agent/* routes are fenced by toy_admin/agent.gleam instead: a
+//// shared bearer key (AGENT_API_KEY) for the local agent that draws drafts, and
+//// no Cloudflare Access — the agent is inside the box, on its own docker
+//// network, with no browser. That module's header says why an unset key closes
+//// the door, why the comparison is not constant-time, and why an agent may not
+//// set a show date.
 ////
 //// This is the umbrella's one Erlang-native piece (Q15): it runs inside the
 //// Docker image on the Erlang target, listening on $PORT (default 8080) bound
@@ -64,8 +73,10 @@ import mist
 import toy_admin/access
 import toy_admin/admin
 import toy_admin/admin_ui
+import toy_admin/agent
 import toy_admin/clock
 import toy_admin/dates
+import toy_admin/env
 import toy_admin/envelope
 import toy_admin/fixture_json
 import toy_admin/ingest
@@ -93,12 +104,14 @@ type Abandon {
 
 /// The app state: what the process knows that the request does not.
 ///
-/// Today that is exactly the embedded admin UI bundle, read ONCE at boot
-/// (admin_ui.gleam explains why boot and not per-request). It is a value passed
-/// to `handle_request` rather than module-level state so the route tests can say
-/// "the bundle was missing" — a boot state, not a filesystem accident.
+/// Two things, both read ONCE at boot: the embedded admin UI bundle
+/// (admin_ui.gleam explains why boot and not per-request) and the agent API's
+/// configuration (agent.gleam: one shared key for the process's whole life). It
+/// is a value passed to `handle_request` rather than module-level state so the
+/// route tests can say "the bundle was missing" or "no agent key was
+/// configured" — boot states, not filesystem or environment accidents.
 pub type App {
-  App(admin_ui: Option(String))
+  App(admin_ui: Option(String), agent: agent.Config)
 }
 
 pub fn main() -> Nil {
@@ -115,7 +128,14 @@ pub fn main() -> Nil {
   access.announce_at_boot(access.configured_audience(), fn(line) {
     logging.log(logging.Warning, line)
   })
-  let app = load(admin_ui.bundle_path)
+  // The agent fence's configuration, read once and announced the same way: no
+  // AGENT_API_KEY means /api/agent/* answers 401 and that is worth one line at
+  // boot rather than a 401 in a log read later (agent.gleam).
+  let agent_config = agent.config_from(env.get)
+  agent.announce_at_boot(agent_config, fn(line) {
+    logging.log(logging.Warning, line)
+  })
+  let app = load(admin_ui.bundle_path, agent_config)
   // The request log lives at INFO; the Erlang logger's default level is
   // NOTICE, which would swallow every line. Set it once, at boot, so the
   // container's logs carry request lines the operator can read.
@@ -136,7 +156,7 @@ pub fn main() -> Nil {
 /// and this warning is the one place the operator learns why. Same discipline as
 /// access.announce_at_boot — a degraded mode announces itself once, at boot,
 /// instead of being discovered from a broken page in a browser.
-pub fn load(admin_ui_path: String) -> App {
+pub fn load(admin_ui_path: String, agent_config: agent.Config) -> App {
   let bundle = admin_ui.load(admin_ui_path)
   case bundle {
     option.None ->
@@ -148,7 +168,7 @@ pub fn load(admin_ui_path: String) -> App {
       )
     option.Some(_) -> Nil
   }
-  App(admin_ui: bundle)
+  App(admin_ui: bundle, agent: agent_config)
 }
 
 /// The route table. Public so the wire contract can be driven from tests
@@ -179,6 +199,11 @@ pub fn handle_request(request: wisp.Request, app: App) -> wisp.Response {
     ["api", "admin"] -> admin.ui(request, app.admin_ui)
     ["api", "admin", ""] -> admin.ui(request, app.admin_ui)
     ["api", "admin", "preview"] -> admin.preview(request)
+    // Agent drafts (2026-10-25): the local agent's two routes, behind its own
+    // bearer fence rather than the Access one (agent.gleam). The app state's
+    // configuration, not the environment, decides whether they are open.
+    ["api", "agent", "schedule"] -> agent.schedule(request, app.agent)
+    ["api", "agent", "puzzle"] -> agent.puzzle(request, app.agent)
     _ -> wisp.not_found()
   }
 }

@@ -6,6 +6,7 @@ import gleam/float
 import gleam/int
 import gleam/option.{None}
 import toy_admin
+import toy_admin/agent
 import toy_admin/env
 
 pub fn be_close(actual: Float, expected: Float, tolerance: Float) -> Nil {
@@ -63,7 +64,7 @@ pub fn temp_path(label: String) -> String {
 /// blind to the bundle, and saying so here keeps those tests honest about what
 /// they exercise.
 pub fn app() -> toy_admin.App {
-  toy_admin.App(admin_ui: None)
+  toy_admin.App(admin_ui: None, agent: agent.Disabled)
 }
 
 /// Set a process environment variable, exactly as the container's entrypoint

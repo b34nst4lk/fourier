@@ -88,6 +88,44 @@ body {
 .rows td.name { font-weight: 600; }
 .rows td.acts { text-align: right; white-space: nowrap; }
 .rows td.acts .btn { margin-left: 5px; }
+.rows td.acts .input { margin-left: 5px; }
+/* the calendar's two segments (status, author): small-caps words in a row,
+   the chosen one lit like the panel's toggle — same family, same gesture */
+.filters { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; margin: 0 0 10px; }
+.filters .seg { display: flex; gap: 4px; align-items: center; }
+.filters .seg .label { margin-right: 2px; }
+.filters .btn {
+  font-variant: small-caps;
+  letter-spacing: .04em;
+  font-size: .8rem;
+  padding: 2px 8px;
+  color: var(--mut);
+  background: none;
+  border-color: transparent;
+}
+.filters .btn:hover { border-color: var(--line); }
+.filters .btn.on { color: var(--ink); background: var(--card); border-color: var(--line); }
+/* a draft's state, shown where its date would be; and who filed the row */
+.badge {
+  display: inline-block;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: .72rem;
+  font-variant: small-caps;
+  letter-spacing: .04em;
+}
+.badge.mut { color: var(--mut); border: 1.5px dashed var(--line); }
+.chip {
+  display: inline-block;
+  margin-left: 7px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  border: 1.5px solid var(--line);
+  color: var(--mut);
+  font-size: .72rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.input.date { width: auto; padding: 3px 6px; font-size: .85rem; }
 .panels { display: grid; gap: 16px; grid-template-columns: minmax(240px, 1fr) minmax(260px, 1fr); align-items: start; }
 @media (max-width: 700px) { .panels { grid-template-columns: 1fr; } }
 /* the authoring studio: the drawing and the LIVE panel side by side when there

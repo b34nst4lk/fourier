@@ -16,6 +16,7 @@ import gleam/option
 import gleam/result
 import gleeunit/should
 import helpers
+import sqlight
 import toy_admin/store.{
   DuplicateShowDate, InvalidMoves, InvalidShowDate, UnknownPuzzle,
   UnknownPuzzleId,
@@ -528,4 +529,229 @@ fn one_move() -> String {
 
 fn three_moves() -> String {
   "[{\"slot\":0,\"dir\":1},{\"slot\":2,\"dir\":-1},{\"slot\":1,\"dir\":1}]"
+}
+
+// ---------- drafts and the schedule (agent drafts, 2026-10-25) ----------
+//
+// A draft is a puzzle with NO show_date: it exists in the calendar, it can be
+// edited and test-played, and it is invisible to the serving rule until a human
+// dates it. The two columns that say so are `status` ('published'/'draft') and
+// `creator` ('human' or an agent id); both arrived in one migration, and the
+// old table-level UNIQUE(show_date) became a PARTIAL index, because every draft
+// shares the empty date.
+
+/// The phase-4a schema, verbatim, so the migration is driven against the shape
+/// that is actually out there (a volume from a running container).
+const legacy_schema =
+  "CREATE TABLE puzzles (
+     id INTEGER PRIMARY KEY,
+     name TEXT NOT NULL,
+     show_date TEXT NOT NULL UNIQUE,
+     dots TEXT NOT NULL,
+     fixture TEXT NOT NULL,
+     created_at INTEGER NOT NULL,
+     updated_at INTEGER NOT NULL
+   );"
+
+/// A database as the PREVIOUS release left it: the old table, one old row.
+fn legacy_db(label: String) -> String {
+  let path = helpers.temp_db_path(label)
+  let assert Ok(connection) = sqlight.open(path)
+  let assert Ok(Nil) = sqlight.exec(legacy_schema, on: connection)
+  let assert Ok(Nil) =
+    sqlight.exec(
+      "INSERT INTO puzzles (name, show_date, dots, fixture, created_at, updated_at)
+       VALUES ('Old', '2026-10-01', '[]', '{}', 1, 1);",
+      on: connection,
+    )
+  let assert Ok(Nil) = sqlight.close(connection)
+  path
+}
+
+pub fn init_migrates_a_phase_4a_database_test() {
+  let path = legacy_db("migrate")
+  let assert Ok(Nil) = store.init(path)
+  let assert Ok(rows) = store.list_puzzles(path)
+  should.equal(["Old"], list.map(rows, fn(row) { row.name }))
+  let assert [row, ..] = rows
+  // The new columns arrive with their defaults: every row that existed before
+  // drafts is a published, human-authored puzzle.
+  should.equal(store.status_published, row.status)
+  should.equal(store.creator_human, row.creator)
+  should.equal("2026-10-01", row.show_date)
+  should.equal(Ok(option.Some("2026-10-01")), store.newest_published(path))
+
+  // Booting again is a no-op (container restart), and the old UNIQUE(show_date)
+  // is gone: dateless drafts can share ''.
+  let assert Ok(Nil) = store.init(path)
+  should.equal(Ok(1), store.count_puzzles(path))
+  let assert Ok(_) = store.insert_draft(path, "One", dots, fixture, "hermes")
+  let assert Ok(_) = store.insert_draft(path, "Two", dots, fixture, "hermes")
+  should.equal(Ok(3), store.count_puzzles(path))
+}
+
+pub fn insert_draft_stores_a_dateless_draft_test() {
+  let path = setup("draft-insert")
+  let assert Ok(draft) =
+    store.insert_draft(path, "Snail", dots, fixture, "hermes")
+  should.equal("", draft.show_date)
+  should.equal(store.status_draft, draft.status)
+  should.equal("hermes", draft.creator)
+  should.equal(dots, draft.dots_json)
+  should.equal(fixture, draft.fixture_json)
+  // The calendar lists drafts; the serving rule does not see them.
+  should.equal(Ok([draft]), store.list_puzzles(path))
+  should.equal(Ok(option.None), store.newest_published(path))
+}
+
+pub fn insert_puzzle_is_a_human_published_row_test() {
+  let #(_, puzzle) = with_puzzle("defaults", day)
+  should.equal(store.status_published, puzzle.status)
+  should.equal(store.creator_human, puzzle.creator)
+}
+
+pub fn many_drafts_share_the_empty_show_date_test() {
+  // The partial unique index is the migration's whole point: 'published' rows
+  // are unique by date, drafts are not unique by anything.
+  let path = setup("draft-share")
+  let assert Ok(_) = store.insert_draft(path, "A", dots, fixture, "hermes")
+  let assert Ok(_) = store.insert_draft(path, "B", dots, fixture, "hermes")
+  should.equal(Ok(2), store.count_puzzles(path))
+}
+
+pub fn publish_dates_a_draft_test() {
+  let path = setup("publish")
+  let assert Ok(draft) =
+    store.insert_draft(path, "Snail", dots, fixture, "hermes")
+  let assert Ok(published) = store.publish(path, draft.id, day)
+  should.equal(day, published.show_date)
+  should.equal(store.status_published, published.status)
+  // The agent's authorship survives the human's approval.
+  should.equal("hermes", published.creator)
+  should.equal(Ok(option.Some(day)), store.newest_published(path))
+  should.equal(Ok(option.Some(published)), store.puzzle_by_date(path, day))
+}
+
+pub fn publish_refuses_a_date_another_published_puzzle_holds_test() {
+  let path = setup("publish-duplicate")
+  let assert Ok(first) = store.insert_puzzle(path, "First", day, dots, fixture)
+  let assert Ok(draft) =
+    store.insert_draft(path, "Snail", dots, fixture, "hermes")
+
+  should.equal(
+    Error(DuplicateShowDate(day)),
+    store.publish(path, draft.id, day),
+  )
+  // The refusal changed nothing: the draft is still a draft and the day still
+  // belongs to the puzzle that had it.
+  should.equal(Ok(option.Some(draft)), store.puzzle_by_id(path, draft.id))
+  should.equal(Ok(option.Some(first)), store.puzzle_by_date(path, day))
+}
+
+pub fn publish_may_keep_the_date_it_already_has_test() {
+  // Approving the day a puzzle is already on is not a collision with itself.
+  let path = setup("publish-self")
+  let assert Ok(published) = store.insert_puzzle(path, "A", day, dots, fixture)
+  let assert Ok(same) = store.publish(path, published.id, day)
+  should.equal(day, same.show_date)
+  should.equal(store.status_published, same.status)
+  should.equal(published.created_at, same.created_at)
+}
+
+pub fn publish_moves_a_published_puzzle_to_another_day_test() {
+  let path = setup("publish-move")
+  let assert Ok(published) = store.insert_puzzle(path, "A", day, dots, fixture)
+  let assert Ok(moved) = store.publish(path, published.id, "2026-10-26")
+  should.equal("2026-10-26", moved.show_date)
+  should.equal(store.status_published, moved.status)
+  should.equal(Ok(option.None), store.puzzle_by_date(path, day))
+}
+
+pub fn publish_of_an_unknown_id_is_refused_test() {
+  let #(path, puzzle) = with_puzzle("publish-unknown", day)
+  should.equal(
+    Error(UnknownPuzzleId(puzzle.id + 100)),
+    store.publish(path, puzzle.id + 100, "2026-10-26"),
+  )
+}
+
+pub fn unpublish_takes_the_date_away_test() {
+  let #(path, puzzle) = with_puzzle("unpublish", day)
+  let assert Ok(draft) = store.unpublish(path, puzzle.id)
+  should.equal("", draft.show_date)
+  should.equal(store.status_draft, draft.status)
+  should.equal(store.creator_human, draft.creator)
+  should.equal(Ok(option.None), store.newest_published(path))
+  should.equal(Ok(option.None), store.puzzle_by_date(path, day))
+}
+
+pub fn unpublish_of_an_unknown_id_is_refused_test() {
+  let path = setup("unpublish-unknown")
+  should.equal(Error(UnknownPuzzleId(42)), store.unpublish(path, 42))
+}
+
+pub fn newest_published_ignores_drafts_test() {
+  // The never-past ceiling (Q11) is about PUBLISHED days: a dateless draft must
+  // not become the ceiling, and a draft dated later than every published puzzle
+  // must not either.
+  let path = setup("newest-drafts")
+  let assert Ok(_) = store.insert_puzzle(path, "A", "2026-10-20", dots, fixture)
+  let assert Ok(_) = store.insert_draft(path, "Draft", dots, fixture, "hermes")
+  should.equal(Ok(option.Some("2026-10-20")), store.newest_published(path))
+}
+
+pub fn update_takes_an_empty_date_as_the_draft_marker_test() {
+  // The editor's date field is the whole schedule: a date publishes, an empty
+  // date drafts. One write, so "dots AND date in one body" is one row change.
+  let #(path, puzzle) = with_puzzle("update-draftify", day)
+  let assert Ok(drafted) =
+    store.update_puzzle(
+      path,
+      puzzle.id,
+      store.PuzzleUpdate(
+        name: option.None,
+        show_date: option.Some(""),
+        dots_json: option.None,
+        fixture_json: option.None,
+      ),
+    )
+  should.equal("", drafted.show_date)
+  should.equal(store.status_draft, drafted.status)
+  should.equal(Ok(option.None), store.newest_published(path))
+
+  let assert Ok(republished) =
+    store.update_puzzle(
+      path,
+      puzzle.id,
+      store.PuzzleUpdate(
+        name: option.None,
+        show_date: option.Some("2026-10-30"),
+        dots_json: option.None,
+        fixture_json: option.None,
+      ),
+    )
+  should.equal("2026-10-30", republished.show_date)
+  should.equal(store.status_published, republished.status)
+}
+
+pub fn update_without_a_date_leaves_the_schedule_alone_test() {
+  // A name-only edit of a draft must not silently publish it (the status is
+  // not the editor's to change by omission).
+  let path = setup("update-keeps-draft")
+  let assert Ok(draft) =
+    store.insert_draft(path, "Snail", dots, fixture, "hermes")
+  let assert Ok(renamed) =
+    store.update_puzzle(
+      path,
+      draft.id,
+      store.PuzzleUpdate(
+        name: option.Some("The Snail"),
+        show_date: option.None,
+        dots_json: option.None,
+        fixture_json: option.None,
+      ),
+    )
+  should.equal(store.status_draft, renamed.status)
+  should.equal("", renamed.show_date)
+  should.equal("The Snail", renamed.name)
 }

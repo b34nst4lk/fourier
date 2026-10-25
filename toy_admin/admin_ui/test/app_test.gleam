@@ -14,6 +14,7 @@
 import admin_ui
 import admin_ui/dial
 import admin_ui/draw
+import admin_ui/schedule
 import admin_ui/score
 import admin_ui/wire
 import gleam/list
@@ -51,6 +52,8 @@ fn model() -> admin_ui.Model {
   admin_ui.Model(
     view: admin_ui.Authoring,
     rows: [],
+    status_filter: admin_ui.AnyStatus,
+    creator_filter: admin_ui.AnyCreator,
     busy: False,
     flash: None,
     failure: None,
@@ -61,6 +64,8 @@ fn model() -> admin_ui.Model {
     drag: None,
     play: None,
     armed: None,
+    approving: None,
+    approve_date: "",
     preview: None,
     preview_pending: False,
     preview_stale: False,
@@ -485,6 +490,270 @@ pub fn a_drag_never_survives_a_view_swap_test() {
   should.equal(Some(0), grabbed.drag)
   // a fresh drawing starts with no gesture in flight
   should.equal(None, step(grabbed, admin_ui.StartNew).drag)
+}
+
+// ---------------------------------------------------------------------------
+// The calendar as a working list: the two filters, the draft badges, and the
+// approve action (agent drafts, 2026-10-25).
+//
+// A local agent files undated drafts; a human dates them. That split is the
+// whole point of the schedule states, so what is asserted here is that the menu
+// can SEGMENT the calendar (whose draft is this, what is still undated) and that
+// approving is a one-field write: the date, nothing else.
+// ---------------------------------------------------------------------------
+
+fn row(
+  id: Int,
+  name: String,
+  show_date: String,
+  status: String,
+  creator: String,
+) -> wire.Row {
+  wire.Row(
+    id: id,
+    name: name,
+    show_date: show_date,
+    status: status,
+    creator: creator,
+    attempts: 0,
+    solves: 0,
+    solve_pct: None,
+    median_moves: None,
+  )
+}
+
+/// One calendar with one of each: a published human puzzle, a human draft and an
+/// agent draft.
+fn calendar() -> List(wire.Row) {
+  [
+    row(1, "the star", "2026-11-18", "published", "human"),
+    row(2, "my sketch", "", "draft", "human"),
+    row(3, "the snail", "", "draft", "hermes"),
+  ]
+}
+
+fn named(rows: List(wire.Row)) -> List(String) {
+  list.map(rows, fn(row) { row.name })
+}
+
+pub fn the_two_filters_segment_the_calendar_test() {
+  let model = admin_ui.Model(..model(), rows: calendar())
+
+  // status: all / published / drafts
+  should.equal(
+    ["the star", "my sketch", "the snail"],
+    named(admin_ui.visible_rows(model)),
+  )
+  should.equal(
+    ["the star"],
+    named(admin_ui.visible_rows(
+      admin_ui.Model(..model, status_filter: admin_ui.PublishedOnly),
+    )),
+  )
+  should.equal(
+    ["my sketch", "the snail"],
+    named(admin_ui.visible_rows(
+      admin_ui.Model(..model, status_filter: admin_ui.DraftsOnly),
+    )),
+  )
+
+  // creator: all / you (the human) / the agents
+  should.equal(
+    ["the star", "my sketch"],
+    named(admin_ui.visible_rows(
+      admin_ui.Model(..model, creator_filter: admin_ui.MineOnly),
+    )),
+  )
+  should.equal(
+    ["the snail"],
+    named(admin_ui.visible_rows(
+      admin_ui.Model(..model, creator_filter: admin_ui.AgentsOnly),
+    )),
+  )
+
+  // the two compose: "agent drafts" is one row, "my drafts" is another
+  should.equal(
+    ["the snail"],
+    named(admin_ui.visible_rows(
+      admin_ui.Model(
+        ..model,
+        status_filter: admin_ui.DraftsOnly,
+        creator_filter: admin_ui.AgentsOnly,
+      ),
+    )),
+  )
+  should.equal(
+    ["my sketch"],
+    named(admin_ui.visible_rows(
+      admin_ui.Model(
+        ..model,
+        status_filter: admin_ui.DraftsOnly,
+        creator_filter: admin_ui.MineOnly,
+      ),
+    )),
+  )
+  // ...and an empty intersection is empty, not "all"
+  should.equal(
+    [],
+    named(admin_ui.visible_rows(
+      admin_ui.Model(
+        ..model,
+        status_filter: admin_ui.PublishedOnly,
+        creator_filter: admin_ui.AgentsOnly,
+      ),
+    )),
+  )
+}
+
+pub fn the_filters_are_set_by_their_own_messages_test() {
+  let drafts = step(model(), admin_ui.FilterStatus(admin_ui.DraftsOnly))
+  should.equal(admin_ui.DraftsOnly, drafts.status_filter)
+  let mine = step(drafts, admin_ui.FilterCreator(admin_ui.MineOnly))
+  should.equal(admin_ui.MineOnly, mine.creator_filter)
+  // and switching one filter leaves the other alone
+  should.equal(admin_ui.DraftsOnly, mine.status_filter)
+}
+
+pub fn only_a_draft_offers_approve_and_only_a_dated_row_offers_test_test() {
+  // The row's buttons ARE its state: a draft cannot be played (there is no day
+  // to play), and a dated puzzle has nothing to approve.
+  should.equal(
+    [admin_ui.EditAction, admin_ui.ApproveAction, admin_ui.DeleteAction],
+    admin_ui.row_actions(row(3, "the snail", "", "draft", "hermes")),
+  )
+  should.equal(
+    [admin_ui.PlayAction, admin_ui.EditAction, admin_ui.DeleteAction],
+    admin_ui.row_actions(row(1, "the star", "2026-11-18", "published", "human")),
+  )
+}
+
+pub fn an_agent_draft_is_badged_with_its_author_and_a_human_one_is_not_test() {
+  // The creator chip: an agent's id, so the human knows who filed the sketch.
+  // "human" is the absence of a chip — the default author is not news.
+  should.equal(
+    Some("hermes"),
+    admin_ui.creator_badge(row(3, "the snail", "", "draft", "hermes")),
+  )
+  should.equal(
+    None,
+    admin_ui.creator_badge(row(2, "my sketch", "", "draft", "human")),
+  )
+  // the draft badge is the status, nothing else
+  should.equal(
+    True,
+    admin_ui.draft_badge(row(3, "the snail", "", "draft", "hermes")),
+  )
+  should.equal(
+    False,
+    admin_ui.draft_badge(row(1, "the star", "2026-11-18", "published", "human")),
+  )
+}
+
+pub fn an_approve_opens_with_the_next_free_day_test() {
+  let model = admin_ui.Model(..model(), rows: calendar())
+  let opened = step(model, admin_ui.StartApprove(3))
+  should.equal(Some(3), opened.approving)
+
+  // The prefill is the calendar's next free day — computed here, from the rows
+  // in hand (the server only says "taken" when it is). No literal date: "today"
+  // is the browser's clock, so what is asserted is the property —
+  // schedule_test.gleam pins the arithmetic against fixed days.
+  let expected =
+    schedule.next_available(admin_ui.taken_dates(calendar()), schedule.today())
+  should.equal(expected, opened.approve_date)
+  should.equal(
+    False,
+    list.contains(admin_ui.taken_dates(calendar()), opened.approve_date),
+  )
+  let assert Ok(prefilled) = schedule.day_number(opened.approve_date)
+  let assert Ok(today) = schedule.day_number(schedule.today())
+  should.be_true(prefilled >= today)
+}
+
+pub fn an_approve_is_confirmed_with_the_date_and_nothing_else_test() {
+  let model = admin_ui.Model(..model(), rows: calendar())
+  let opened = step(model, admin_ui.StartApprove(3))
+
+  // the human picks another day: the field is the input
+  let picked = step(opened, admin_ui.ApproveDateChanged("2026-12-01"))
+  should.equal("2026-12-01", picked.approve_date)
+
+  // confirming goes to the server, and the body is the one-field PUT
+  let confirmed = step(picked, admin_ui.Approve)
+  should.equal(True, confirmed.busy)
+  should.equal(Some(3), confirmed.approving)
+
+  // ...and the answer comes back to the calendar
+  let settled = step(confirmed, admin_ui.Approved(Ok(Nil)))
+  should.equal(None, settled.approving)
+  should.equal("", settled.approve_date)
+  should.equal(Some("approved"), settled.flash)
+  should.equal(True, settled.busy)
+}
+
+pub fn a_refused_approve_keeps_the_open_date_for_another_try_test() {
+  // A taken date costs a re-pick, never the state: the row stays open with the
+  // date that was refused, and the banner says which date it was about.
+  let model = admin_ui.Model(..model(), rows: calendar())
+  let opened = step(model, admin_ui.StartApprove(3))
+  let failure = wire.Failure(409, ["DuplicateShowDate"])
+  let refused = step(opened, admin_ui.Approved(Error(failure)))
+  should.equal(Some(3), refused.approving)
+  should.equal(opened.approve_date, refused.approve_date)
+  should.equal(Some(failure), refused.failure)
+  should.equal(False, refused.busy)
+}
+
+pub fn back_closes_the_approve_without_writing_test() {
+  let model = admin_ui.Model(..model(), rows: calendar())
+  let opened = step(model, admin_ui.StartApprove(3))
+  let closed = step(opened, admin_ui.CancelApprove)
+  should.equal(None, closed.approving)
+  should.equal("", closed.approve_date)
+  should.equal(None, closed.failure)
+}
+
+pub fn a_new_puzzle_prefills_the_next_free_day_test() {
+  // The unified rule the editor shows: the date field starts at the next free
+  // day (a save publishes), and clearing it makes a draft.
+  let model = admin_ui.Model(..model(), rows: calendar())
+  let fresh = step(model, admin_ui.StartNew)
+  should.equal(
+    schedule.next_available(admin_ui.taken_dates(calendar()), schedule.today()),
+    fresh.show_date,
+  )
+  should.equal(None, fresh.approving)
+  // the hint says what clearing the field means, in both editors
+  should.equal("no date — this saves as a draft", admin_ui.date_hint(""))
+  should.equal("", admin_ui.date_hint("2026-11-19"))
+}
+
+pub fn approve_and_delete_are_never_open_together_test() {
+  let model = admin_ui.Model(..model(), rows: calendar())
+  let armed = step(model, admin_ui.ArmDelete(3))
+  should.equal(Some(3), armed.armed)
+
+  let opened = step(armed, admin_ui.StartApprove(3))
+  should.equal(None, opened.armed)
+  should.equal(Some(3), opened.approving)
+
+  let armed_again = step(opened, admin_ui.ArmDelete(3))
+  should.equal(None, armed_again.approving)
+  should.equal("", armed_again.approve_date)
+  should.equal(Some(3), armed_again.armed)
+}
+
+pub fn editing_a_draft_keeps_its_empty_date_as_a_draft_test() {
+  // The editor's date field is the schedule in both directions: opening a draft
+  // leaves the field empty (and the hint explains that an empty date on save
+  // keeps it a draft), and opening a published row fills it in.
+  let model = admin_ui.Model(..model(), rows: calendar())
+  let editing = step(model, admin_ui.StartEdit(3))
+  should.equal(Some(3), editing.editing)
+  should.equal("", editing.show_date)
+  should.equal("the snail", editing.name)
+  let published = step(model, admin_ui.StartEdit(1))
+  should.equal("2026-11-18", published.show_date)
 }
 
 fn play_kind(play: admin_ui.Play, slot: Int) -> dial.Kind {

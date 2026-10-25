@@ -7,7 +7,8 @@
 ////   GET    /api/admin/puzzles        list, newest show_date first, with stats
 ////   POST   /api/admin/puzzles        create {name, showDate, dots}
 ////   GET    /api/admin/puzzles/<id>   one puzzle, full row (dots + fixture)
-////   PUT    /api/admin/puzzles/<id>   partial update {name?, showDate?, dots?}
+////   PUT    /api/admin/puzzles/<id>   partial update {name?, showDate?, dots?};
+////                                    showDate "" = draft, a date = publish
 ////   DELETE /api/admin/puzzles/<id>   204; telemetry rows survive
 ////
 //// Order of operations on EVERY route here, without exception:
@@ -24,6 +25,22 @@
 ////      underline both fields in one round trip);
 ////   6. derivation (create, and dots-changing updates);
 ////   7. the store.
+////
+//// The schedule is the `showDate` field, in all three of its states (agent
+//// drafts, 2026-10-25):
+////
+////   - a date  -> the row is PUBLISHED on it (uniqueness checked by the store's
+////     partial index: 409 DuplicateShowDate);
+////   - ""      -> the row is a DRAFT: no date, invisible to the serving rule, and
+////     still editable (name, dots, fixture). This is how a human drafts a live
+////     puzzle, and the approve action sends nothing but a date;
+////   - absent  -> the body did not mention the schedule, so it is left alone. A
+////     PARTIAL update must stay partial: if an absent `showDate` drafted the row,
+////     `{}` — the documented no-op — would silently unpublish a live puzzle, and
+////     the no-op contract and the draft contract cannot both hold.
+////
+//// On CREATE the same rule binds with one difference: there is no schedule to
+//// leave alone, so an absent or empty date is a draft (201, status draft).
 ////
 //// Derivation is the route layer's job, not the store's (store.update_puzzle's
 //// header): a puzzle's fixture is ALWAYS the derivation of its dots, name and
@@ -63,7 +80,7 @@ import toy_admin/dates
 import toy_admin/derivation
 import toy_admin/envelope
 import toy_admin/fixture_json
-import toy_admin/stats
+import toy_admin/rows
 import toy_admin/store
 import wisp
 
@@ -227,57 +244,15 @@ fn list_puzzles() -> wisp.Response {
   case store.list_puzzles(path) {
     Error(_) -> envelope.error_response(500, ["StoreError"])
     Ok(puzzles) ->
-      case
-        puzzles
-        |> list.map(fn(puzzle) { summarize(path, puzzle) })
-        |> result.all
-      {
+      // The row document is rows.gleam's — the SAME one the agent's schedule
+      // route emits, so the two calendars cannot drift apart.
+      case rows.calendar_rows(path, puzzles) {
         Error(_) -> envelope.error_response(500, ["StoreError"])
-        Ok(rows) ->
+        Ok(documents) ->
           envelope.ok_with([
-            #("puzzles", json.array(rows, of: fn(document) { document })),
+            #("puzzles", json.array(documents, of: fn(document) { document })),
           ])
       }
-  }
-}
-
-/// One menu row: identity, schedule, and the Q23 numbers.
-fn summarize(path: String, puzzle: store.Puzzle) -> Result(json.Json, Nil) {
-  use #(attempts, solves) <- result.try(
-    store.stats(path, puzzle.id)
-    |> result.map_error(fn(_) { Nil }),
-  )
-  use counts <- result.try(
-    store.move_counts(path, puzzle.id)
-    |> result.map_error(fn(_) { Nil }),
-  )
-  let summary =
-    stats.summarize(attempts: attempts, solves: solves, counts: counts)
-
-  Ok(
-    json.object([
-      #("id", json.int(puzzle.id)),
-      #("name", json.string(puzzle.name)),
-      #("showDate", json.string(puzzle.show_date)),
-      #("attempts", json.int(summary.attempts)),
-      #("solves", json.int(summary.solves)),
-      #("solvePct", optional_string(summary.solve_pct)),
-      #("medianMoves", optional_float(summary.median_moves)),
-    ]),
-  )
-}
-
-fn optional_string(value: Option(String)) -> json.Json {
-  case value {
-    Some(text) -> json.string(text)
-    None -> json.null()
-  }
-}
-
-fn optional_float(value: Option(Float)) -> json.Json {
-  case value {
-    Some(number) -> json.float(number)
-    None -> json.null()
   }
 }
 
@@ -300,31 +275,50 @@ fn create_puzzle(request: wisp.Request) -> wisp.Response {
 /// derivation is this layer's step, and the two must not be confused.
 fn save_new_puzzle(new_puzzle: NewPuzzle) -> wisp.Response {
   let NewPuzzle(name, show_date, dots) = new_puzzle
-  let fixture = derivation.derive_fixture(dots, name, show_date)
+  // The row's date, and therefore also what the fixture is labelled with: a
+  // draft has none (store.gleam's header), and the stored document must agree
+  // with the row it belongs to.
+  let date = option.unwrap(show_date, "")
+  let fixture = derivation.derive_fixture(dots, name, date)
   case derivation.is_degenerate(fixture) {
     True ->
       // Fewer than three dots: nothing renderable can come out. The fixture is
       // the observable, so the check is on it rather than a second dot count.
       envelope.error_response(400, ["BadDrawing"])
-    False ->
-      case
-        store.insert_puzzle(
-          store.path_from_env(),
-          name,
-          show_date,
-          fixture_json.dots_to_string(dots),
-          fixture_json.to_string(fixture),
-        )
-      {
-        Ok(row) -> respond_row(201, row)
-        Error(store.DuplicateShowDate(_)) ->
-          envelope.error_response(409, ["DuplicateShowDate"])
-        // Unreachable: the date was validated above. Say the client-side thing
-        // anyway rather than inventing a 500 for a bad input.
-        Error(store.InvalidShowDate(_)) ->
-          envelope.error_response(400, ["BadPuzzleDate"])
-        Error(_) -> envelope.error_response(500, ["StoreError"])
+    False -> {
+      let path = store.path_from_env()
+      let dots_json = fixture_json.dots_to_string(dots)
+      let fixture_text = fixture_json.to_string(fixture)
+      case show_date {
+        option.Some(show_date) ->
+          case
+            store.insert_puzzle(path, name, show_date, dots_json, fixture_text)
+          {
+            Ok(row) -> respond_row(201, row)
+            Error(store.DuplicateShowDate(_)) ->
+              envelope.error_response(409, ["DuplicateShowDate"])
+            // Unreachable: the date was validated above. Say the client-side
+            // thing anyway rather than inventing a 500 for a bad input.
+            Error(store.InvalidShowDate(_)) ->
+              envelope.error_response(400, ["BadPuzzleDate"])
+            Error(_) -> envelope.error_response(500, ["StoreError"])
+          }
+        // No date: a draft, authored by the human who saved it.
+        option.None ->
+          case
+            store.insert_draft(
+              path,
+              name,
+              dots_json,
+              fixture_text,
+              store.creator_human,
+            )
+          {
+            Ok(row) -> respond_row(201, row)
+            Error(_) -> envelope.error_response(500, ["StoreError"])
+          }
       }
+    }
   }
 }
 
@@ -507,6 +501,10 @@ fn row_json(row: store.Puzzle) -> Result(json.Json, Nil) {
           #("id", json.int(row.id)),
           #("name", json.string(row.name)),
           #("showDate", json.string(row.show_date)),
+          // The editor shows a draft as "keep as draft" and the agent's
+          // authorship as a chip, so the full row carries both.
+          #("status", json.string(row.status)),
+          #("creator", json.string(row.creator)),
           #("dots", fixture_json.dots_to_json(dots)),
           #("fixture", fixture_json.fixture_to_json(fixture)),
           #("createdAt", json.int(row.created_at)),
@@ -555,13 +553,23 @@ fn draft_decoder() -> decode.Decoder(Draft) {
 }
 
 type NewPuzzle {
-  NewPuzzle(name: String, show_date: String, dots: List(Dot))
+  /// `show_date: None` is a DRAFT (see the header's schedule note).
+  NewPuzzle(name: String, show_date: Option(String), dots: List(Dot))
 }
 
 /// The create body's rules. All problems are collected, in field order.
+///
+/// The date is the one field where "missing" is not an error: an absent or blank
+/// date is a draft. A date that IS there and is impossible is still a typo
+/// (`BadPuzzleDate`) — saving it as a draft would be a lie about what the editor
+/// asked for.
 fn validated_new(draft: Draft) -> Result(NewPuzzle, List(String)) {
   let name = required(draft.name, validated_name, "BadName")
-  let show_date = required(draft.show_date, validated_date, "BadPuzzleDate")
+  let show_date = case draft.show_date {
+    None -> Ok(None)
+    Some("") -> Ok(None)
+    Some(value) -> validated_date(value) |> result.map(option.Some)
+  }
   let dots = validated_dots(draft.dots)
   case name, show_date, dots {
     Ok(name), Ok(show_date), Ok(dots) ->
@@ -575,6 +583,9 @@ fn validated_new(draft: Draft) -> Result(NewPuzzle, List(String)) {
 }
 
 /// A partial update: `None` means "the body did not mention this field".
+///
+/// `show_date` has one extra state: `Some("")` is a mentioned-but-empty date,
+/// i.e. "make this a draft". `None` (not mentioned) leaves the schedule alone.
 type Patch {
   Patch(
     name: Option(String),
@@ -585,7 +596,12 @@ type Patch {
 
 fn validated_patch(draft: Draft) -> Result(Patch, List(String)) {
   let name = optional_problem(draft.name, validated_name)
-  let show_date = optional_problem(draft.show_date, validated_date)
+  let show_date = case draft.show_date {
+    None -> Ok(None)
+    // The draft marker: an empty date is a schedule, not a typo.
+    Some("") -> Ok(Some(""))
+    Some(value) -> validated_date(value) |> result.map(option.Some)
+  }
   let dots = case draft.dots {
     None -> Ok(None)
     Some(value) -> validated_dots_required(value) |> result.map(Some)
