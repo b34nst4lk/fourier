@@ -373,3 +373,41 @@ Implementation decisions (worker, verified in review):
   debounce cannot fire once per pointermove sample).
 - **The editor deliberately keeps the polygon path** (no sketch smoothing):
   it shows what the derivation will actually resample.
+
+## 15. Implementation decisions (agent drafts — the local agent's door, recorded 2026-10-25)
+
+- **Two agent routes, one shared key**: GET /api/agent/schedule (the calendar
+  with the Q23 stats, published AND drafts, read-only) and POST
+  /api/agent/puzzle (an UNDATED draft: name + dots, nothing else). Fenced by
+  a once-at-boot bearer key: AGENT_API_KEY / AGENT_ID in the gitignored .env,
+  compose-interpolated with empty-safe defaults; unset = both answer 401
+  AgentAuth plus ONE boot warning (the AUD fence's fail-safe direction). The
+  comparison is plain ==: declared acceptable — a local bridge network, an
+  undated draft is the worst outcome, and the shelf notes constant-time
+  compare next to the JWT-signature item.
+- **Agents never schedule**: a non-empty showDate in an agent POST is 400
+  AgentNoScheduling — refuse, never silently drop. A silent date would lie
+  to the agent and the human would never see the attempt.
+- **The store's two-state model**: puzzles.status (draft|published) and
+  .creator (the agent's id; 'human' by default) via a rename-and-copy
+  migration in ONE transaction (the presence of `status` is the version
+  marker; a mid-failure must roll back or the next boot would strand the
+  data in puzzles_phase_4a while believing migration done). The show-date
+  UNIQUE became a PARTIAL index over published rows only (drafts share '').
+  show_date == '' ⟺ status == draft, derived together on every write.
+- **Publish is the human's act**: the admin PUT accepts an OPTIONAL showDate
+  — absent = no change; '' = draftify (re-pull from the calendar); a date =
+  approve (the duplicate-date rule, published-only). The row-level approve
+  flow sends the ONE-field PUT so approving cannot change what it approves.
+- **`/api/puzzle/today` serves published rows only** — a draft can never
+  serve; attempts stay keyed by (uuid, puzzle_date) and unpublishing never
+  deletes them.
+- **The next free day is a browser rule**: both date fields (new puzzle,
+  approve) prefill "the first day on or after today no row occupies"
+  (admin_ui schedule.gleam: Hinnant civil-from-days/days-from-civil, exact
+  for the proleptic Gregorian calendar; drafts hold no day; the server has
+  no opinion — it validates and refuses duplicates as ever).
+- **Reach**: toy_admin joins the agent's docker network (br-pi, external,
+  name-pinned) so hermes-jacksim calls http://toy_admin:8080/api/agent/*
+  by container name. Nothing host-published for this; the admin routes stay
+  Cloudflare-Access-gated exactly as they were.

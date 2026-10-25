@@ -202,3 +202,18 @@ Daily-puzzle backend + admin: per-feature plans, this rolling ledger.
   test button plays it). Future dates serve nothing early (/api/puzzle/today
   serves the newest row dated ≤ the visitor's day — today 10-25 still serves
   star).
+
+- **Agent drafts (2026-10-25)**: the Hermes skill's backend shipped (commit
+  c8e53a8; the coder built, one review fix: the migration wrapped in a
+  transaction). Live probe battery passed: the migration preserved all 24
+  rows (published/human; the volume snapshotted FIRST — the first backup
+  mounted a phantom empty volume, redone against
+  toy_admin_toy_admin-data), no-key/wrong-key 401 AgentAuth, a dated agent
+  POST 400 AgentNoScheduling, an undated one 201 draft (creator hermes),
+  approve/delete flow through the admin fence, today still serving star,
+  and hermes-jacksim reached http://toy_admin:8080 by name after the br-pi
+  join. The shared key is provisioned in BOTH envs (toy_admin/.env:
+  AGENT_API_KEY/AGENT_ID=hermes; the Hermes home .env: FOURIER_AGENT_KEY).
+  Two probe-draft rows inserted for testing were deleted (the busybox wget
+  has no DELETE/PUT — the deletion ran through a throwaway curl container
+  on br-pi).
