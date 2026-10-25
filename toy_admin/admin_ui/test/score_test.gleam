@@ -129,3 +129,75 @@ pub fn the_toys_start_patch_scores_zero_not_negative_test() {
   close(match, 0.0, 1.0e-9)
   should.equal(True, match <. 70.0)
 }
+
+pub fn the_full_synthesis_is_the_rule_that_clears_the_badge_test() {
+  // The reported symptom in test play: a drawing solved to the eye scored 91.9%
+  // — under the badge — because only the four dial terms reached the metric
+  // while the comet drew dial terms CHAINED WITH the extras. This analytic pair
+  // is that drawing in miniature: the extras' curvature is worth 8.5 points, so
+  // the two candidate rules straddle the badge.
+  let centroid = #(50.0, 50.0)
+  let dial_terms = [
+    score.Term(1, 20.0, 0.0),
+    score.Term(-2, 7.0, 30.0),
+    score.Term(3, 4.0, 45.0),
+  ]
+  let extras = [score.Term(5, 1.6, 10.0), score.Term(-7, 0.9, 120.0)]
+  let target = score.synth_trace(centroid, list.append(dial_terms, extras))
+  let normalizer = score.rms_polar(target, 50.0, 50.0)
+
+  // the rule: dial terms first, then the extras chained after them
+  let full =
+    score.synthesis_match(centroid, dial_terms, extras, target, normalizer)
+  close(full, 100.0, 1.0e-9)
+  should.equal(True, score.solved(full))
+
+  // the bug: score the dials alone and the same picture never lights the badge
+  let dial_only = score.match_pct(centroid, dial_terms, target, normalizer)
+  close(dial_only, 91.51756743926322, 1.0e-6)
+  should.equal(False, score.solved(dial_only))
+
+  // ...and on a puzzle with no extras the rule is the plain metric (no drift
+  // for the shapes the derivation happens to approximate with four terms)
+  let bare = score.synth_trace(centroid, dial_terms)
+  let bare_normalizer = score.rms_polar(bare, 50.0, 50.0)
+  close(
+    score.synthesis_match(centroid, dial_terms, [], bare, bare_normalizer),
+    100.0,
+    1.0e-9,
+  )
+}
+
+pub fn the_star_at_truth_needs_its_extras_to_clear_the_gold_test() {
+  // The real fixture with the real 507 extras: the full synthesis is 99.99998%
+  // (a solved star), the four dials alone are 97.6889%. The gap is exactly what
+  // the editor was hiding from the score.
+  let target = star_fixture.target()
+  let normalizer =
+    score.rms_polar(target, star_fixture.centroid.0, star_fixture.centroid.1)
+  let full =
+    score.synthesis_match(
+      star_fixture.centroid,
+      star_fixture.dial(),
+      star_fixture.extras(),
+      target,
+      normalizer,
+    )
+  close(full, 99.99997685463386, 1.0e-6)
+  should.equal(True, full >=. 99.9)
+
+  // the four dials alone are 97.6889 — solved, but not the near-exact number
+  // the picture deserves (the rich case above straddles the badge; this one
+  // straddles the "you matched it" reading)
+  let dial_only =
+    score.match_pct(
+      star_fixture.centroid,
+      star_fixture.dial(),
+      target,
+      normalizer,
+    )
+  close(dial_only, 97.68891737585086, 1.0e-6)
+  should.equal(True, dial_only <. 99.9)
+  // the fixture carries the rest of the spectrum, not a token sample
+  should.equal(507, list.length(star_fixture.extras()))
+}

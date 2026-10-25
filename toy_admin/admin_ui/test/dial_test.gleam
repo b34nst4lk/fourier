@@ -167,19 +167,51 @@ pub fn the_readouts_are_the_toys_test() {
   should.equal("100.0", dial.fmt1(100.0))
 }
 
-pub fn the_truth_readout_names_all_three_numbers_test() {
-  // Q2/Q3: the derived truths are shown before a save, so the readout carries
-  // radius, phase and k for a slot in one line — the same numbers the dial row
-  // can move, spelled the same way
+pub fn the_derived_readout_speaks_the_dial_rows_words_test() {
+  // Q2/Q3: the derived truths are shown before a save, one bullet per movable
+  // slot. A bullet says which dial it is and what that slot is set to — in the
+  // dial row's own words, so the readout and the stepper it describes cannot
+  // drift apart.
+  let max_r = 27.574653306648354
+  should.equal("phase dial", dial.slot_label(dial.KindPhase))
+  should.equal("radius dial", dial.slot_label(dial.KindRadius))
+  should.equal("k dial", dial.slot_label(dial.KindK))
+  should.equal("fixed term", dial.slot_label(dial.KindFixed))
+
   should.equal(
-    "r 100% · φ 270° · k +1",
-    dial.truth_text(
+    "φ 270°",
+    dial.truth_value(
+      dial.KindPhase,
       score.Term(1, 27.574653306648354, 270.0),
-      27.574653306648354,
+      max_r,
     ),
   )
   should.equal(
-    "r 24% · φ 90° · k −4",
-    dial.truth_text(score.Term(-4, 6.587099924414947, 90.0), 27.574653306648354),
+    "r 100%",
+    dial.truth_value(
+      dial.KindRadius,
+      score.Term(1, 27.574653306648354, 90.0),
+      max_r,
+    ),
+  )
+  should.equal(
+    "k −4",
+    dial.truth_value(dial.KindK, score.Term(-4, 6.587099924414947, 90.0), max_r),
+  )
+
+  // the value half is the STEPPER's readout, lettered — not a second formatter
+  // that agrees with it today
+  let term = score.Term(-4, 6.587099924414947, 270.0)
+  should.equal(
+    "φ " <> dial.slot_value(dial.KindPhase, term, max_r),
+    dial.truth_value(dial.KindPhase, term, max_r),
+  )
+  should.equal(
+    "r " <> dial.slot_value(dial.KindRadius, term, max_r),
+    dial.truth_value(dial.KindRadius, term, max_r),
+  )
+  should.equal(
+    dial.slot_value(dial.KindK, term, max_r),
+    dial.truth_value(dial.KindK, term, max_r),
   )
 }

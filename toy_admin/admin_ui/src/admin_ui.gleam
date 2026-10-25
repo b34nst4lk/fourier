@@ -33,7 +33,6 @@ import gleam/dynamic/decode
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
-import gleam/string
 import lustre
 import lustre/attribute
 import lustre/effect.{type Effect}
@@ -440,9 +439,10 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
               }
             })
           let match =
-            score.match_pct(
+            score.synthesis_match(
               play.fixture.centroid,
               terms,
+              play.fixture.extras,
               play.target,
               play.normalizer,
             )
@@ -545,7 +545,13 @@ pub fn play_from(fixture: wire.Fixture) -> Play {
     terms: terms,
     target: fixture.target,
     normalizer: normalizer,
-    match: score.match_pct(fixture.centroid, terms, fixture.target, normalizer),
+    match: score.synthesis_match(
+      fixture.centroid,
+      terms,
+      fixture.extras,
+      fixture.target,
+      normalizer,
+    ),
     moves: 0,
     solved_once: False,
   )
@@ -877,7 +883,7 @@ fn test_play_view(model: Model) -> Element(Msg) {
           ]),
           html.div([attribute.class("panel dials")], dial_rows(play)),
         ]),
-        truth_line(play),
+        derived_list(play.fixture),
         html.div([attribute.class("tools")], [
           html.button(
             [attribute.class("btn"), event.on_click(BackToAuthoring)],
@@ -922,17 +928,47 @@ fn play_bar(play: Play) -> Element(Msg) {
   ])
 }
 
-/// The derived truths, before anything is saved (plan Q2/Q3). Test play runs on
-/// a preview, so the derivation's own four terms are right here: what the shape
-/// became, printed in the same words as the steppers that can undo it.
-fn truth_line(play: Play) -> Element(Msg) {
-  let max_r = dial.max_radius(play.fixture.dial)
-  let parts =
-    list.index_map(play.fixture.dial, fn(term, slot) {
-      int.to_string(slot + 1) <> " " <> dial.truth_text(term, max_r)
-    })
-  html.p([attribute.class("hint")], [
-    html.text("derived: " <> string.join(parts, "   ·   ")),
+/// The derived truths, before anything is saved (plan Q2/Q3): the numbers the
+/// derivation decided, one bullet per MOVABLE slot, in the same words as the
+/// steppers that can undo them (dial.slot_label / dial.truth_value).
+///
+/// The list is filtered by KIND, not position (Q19: the arrangement is data):
+/// a slot whose kind is `fixed` is correct by construction and has no dial, so
+/// listing it would be telling the player about a term they cannot touch. Slot
+/// numbers stay the arrangement's, so a reordered fixture still names the right
+/// term.
+pub fn truth_entries(fixture: wire.Fixture) -> List(String) {
+  let max_r = dial.max_radius(fixture.dial)
+  list.index_map(fixture.dials, fn(kind, slot) {
+    #(kind, slot, list.drop(fixture.dial, slot))
+  })
+  |> list.filter_map(fn(entry) {
+    let #(kind, slot, truth) = entry
+    case kind, truth {
+      dial.KindFixed, _ -> Error(Nil)
+      _, [] -> Error(Nil)
+      _, [term, ..] ->
+        Ok(
+          "term "
+          <> int.to_string(slot + 1)
+          <> " · "
+          <> dial.slot_label(kind)
+          <> " — set "
+          <> dial.truth_value(kind, term, max_r),
+        )
+    }
+  })
+}
+
+fn derived_list(fixture: wire.Fixture) -> Element(Msg) {
+  html.div([attribute.class("derived")], [
+    html.span([attribute.class("label")], [html.text("derived")]),
+    html.ul(
+      [],
+      list.map(truth_entries(fixture), fn(entry) {
+        html.li([], [html.text(entry)])
+      }),
+    ),
   ])
 }
 

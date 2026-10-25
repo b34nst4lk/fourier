@@ -200,18 +200,29 @@ pub fn slot_value(kind: Kind, term: Term, max_r: Float) -> String {
   }
 }
 
-/// The fixture's own numbers for one slot, on one line. The authoring view
-/// prints these before a save (plan Q2/Q3: "the derived truths are shown before
-/// save"), so what the derivation decided is visible rather than inferred from
-/// the board — and the words match the dial row's, so the readout and the
-/// stepper cannot drift apart.
-pub fn truth_text(term: Term, max_r: Float) -> String {
-  "r "
-  <> pct(term.radius, max_r)
-  <> " · φ "
-  <> deg(term.phase_deg)
-  <> " · k "
-  <> fmt_k(term.k)
+/// What this slot IS, in the dial row's words: the dial a player turns, or the
+/// term nobody turns. The derived readout (plan Q2/Q3) names its slots with
+/// this, so a bullet and the stepper it describes cannot drift apart.
+pub fn slot_label(kind: Kind) -> String {
+  case kind {
+    KindPhase -> "phase dial"
+    KindRadius -> "radius dial"
+    KindK -> "k dial"
+    KindFixed -> "fixed term"
+  }
+}
+
+/// The fixture's own value for one slot, lettered so it reads on its own in a
+/// list: "φ 270°" / "r 73%" / "k +3". The number half IS `slot_value` — the
+/// stepper's readout — so the derived display and the steppers speak one
+/// vocabulary rather than two formatters that agree today.
+pub fn truth_value(kind: Kind, term: Term, max_r: Float) -> String {
+  case kind {
+    KindPhase -> "φ " <> slot_value(kind, term, max_r)
+    KindRadius -> "r " <> slot_value(kind, term, max_r)
+    KindK -> slot_value(kind, term, max_r)
+    KindFixed -> slot_value(kind, term, max_r)
+  }
 }
 
 /// The row's small print: what this slot does NOT let you change.

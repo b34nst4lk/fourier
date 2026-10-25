@@ -130,6 +130,28 @@ pub fn match_pct(
   }
 }
 
+/// The toy's scoring rule, and the editor's: score the FULL synthesis. The
+/// dial terms the player turns come first, then the fixture's fixed extras,
+/// each rotating at its own k — the very chain the comet draws (canvas.mjs:
+/// `chain = dial.concat(extras)`), so the picture and the number cannot
+/// disagree.
+///
+/// The extras are "fixed, correct": they are part of the shape the player is
+/// being measured against, never a term to earn back. Scoring the dials alone
+/// silently throws away their curvature — a couple of percent on the star,
+/// eight on the fish — which reads on screen as a solved drawing stuck at
+/// 91%. `match_pct` stays the raw metric; this is the rule every caller that
+/// shows or scores a play asks.
+pub fn synthesis_match(
+  centroid: Point,
+  dial dial: List(Term),
+  extras extras: List(Term),
+  target target: List(Point),
+  normalizer normalizer: Float,
+) -> Float {
+  match_pct(centroid, list.append(dial, extras), target, normalizer)
+}
+
 pub fn solved(match: Float) -> Bool {
   match >=. solved_at
 }

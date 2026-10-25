@@ -89,6 +89,25 @@ export function event_point(event) {
 
 const draw_state = { canvas: null, ctx: null, w: 0, h: 0, dpr: 0, path: "", dots: [] };
 
+// The paint is payload-first/boot-second, like the play loop's ensure_boot: the
+// payload (path + dots) is stashed immediately, and one frame-paced retry —
+// never a queue, never a busy loop — paints it as soon as the canvas exists.
+// Why: a view swap (BackToAuthoring / StartNew / StartEdit) fires the paint
+// effect in the same turn the DOM is patched, so getElementById can still miss
+// the canvas it is about to mount; the old code dropped that paint silently and
+// nothing retriggered it (the drawing appeared only after the next dot tap).
+// Bounded so a paint aimed at a view that never mounts (a stale effect) ends.
+const DRAW_RETRY_FRAMES = 60; // ~1s at 60fps: plenty for a view swap
+const draw_retry = { pending: false, tries: 0 };
+
+function draw_next_frame(fn) {
+  if (typeof requestAnimationFrame === "function") {
+    requestAnimationFrame(fn);
+  } else {
+    setTimeout(fn, 16);
+  }
+}
+
 function draw_fit() {
   const el = draw_state.canvas;
   const rect = el.getBoundingClientRect();
@@ -103,21 +122,28 @@ function draw_fit() {
   el.height = Math.floor(h * dpr);
 }
 
-// Payload first, boot second: a sync can arrive before Lustre has rendered the
-// canvas (the toy's ensure_boot note applies here too).
-export function draw_render(path, dots) {
-  draw_state.path = path;
-  draw_state.dots = Array.from(dots, (p) => [p[0], p[1]]);
+// Paint the stashed payload onto whatever canvas is in the DOM right now.
+// Returns false when there is nothing to paint onto YET (no canvas, no 2d
+// context) — the caller decides whether to try again.
+function draw_paint() {
   const el = document.getElementById(DRAW_ID);
-  if (!el) return;
-  draw_state.canvas = el;
+  if (!el) return false;
+  if (el !== draw_state.canvas) {
+    // A new element (the view swapped): its backing store is empty, so the fit
+    // cache belongs to the old canvas and must not be trusted.
+    draw_state.canvas = el;
+    draw_state.ctx = null;
+    draw_state.w = 0;
+    draw_state.h = 0;
+    draw_state.dpr = 0;
+  }
   try {
     draw_state.ctx = el.getContext("2d");
   } catch (err) {
     draw_state.ctx = null;
   }
   const ctx = draw_state.ctx;
-  if (!ctx) return;
+  if (!ctx) return false;
   draw_fit();
 
   const pal = palette();
@@ -133,7 +159,12 @@ export function draw_render(path, dots) {
     draw_state.dpr * ox,
     draw_state.dpr * oy,
   );
-  ctx.clearRect(-ox / scale, -oy / scale, draw_state.w / scale, draw_state.h / scale);
+  ctx.clearRect(
+    -ox / scale,
+    -oy / scale,
+    draw_state.w / scale,
+    draw_state.h / scale,
+  );
 
   // the shape's outline, in sketch units (the polygon the derivation resamples)
   ctx.lineWidth = 0.9;
@@ -151,6 +182,32 @@ export function draw_render(path, dots) {
     ctx.arc(x, y, 1.1, 0, 2 * Math.PI);
     ctx.fill();
   }
+  return true;
+}
+
+// Payload first, boot second: the effect can land before Lustre has mounted the
+// canvas (a view swap patches the DOM around the effect), so a failed paint
+// keeps the payload and retries once per frame until the canvas exists.
+export function draw_render(path, dots) {
+  draw_state.path = path;
+  draw_state.dots = Array.from(dots, (p) => [p[0], p[1]]);
+  draw_retry.tries = 0; // a fresh payload gets a fresh budget
+  if (draw_paint()) return;
+  draw_retry_more();
+}
+
+// ONE pending attempt at a time; each attempt is a frame, the payload is read
+// fresh each time (a newer draw_render supersedes this one), and the budget
+// bounds the chain so a paint for a view that never mounts ends quietly.
+function draw_retry_more() {
+  if (draw_retry.pending) return;
+  if (draw_retry.tries >= DRAW_RETRY_FRAMES) return;
+  draw_retry.tries += 1;
+  draw_retry.pending = true;
+  draw_next_frame(() => {
+    draw_retry.pending = false;
+    if (!draw_paint()) draw_retry_more();
+  });
 }
 
 // ---------- test-play board (the toy's loop) ----------

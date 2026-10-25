@@ -36,6 +36,17 @@ fn star() -> wire.Fixture {
   )
 }
 
+/// The star as the API really serves it: the four dial terms PLUS the rest of
+/// the spectrum as fixed extras (507 rows), starting at truth in every slot.
+fn star_full() -> wire.Fixture {
+  wire.Fixture(..star(), extras: star_fixture.extras(), patches: [
+    dial.Keep,
+    dial.Keep,
+    dial.Keep,
+    dial.Keep,
+  ])
+}
+
 fn model() -> admin_ui.Model {
   admin_ui.Model(
     view: admin_ui.Authoring,
@@ -113,6 +124,109 @@ pub fn a_test_play_starts_from_the_fixtures_own_patches_test() {
   let last_truth = list.last(star_fixture.dial())
   let assert Ok(last_truth) = last_truth
   close(fixed_slot.radius, last_truth.radius, 1.0e-12)
+}
+
+pub fn the_truth_score_chains_the_fixtures_extras_test() {
+  // The toy's rule (fourier_toy/shapes.match_pct): the illustration AND the
+  // score measure the FULL synthesis — the dial terms the player turns, then the
+  // extras, which are fixed and correct. Dropping the extras on the way to the
+  // metric is what made a solved drawing read 91.9% in test play.
+  let play = play_state(started(star_full()))
+  let full = list.append(play.terms, play.fixture.extras)
+
+  close(
+    play.match,
+    score.match_pct(play.fixture.centroid, full, play.target, play.normalizer),
+    1.0e-9,
+  )
+  should.equal(True, play.match >=. 99.9)
+
+  // ...and the dial terms alone do NOT clear the gold: 97.6889%. That gap is
+  // the extras doing real work, so this fixture discriminates.
+  let dial_only =
+    score.match_pct(
+      play.fixture.centroid,
+      play.terms,
+      play.target,
+      play.normalizer,
+    )
+  close(dial_only, 97.68891737585086, 1.0e-6)
+  should.equal(True, dial_only <. 99.9)
+
+  // the fixture really carries them (the derivation emits every other k != 0)
+  should.equal(507, list.length(play.fixture.extras))
+}
+
+pub fn a_dial_step_rescores_the_full_synthesis_test() {
+  // Stepping a dial must re-score the SAME list the comet draws: the terms the
+  // player moved plus the untouched extras. A re-score over the dials alone
+  // would make the number and the picture disagree the moment a dial moves.
+  let model = started(star_full())
+  let before = play_state(model)
+  let stepped = play_state(step(model, admin_ui.DialStep(0, 1)))
+  let full = list.append(stepped.terms, stepped.fixture.extras)
+
+  close(
+    stepped.match,
+    score.match_pct(
+      stepped.fixture.centroid,
+      full,
+      stepped.target,
+      stepped.normalizer,
+    ),
+    1.0e-9,
+  )
+  should.equal(True, stepped.match <. before.match)
+  should.equal(1, stepped.moves)
+}
+
+pub fn the_patched_start_clamps_its_score_at_zero_test() {
+  // The fixture's own start (phase 355°, radius 73%, k 8) is hopeless by
+  // design: the raw score is negative and the display clamps at 0 — adding the
+  // extras must not rescue it.
+  let fixture =
+    wire.Fixture(..star_full(), patches: [
+      dial.PhaseDeg(355.0),
+      dial.RPct(73.0),
+      dial.KSet(8),
+      dial.Keep,
+    ])
+  let play = play_state(started(fixture))
+  close(play.match, 0.0, 1.0e-9)
+  should.equal(False, score.solved(play.match))
+}
+
+pub fn the_derived_readout_lists_one_entry_per_movable_slot_test() {
+  // Before a save the derivation's own numbers are shown (Q2/Q3). One bullet per
+  // MOVABLE slot, in the dial row's vocabulary: which dial it is and what it is
+  // set to.
+  let model = started(star())
+  let assert Some(play) = model.play
+  should.equal(admin_ui.truth_entries(play.fixture), [
+    "term 1 · phase dial — set φ 270°",
+    // the radius dial's own slot: 6.587 of the 27.575 max = 24%
+    "term 2 · radius dial — set r 24%",
+    "term 3 · k dial — set k +6",
+  ])
+}
+
+pub fn a_fixed_slot_never_appears_in_the_derived_readout_test() {
+  // Q19: the arrangement is DATA. The readout filters by KIND, not by position,
+  // so an arrangement that puts the fixed term first still lists exactly the
+  // dials — each with its own slot number and its own slot's numbers.
+  let fixture =
+    wire.Fixture(..star(), dials: [
+      dial.KindFixed,
+      dial.KindPhase,
+      dial.KindRadius,
+      dial.KindK,
+    ])
+  should.equal(admin_ui.truth_entries(fixture), [
+    "term 2 · phase dial — set φ 270°",
+    // slot 3's OWN numbers (k=+6, r 2.928 = 11%), not slot 2's
+    "term 3 · radius dial — set r 11%",
+    "term 4 · k dial — set k −14",
+  ])
 }
 
 pub fn a_phase_step_moves_the_comet_and_the_score_test() {

@@ -9,7 +9,7 @@ Daily-puzzle backend + admin: per-feature plans, this rolling ledger.
 | 2 | Puzzle store + derivation | ✅ done (2026-10-25, coder subagent deepseek-v4.1-flash:cloud, reviewed 2026-10-24: gates re-run (build green — 108 tests inside), wire probes verified from the network (health/none/BadTimezone 400/BadUuid 400), store+throttle+fixture-json code read line-by-line) | derivation (star gold 27.57/6.59/2.93/0.54, lossless split) + dates (clamp ±14h, Hinnant civil-from-days, never-past) + ingest (uuid v4, 500-cap, adversarial) + SQLite store (sqlight): `puzzles` / `attempts`, solve/abandon upsert, per-day stats |
 | 3 | Public API | ✅ done (2026-10-25, coder subagent deepseek-v4.1-flash:cloud, reviewed 2026-10-24: gates re-run (build green — 108 tests inside), wire probes verified from the network (health/none/BadTimezone 400/BadUuid 400), store+throttle+fixture-json code read line-by-line) | puzzle/today (Wordle-style clamp, `?tz=`), solve + abandon ingest with stable error names, per-uuid + per-IP fixed-window fences (ETS, env-tuned); DB_PATH on the `toy_admin-data` volume |
 | 4a | Admin API | ✅ done (2026-10-25, coder subagent deepseek-v4.1-flash:cloud, **reviewed 2026-10-25**) | fence (`Cf-Access-Jwt-Assertion`, audience `ADMIN_ACCESS_AUD`, expiry; NO signature check — documented) + CRUD `/api/admin/puzzles[/<id>]` (create re-derives, edit re-derives on dots change, delete keeps telemetry) + Q23 menu stats (solvePct one decimal, medianMoves of all attempts incl. abandons, nulls on no data) + `envelope.gleam`; 192 tests green in the Docker gate; live wire probes with a hand-crafted JWT |
-| 4b | Admin UI | ✅ done (2026-10-25, coder subagent, reviewed) | Lustre bundle (admin_ui/, JS target), draw authoring + preview test-play, menu with Q23 stats, delete confirm; embedded at /api/admin behind the fence; 41 UI tests + 201 backend tests |
+| 4b | Admin UI | ✅ done + 4 browser fixes (2026-10-25, coder subagent, reviewed) | Lustre bundle (admin_ui/, JS target), draw authoring + preview test-play, menu with Q23 stats, delete confirm; embedded at /api/admin behind the fence; 41 UI tests + 201 backend tests |
 | 5 | Deploy | ⬜ (code done: ui stage in Dockerfile, build-admin-ui.sh, ADMIN_ACCESS_AUD env) | tunnel ingress rule, user's CF dashboard steps (Access, rate limit, bot fight), compose up; set `ADMIN_ACCESS_AUD` |
 | 5 | Deploy | ⬜ (code done: ui stage in Dockerfile, build-admin-ui.sh, ADMIN_ACCESS_AUD env) | tunnel ingress rule, user's CF dashboard steps (Access, rate limit, bot fight), compose up |
 
@@ -109,3 +109,21 @@ Daily-puzzle backend + admin: per-feature plans, this rolling ledger.
   (kid equals the application's AUD tag): the .env tag matches the app
   minting jacks.im/api/admin logins — the fence's audience check will
   accept exactly those tokens.
+
+- **4 browser fixes live (2026-10-25)**: (1) swallowed-paint bug on
+  view-entry (StartNew/BackToAuthoring: effects fire while the old view
+  shows — getElementById null → skip, never retried): draw_render now
+  stashes the payload and paints through a self-terminating retry chain
+  (measured: the return-repaint lands 1 frame after the view flush; the
+  pre-fix contract captured it never landing); (2) the test-play score
+  dropped the fixed extras (dial-only 91.888% < 95 vs 99.9999…% chained —
+  verified against the live served doc): the score now chains extras at
+  truth, picture and number share one terms list; (3) the derived readout
+  is per-slot bullets from dial's shared formatters; (4) non-dial slots
+  never appear (kind-filtered, Q19 data). New COMMITTED GATE:
+  scripts/uismoke.mjs (jsdom render contract over the built
+  priv/admin.html: mount-and-paint, per-dot op deltas, return-repaint
+  without a tap, envelope words) — promoted from once-out-of-tree to a
+  project gate by this bug. Baked prod image verified: the running
+  container serves ec0d0bf3… (== local build; curl can't verify prod by
+  design — the wall answers first).
