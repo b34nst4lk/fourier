@@ -116,6 +116,10 @@ pub fn main() -> Nil {
     logging.log(logging.Warning, line)
   })
   let app = load(admin_ui.bundle_path)
+  // The request log lives at INFO; the Erlang logger's default level is
+  // NOTICE, which would swallow every line. Set it once, at boot, so the
+  // container's logs carry request lines the operator can read.
+  wisp.set_logger_level(wisp.InfoLevel)
   let assert Ok(_) =
     fn(request: wisp.Request) { handle_request(request, app) }
     |> wisp_mist.handler(secret_key_base())
@@ -151,6 +155,11 @@ pub fn load(admin_ui_path: String) -> App {
 /// through wisp's simulator (test/api_test.gleam, test/health_test.gleam) as well
 /// as over HTTP.
 pub fn handle_request(request: wisp.Request, app: App) -> wisp.Response {
+  // Request logging (the wisp-documented middleware): every request leaves a
+  // "<status> <METHOD> <path>" line in the container logs. This existed in our
+  // docs as an expectation before it existed in the app: the operator's
+  // "check the docker logs" had only the boot line to read.
+  use <- wisp.log_request(request)
   case wisp.path_segments(request) {
     ["api", "health"] ->
       wisp.require_method(request, http.Get, fn() { health() })
