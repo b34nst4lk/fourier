@@ -32,8 +32,8 @@ node scripts/artifact_smoke.mjs  # 24 checks — the real bundle in jsdom
 ```
 
 Deploying runs through the blog repo's toys manifest (hermetic build from
-the pinned git ref). See `docs/PLAN.md` for the plan of record and
-`docs/PROGRESS.md` for the build history.
+the pinned git ref). See `docs/archive/PLAN-2026-single-quaver-v2.md` for the
+archived build plan and `docs/PROGRESS.md` for the history.
 
 ## Licence
 

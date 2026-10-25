@@ -11,9 +11,13 @@ both repos; docs of record live in each repo's `docs/PLAN.md` +
   checks + behavior contracts (`fourier_sketch/scripts/bench_render.mjs`).
 - Gates before done: `gleam test --target javascript`, `gleam format
   --check`, the bench contracts. Commit only after gates are green.
-- Plan-of-record discipline: product/decision changes are edited into
-  `docs/PLAN.md` with rationale — silent drift is banned; progress and
-  post-mortems land in `docs/PROGRESS.md`.
+- Plan-of-record discipline (2026-10-24 convention): plans are per-feature
+  documents — each plan is its own file in the project's `docs/`
+  (e.g. `toy_admin/docs/PLAN-daily-puzzles.md`); product/decision changes
+  are edited into the plan that governs the work, with rationale — silent
+  drift is banned. Completed/superseded plans move to `docs/archive/` with
+  a dated archival preamble (e.g. `PLAN-2026-single-quaver-v2.md`);
+  `docs/PROGRESS.md` remains the rolling ledger in every project.
 - Theme/visual language: parchment cartography (see fourier_sketch
   index.html variables; dark mode = lamplit variant). Both toys should
   share the visual family.

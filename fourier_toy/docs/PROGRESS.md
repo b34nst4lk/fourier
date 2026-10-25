@@ -416,3 +416,12 @@ is resolved by the rewrite's record-update spread. PARKED (cross-repo,
 out of toy scope): B3/B5 fourier_core extraction, C4 sketch-side sync
 dedupe, C5/C6 accepted debt. Gates: gleam 15/15, format, contract 23/23,
 smoke 46/46, bench green.
+
+## Docs convention change (2026-10-24)
+
+The v2 plan (single quaver puzzle) archived to
+`docs/archive/PLAN-2026-single-quaver-v2.md` with a dated preamble; its
+§10 parked findings stay tracked in the dead-code handoff doc's
+application record. The daily-puzzle system's plan of record is the first
+per-feature plan: `../toy_admin/docs/PLAN-daily-puzzles.md`. No code
+changed.

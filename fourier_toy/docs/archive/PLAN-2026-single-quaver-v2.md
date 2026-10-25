@@ -1,3 +1,9 @@
+> **Archived (2026-10-24)** — final v2 shipped (single quaver puzzle, see
+> PROGRESS); this plan is retired and kept for history. §10's parked review
+> findings are tracked (with their statuses) in
+> `../fourier_sketch/docs/DEAD_CODE_HANDOFF.md`'s application record; live
+> plan work now happens in per-feature plan documents in `docs/`.
+
 # fourier_toy — Plan of Record (DRAFT, pending grilling)
 
 > Phase 2 of the `workspace/projects/fourier/` umbrella (see

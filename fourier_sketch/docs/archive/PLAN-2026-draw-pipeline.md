@@ -1,3 +1,9 @@
+> **Archived (2026-10-24)** — the sketch shipped phases 0–7; this plan is
+> retired and kept for history. Plans are now per-feature documents in
+> `docs/` (archival convention: this folder). Live open items, if any, are
+> tracked in fresh plan documents; the §7 shelf items here are historical
+> notes, not active tracking.
+
 # fourier_sketch — Plan of Record
 
 > Decisions below were settled in a pre-build grilling session. They are the

@@ -98,10 +98,10 @@ gleam run -m fourier_sketch/bench --target javascript
 ```
 
 Layout: all logic is pure Gleam (`complex`, `resample`, `dft`, `terms`,
-`sketch`, `store`, `render`, `spark`) with TDD'd contracts in `docs/PLAN.md`;
+`sketch`, `store`, `render`, `spark`) with TDD'd contracts (plan archived in `docs/archive/PLAN-2026-draw-pipeline.md`);
 `src/app.gleam` is the Lustre UI; `src/fourier_sketch_ffi.mjs` is the thin
 JS layer (canvas + RAF, pointer/keyboard FFI, localStorage). The full plan
-of record lives in `docs/PLAN.md`, phase-tracked in `docs/PROGRESS.md`.
+lives in the archived `docs/archive/PLAN-2026-draw-pipeline.md`, phase-tracked in `docs/PROGRESS.md`.
 
 ## Manual smoke checklist (run before saying it works)
 

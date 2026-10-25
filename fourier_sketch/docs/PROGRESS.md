@@ -448,3 +448,10 @@ skipped (the trace cache keeps the geometry). Measured: 163.5 ops/frame
 at 64 terms (was 188.8). The worker/offscreen-architectural lever is
 parked in PLAN §8 with its caveat. The handoff's "leave alone" list and
 its rejections (dirty rects, twiddle rebuild, RAF-timeout gating) stay.
+
+## Docs convention change (2026-10-24)
+
+Plans are now per-feature documents; this project's plan of record
+(phases 0–7, all shipped) moved to `docs/archive/PLAN-2026-draw-pipeline.md`
+with a dated preamble. Live plan work happens in new per-feature docs.
+No code changed.
