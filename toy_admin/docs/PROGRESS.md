@@ -94,3 +94,18 @@ Daily-puzzle backend + admin: per-feature plans, this rolling ledger.
   the presence-only boot warning is gone. Real tokens come from Access
   itself (signed; signature verification remains a shelf item backed by
   tunnel-only ingress).
+
+- **GO-LIVE (2026-10-25, phase 5)**: the tunnel path rule
+  (`^/api(/.*)?$ -> http://toy_admin:8080`, above the blog catch-all)
+  applied to ~/home_server/cloudflared/config.yaml, `ingress validate` OK,
+  match test OK (/api* -> toy_admin, else blog). OPERATIONAL LESSON:
+  `docker compose up -d cloudflared` is a NO-OP for bind-mounted config
+  changes (the service spec didn't change) — it needs `docker compose
+  restart cloudflared`; the 404-from-nginx after "apply" was exactly that.
+  Outside verification through Cloudflare: /api/health 200 ok,
+  /api/puzzle/today serves the live puzzle, /api/admin 302 to the Access
+  login (the app exists and covers jacks.im path-admin), site intact
+  elsewhere. AUD provenance verified with the redirect-kid==AUD identity
+  (kid equals the application's AUD tag): the .env tag matches the app
+  minting jacks.im/api/admin logins — the fence's audience check will
+  accept exactly those tokens.
