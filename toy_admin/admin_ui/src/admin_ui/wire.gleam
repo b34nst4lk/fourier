@@ -75,6 +75,13 @@ pub fn decode_fixture(status: Int, text: String) -> Result(Fixture, Failure) {
   decode_ok(status, text, decode.at(["fixture"], fixture_decoder()))
 }
 
+pub fn decode_saved_fixture(
+  status: Int,
+  text: String,
+) -> Result(Fixture, Failure) {
+  decode_ok(status, text, decode.at(["puzzle", "fixture"], fixture_decoder()))
+}
+
 /// A row's dots — the edit flow loads a puzzle's drawing so the editor can
 /// reopen it.
 pub fn decode_dots(

@@ -246,6 +246,7 @@ function install_fetch(
     previews = [],
     previewFixture = FIXTURE,
     onSave = null,
+    singles = [],
   } = {},
 ) {
   const calls = [];
@@ -253,6 +254,7 @@ function install_fetch(
   let list_calls = 0;
   let save_calls = 0;
   let preview_calls = 0;
+  let single_calls = 0;
   let saved_ok = false;
   const answer = (status, body) => ({
     ok: status >= 200 && status < 300,
@@ -269,6 +271,17 @@ function install_fetch(
         body: { status: "ok", fixture: previewFixture },
       };
       preview_calls++;
+      return Promise.resolve(answer(plan.status, plan.body));
+    }
+    if (/^\/api\/admin\/puzzles\/\d+$/.test(path) && method === "GET") {
+      // a single row's document — the menu's test button's GET. The canned
+      // shape is the SERVER's (the fixture nested inside "puzzle"), so a
+      // client reading some other shape fails HERE, not on the site.
+      const plan = singles[single_calls] ?? {
+        status: 404,
+        body: { status: "error", errors: ["UnknownPuzzle"] },
+      };
+      single_calls++;
       return Promise.resolve(answer(plan.status, plan.body));
     }
     if (/^\/api\/admin\/puzzles(\/\d+)?$/.test(path) && method !== "GET") {
@@ -1092,6 +1105,51 @@ console.log("S7 · authoring — moving and deleting existing nodes");
     shape_is([[20, 20], [40, 70]]),
     JSON.stringify(dots_now()),
   );
+  dom.window.close();
+}
+
+// ==== S8 · the menu's test button reads the row's OWN document ==============
+// The bug: the test button on the menu (the admin's home) answered a bad
+// response — the client decoded a TOP-LEVEL fixture while GET
+// /api/admin/puzzles/<id> nests the fixture inside "puzzle"
+// (live-probed with probe-single-get.sh). The canned shape below IS the
+// server's, so this regression cannot come back silently.
+console.log("S8 · the menu's test button — the saved document's nested fixture");
+{
+  const dom = boot_dom({
+    singles: [
+      {
+        status: 200,
+        body: {
+          status: "ok",
+          puzzle: {
+            id: 7,
+            name: "the quaver",
+            showDate: "2026-10-25",
+            dots: [[10, 10], [90, 10], [50, 90]],
+            fixture: FIXTURE,
+            createdAt: 1,
+            updatedAt: 2,
+          },
+        },
+      },
+    ],
+  });
+  await settle();
+
+  const rows = [...doc(dom).querySelectorAll(".rows tbody tr")];
+  click(rows[0].querySelector("button")); // the first action button: test
+  await settle();
+
+  check("the test button mounts the play view", doc(dom).getElementById("play-board") !== null);
+  // the failure line is CLASS "error hidden" when calm — "error" alone is lit
+  const failure_class = doc(dom).querySelector(".error")?.className ?? "(none)";
+  check("no failure banner over the play view", /(^| )hidden( |$)/.test(failure_class), failure_class);
+  // the play view shows ALL FOUR slots: three dials + the fixed slot's
+  // "not a dial" readout (the 4b per-slot design; only the AUTHORING panel's
+  // preview rows skip the fixed slot)
+  const play_rows_count = [...doc(dom).querySelectorAll(".panel.dials .row")].length;
+  check("the play rows render from the nested fixture", play_rows_count === 4, "rows: " + play_rows_count);
   dom.window.close();
 }
 

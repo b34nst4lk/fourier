@@ -198,3 +198,19 @@ pub fn the_create_body_is_what_the_route_reads_test() {
     wire.preview_body("the star", "2026-10-25", [#(50.0, 10.0), #(60.0, 40.5)]),
   )
 }
+
+pub fn a_saved_fixture_is_read_from_the_rows_puzzle_document_test() {
+  // GET /api/admin/puzzles/<id> nests the fixture INSIDE "puzzle": the menu's
+  // TEST button reads that shape — live-probed (probe-single-get.sh), the
+  // document has NO top-level fixture key. The edit flow already reads this
+  // document's dots at ["puzzle","dots"]; the test read is its sibling.
+  let document =
+    "{\"status\":\"ok\",\"puzzle\":{\"id\":3,\"name\":\"review star\",\"showDate\":\"2026-10-25\",\"dots\":[[10.0,10.0],[90.0,10.0],[50.0,90.0]],\"fixture\":{\"name\":\"review star\",\"showDate\":\"2026-10-25\",\"centroid\":[49.9,37.3],\"dials\":[\"phase\",\"radius\",\"k\",\"fixed\"],\"dial\":[],\"extras\":[],\"patches\":[],\"target\":[]},\"createdAt\":1,\"updatedAt\":2}}"
+  let assert Ok(fixture) = wire.decode_saved_fixture(200, document)
+  should.equal("review star", fixture.name)
+
+  // a top-level fixture is the PREVIEW's shape, not the saved row's: the
+  // two readers stay separate so a shape regression names itself
+  let assert Error(wire.Failure(_, ["BadResponse"])) =
+    wire.decode_saved_fixture(200, "{\"status\":\"ok\",\"fixture\":{}}")
+}

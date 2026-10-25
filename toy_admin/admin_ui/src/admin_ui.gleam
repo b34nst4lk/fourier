@@ -474,7 +474,7 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
         "GET",
         api_puzzles <> "/" <> int.to_string(id),
         "",
-        fn(status, text) { TestLoaded(wire.decode_fixture(status, text)) },
+        fn(status, text) { TestLoaded(wire.decode_saved_fixture(status, text)) },
       ),
     )
 
