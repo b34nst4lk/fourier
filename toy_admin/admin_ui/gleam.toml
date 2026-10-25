@@ -1,0 +1,21 @@
+name = "admin_ui"
+version = "0.1.0"
+
+description = "The toy_admin editor: a Lustre single-page app served from the backend's priv/admin.html."
+licences = ["MIT"]
+
+# The house JS-target rule applies here (AGENTS.md): the admin UI is a browser
+# app, so every build/test/run passes --target javascript. Its own package, not
+# a module inside toy_admin: toy_admin compiles to Erlang and must never depend
+# on browser code (phase 4b's Dockerfile builds this package in its own stage;
+# the backend suite never imports it).
+
+[dependencies]
+gleam_stdlib = ">= 1.0.0 and < 2.0.0"
+gleam_json = ">= 3.1.0 and < 4.0.0"
+# The same Lustre major as the toys (fourier_sketch, fourier_toy): the admin UI
+# is the third face of one visual family and ports their view patterns.
+lustre = ">= 5.7.1 and < 6.0.0"
+
+[dev_dependencies]
+gleeunit = ">= 1.0.0 and < 2.0.0"

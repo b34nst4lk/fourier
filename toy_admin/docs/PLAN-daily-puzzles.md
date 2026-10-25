@@ -105,7 +105,7 @@ grilled before building.
 - **Q4 — Test-play**: the toy's actual board with a menu of **all** saved
   puzzles regardless of date, plus **test-current-drawing** before save.
 - **Q23 — Minimal stats**: per-puzzle attempts / solves / solve % /
-  median moves in the menu row (one SQL aggregate endpoint).
+  median moves in the menu row (one endpoint, four numbers).
 - **Q8 — No public score display**; leaderboard parked on the shelf (the
   uuid schema supports it later).
 
@@ -258,3 +258,35 @@ open; this section governs the backend it will talk to.
   (lowercase in code, HTTP headers being case-insensitive). `compose.yml`
   carries the variable as a commented line — set it from the Access dashboard
   at deploy; leaving it out is the presence-only mode described above.
+
+
+## 10. Implementation decisions (phase 4b — the admin UI, recorded 2026-10-25)
+
+- **The UI is a separate Gleam package** (`toy_admin/admin_ui/`, JS target,
+  deps: lustre + gleam_json only — no math packages on the client) built to
+  ONE self-contained `priv/admin.html` (esbuild pinned in its node stage;
+  house single-file rule), **boot-cached** by the backend (read once at
+  boot: the bundle cannot change while the process runs; a missing bundle
+  is a broken BUILD — the route answers a plain 500 and the boot log says
+  so). Served verbatim at `GET /api/admin`, behind the same fence.
+- **Preview endpoint** (`POST /api/admin/preview`, fenced): derive a
+  fixture from UNsubmitted dots with no store write — the mechanism behind
+  "test the current drawing before saving" (Q4); previewing over a taken
+  date is legal (a preview is not a create) and writes nothing. A blank
+  name borrows the previewed date.
+- **Client-side scoring lives in the UI** (`admin_ui/score.gleam`, ported
+  from fourier_toy/shapes: position_at / synth_trace / rms_pointwise /
+  rms_polar / match_pct, extras chained as rotating epicycles) — the one
+  duplicated piece of math, documented; `fourier_core` extraction remains
+  the plan-parked way to dissolve it.
+- **The draw-canvas/test-play driver** ports the toy's loop with its latest
+  constants verbatim (receded scaffold alphas, 40–85% comet ramp, DPR ≤ 2,
+  30fps cap) — plus a deliberate improvement: the loop STOPS when its
+  canvas leaves the DOM (view swaps no longer keep the CPU awake; the
+  sibling's noted wart, fixed at the port).
+- **jsdom is not a project gate here** (review ruling with the worker):
+  the in-image gleam suites + wire probes cover the UI contract at this
+  scale; adding node_modules to the image for jsdom is a separate decision
+  if the UI grows complex enough to warrant render contracts.
+- `priv/` is a build artifact (never committed) — same rule as the toys'
+  `dist/`; `admin_ui/manifest.toml` IS committed (it pins the dep set).

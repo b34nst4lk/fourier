@@ -1,6 +1,9 @@
 //// The admin API (PLAN-daily-puzzles.md §2 Q12/Q17/Q23, phase 4a) — the
 //// editor's backend: fence, CRUD, per-puzzle stats.
 ////
+////   GET    /api/admin                 the admin UI itself (phase 4b, Q18)
+////   GET    /api/admin/                the same page (a browser's trailing slash)
+////   POST   /api/admin/preview         derive a fixture, save nothing (4b, Q4)
 ////   GET    /api/admin/puzzles        list, newest show_date first, with stats
 ////   POST   /api/admin/puzzles        create {name, showDate, dots}
 ////   GET    /api/admin/puzzles/<id>   one puzzle, full row (dots + fixture)
@@ -54,6 +57,7 @@ import gleam/result
 import gleam/string
 import sketch.{type Dot}
 import toy_admin/access
+import toy_admin/admin_ui
 import toy_admin/clock
 import toy_admin/dates
 import toy_admin/derivation
@@ -109,6 +113,104 @@ fn parse_id(text: String) -> Result(Int, Nil) {
   case int.parse(text) {
     Ok(id) if id > 0 -> Ok(id)
     _ -> Error(Nil)
+  }
+}
+
+// ---------- GET /api/admin — the embedded UI ----------
+
+/// The admin page (Q18). Behind the same fence as the API it drives, and
+/// method-gated the same way: the fence first, so an unfenced caller learns
+/// nothing, then the method, then the bytes the boot read cached.
+pub fn ui(request: wisp.Request, bundle: Option(String)) -> wisp.Response {
+  fenced(request, fn() {
+    case request.method {
+      http.Get -> admin_ui.page(bundle)
+      _ -> wisp.method_not_allowed([http.Get])
+    }
+  })
+}
+
+// ---------- POST /api/admin/preview ----------
+
+/// Derive a fixture from an UNSAVED drawing (Q4: "test the current drawing
+/// before saving"). The editor's whole point is that the fixture arrives in one
+/// round trip: the client does no maths, so what the admin previews and what the
+/// toy later serves are the same numbers from the same derivation.
+///
+/// This route WRITES NOTHING, and that is the contract, not an accident: no
+/// store call, no duplicate-date check, no id. It is therefore also the only
+/// admin write-shaped route that cannot fail with 409 — a preview over a taken
+/// date answers 200 with the fixture. What it derives is exactly what a create
+/// with the same body would store (asserted in admin_api_test).
+pub fn preview(request: wisp.Request) -> wisp.Response {
+  fenced(request, fn() {
+    case request.method {
+      http.Post -> derive_preview(request)
+      _ -> wisp.method_not_allowed([http.Post])
+    }
+  })
+}
+
+fn derive_preview(request: wisp.Request) -> wisp.Response {
+  wisp.require_string_body(request, fn(body) {
+    case parse_draft(body) {
+      Error(_) -> envelope.error_response(400, ["BadRequest"])
+      Ok(draft) ->
+        case validated_preview(draft) {
+          Error(problems) -> envelope.error_response(400, problems)
+          Ok(#(name, show_date, dots)) -> {
+            let fixture = derivation.derive_fixture(dots, name, show_date)
+            case derivation.is_degenerate(fixture) {
+              True -> envelope.error_response(400, ["BadDrawing"])
+              False ->
+                envelope.ok_with([
+                  #("fixture", fixture_json.fixture_to_json(fixture)),
+                ])
+            }
+          }
+        }
+    }
+  })
+}
+
+/// The preview body's rules: the create body's, minus the requirement that the
+/// name and the date be there. A preview happens while the admin is still
+/// drawing, so neither may be mandatory; the fixture's labels are best-effort.
+///
+///   - a blank (or absent) name borrows the date it is previewed for, and falls
+///     back to `"preview"` when no date is set yet — the name is what the toy
+///     shows in its menu, and "preview" is the honest word for "not saved";
+///   - an absent date previews as the empty string ("not picked yet"), but a
+///     date that IS there and is impossible is a typo and fails like create
+///     (BadPuzzleDate) — silently previewing under a date the save would reject
+///     would be a lie about the round trip;
+///   - the drawing must still derive to a non-degenerate fixture (BadDrawing),
+///     because there is nothing to test-play otherwise.
+///
+/// All problems are collected into one envelope, in field order, exactly as on
+/// create.
+fn validated_preview(
+  draft: Draft,
+) -> Result(#(String, String, List(Dot)), List(String)) {
+  let show_date = case draft.show_date {
+    None -> Ok("")
+    Some(value) -> validated_date(value)
+  }
+  let dots = validated_dots(draft.dots)
+  case show_date, dots {
+    Ok(show_date), Ok(dots) -> {
+      let trimmed = case draft.name {
+        None -> ""
+        Some(value) -> string.trim(value)
+      }
+      let name = case trimmed, show_date {
+        "", "" -> "preview"
+        "", show_date -> show_date
+        name, _ -> name
+      }
+      Ok(#(name, show_date, dots))
+    }
+    _, _ -> Error(list.append(problem_list(show_date), problem_list(dots)))
   }
 }
 

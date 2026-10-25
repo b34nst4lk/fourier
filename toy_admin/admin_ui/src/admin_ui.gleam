@@ -1,0 +1,1010 @@
+//// The admin browser UI (PLAN-daily-puzzles.md §3 Q18, phase 4b).
+////
+//// Three views over one API, one page:
+////
+////   MENU       the calendar: every puzzle with its Q23 numbers, and the three
+////              verbs that act on a row (test / edit / delete)
+////   AUTHORING  draw dots, name the puzzle, pick a show date, save it — or test
+////              play it straight away, unsaved (POST /api/admin/preview)
+////   TEST-PLAY  the toy's own board: the four dials, the comet, the match
+////
+//// Design notes that outlive this file:
+////
+////   - The browser does NO derivation. The fixture (centroid, dial truth,
+////     extras, target) always arrives from the server, so what the editor
+////     previews is literally what the toy will serve. The only maths here is the
+////     match metric (score.gleam), which the toy also computes client-side.
+////   - Test play is fed by PREVIEW, never by a save: an admin can try a drawing
+////     before committing a date to it.
+////   - Errors are shown, not swallowed: `wire.failure_text` turns the envelope's
+////     error names into words, and a name it does not know is printed verbatim.
+////   - Delete is armed, not confirmed twice-from-nowhere: the button becomes
+////     `sure?` for two seconds and a second click inside that window deletes. A
+////     stray click costs nothing; a deliberate second click is still one.
+////   - The fence is the SERVER's (Cloudflare Access); this UI is served behind
+////     it, and an expired session shows up as the 401 banner.
+
+import admin_ui/dial
+import admin_ui/draw
+import admin_ui/score
+import admin_ui/wire
+import gleam/dynamic
+import gleam/dynamic/decode
+import gleam/int
+import gleam/list
+import gleam/option.{type Option, None, Some}
+import gleam/string
+import lustre
+import lustre/attribute
+import lustre/effect.{type Effect}
+import lustre/element.{type Element}
+import lustre/element/html
+import lustre/event
+
+// ---------- the browser boundary ----------
+
+@external(javascript, "./fetch.mjs", "fetch_request")
+fn fetch_request(
+  method: String,
+  path: String,
+  body: String,
+  on_done: fn(Int, String) -> Nil,
+) -> Nil
+
+@external(javascript, "./fetch.mjs", "after")
+fn after(ms: Int, callback: fn() -> Nil) -> Nil
+
+@external(javascript, "./canvas.mjs", "event_point")
+fn event_point(event: dynamic.Dynamic) -> #(Float, Float, Bool)
+
+@external(javascript, "./canvas.mjs", "draw_render")
+fn draw_render(path: String, dots: List(#(Float, Float))) -> Nil
+
+@external(javascript, "./canvas.mjs", "play_shape")
+fn play_shape(
+  centroid: #(Float, Float),
+  target: List(#(Float, Float)),
+  extras: List(#(Int, Float, Float)),
+) -> Nil
+
+@external(javascript, "./canvas.mjs", "play_terms")
+fn play_terms(dial: List(#(Int, Float, Float))) -> Nil
+
+@external(javascript, "./canvas.mjs", "play_stop")
+fn play_stop() -> Nil
+
+const api_puzzles = "/api/admin/puzzles"
+
+const preview_path = "/api/admin/preview"
+
+/// How long a delete button stays armed, in milliseconds.
+const arm_ms = 2000
+
+// ---------- state ----------
+
+pub type View {
+  Menu
+  Authoring
+  TestPlay
+}
+
+/// A test-play session: the fixture the server derived, the player's dials, and
+/// the score computed from them (never from the server: the toy scores in the
+/// browser, so the editor does too).
+pub type Play {
+  Play(
+    fixture: wire.Fixture,
+    kinds: List(dial.Kind),
+    terms: List(score.Term),
+    target: List(score.Point),
+    normalizer: Float,
+    match: Float,
+    moves: Int,
+    solved_once: Bool,
+  )
+}
+
+pub type Model {
+  Model(
+    view: View,
+    rows: List(wire.Row),
+    busy: Bool,
+    flash: Option(String),
+    failure: Option(wire.Failure),
+    editing: Option(Int),
+    name: String,
+    show_date: String,
+    drawing: draw.Drawing,
+    play: Option(Play),
+    armed: Option(Int),
+  )
+}
+
+pub type Msg {
+  Refresh
+  RowsLoaded(Result(List(wire.Row), wire.Failure))
+  StartNew
+  StartEdit(Int)
+  StartTest(Int)
+  TestLoaded(Result(wire.Fixture, wire.Failure))
+  DotsLoaded(Result(List(score.Point), wire.Failure))
+  DotsTapped(#(Float, Float))
+  Undo
+  Clear
+  NameChanged(String)
+  ShowDateChanged(String)
+  Save
+  Saved(Result(Nil, wire.Failure))
+  Preview
+  Previewed(Result(wire.Fixture, wire.Failure))
+  DialStep(Int, Int)
+  BackToMenu
+  BackToAuthoring
+  ArmDelete(Int)
+  DisarmDelete(Int)
+  Delete(Int)
+  Deleted(Result(Nil, wire.Failure))
+}
+
+// ---------- boot ----------
+
+pub fn main() -> Nil {
+  let app = lustre.application(init, update, view)
+  let assert Ok(_) = lustre.start(app, "#app", Nil)
+  Nil
+}
+
+fn init(_: Nil) -> #(Model, Effect(Msg)) {
+  #(
+    Model(
+      view: Menu,
+      rows: [],
+      busy: True,
+      flash: None,
+      failure: None,
+      editing: None,
+      name: "",
+      show_date: "",
+      drawing: draw.empty(),
+      play: None,
+      armed: None,
+    ),
+    load_rows(),
+  )
+}
+
+// ---------- effects ----------
+
+fn load_rows() -> Effect(Msg) {
+  request("GET", api_puzzles, "", fn(status, text) {
+    RowsLoaded(wire.decode_rows(status, text))
+  })
+}
+
+fn request(
+  method: String,
+  path: String,
+  body: String,
+  to_msg: fn(Int, String) -> Msg,
+) -> Effect(Msg) {
+  effect.from(fn(dispatch) {
+    fetch_request(method, path, body, fn(status, text) {
+      dispatch(to_msg(status, text))
+    })
+  })
+}
+
+fn render_drawing(drawing: draw.Drawing) -> Effect(Msg) {
+  effect.from(fn(_dispatch) {
+    draw_render(draw.closed_path(drawing), draw.dots(drawing))
+    Nil
+  })
+}
+
+fn sync_board(play: Play) -> Effect(Msg) {
+  effect.from(fn(_dispatch) {
+    play_shape(
+      play.fixture.centroid,
+      play.target,
+      term_triples(play.fixture.extras),
+    )
+    play_terms(term_triples(play.terms))
+    Nil
+  })
+}
+
+fn stop_board() -> Effect(Msg) {
+  effect.from(fn(_dispatch) {
+    play_stop()
+    Nil
+  })
+}
+
+fn term_triples(terms: List(score.Term)) -> List(#(Int, Float, Float)) {
+  list.map(terms, fn(term) { #(term.k, term.radius, term.phase_deg) })
+}
+
+// ---------- update ----------
+
+/// The whole state machine. Public so the tests can drive it exactly as the
+/// runtime does (effects are values; nothing runs until the runtime does).
+pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
+  case msg {
+    Refresh -> #(Model(..model, busy: True, failure: None), load_rows())
+
+    RowsLoaded(Ok(rows)) -> #(
+      Model(..model, rows: rows, busy: False, failure: None),
+      effect.none(),
+    )
+
+    RowsLoaded(Error(failure)) -> #(
+      Model(..model, busy: False, failure: Some(failure)),
+      effect.none(),
+    )
+
+    StartNew -> {
+      let fresh =
+        Model(
+          ..model,
+          view: Authoring,
+          editing: None,
+          name: "",
+          show_date: "",
+          drawing: draw.empty(),
+          flash: None,
+          failure: None,
+          play: None,
+          armed: None,
+        )
+      #(fresh, render_drawing(fresh.drawing))
+    }
+
+    StartEdit(id) -> {
+      let row = row_of(model.rows, id)
+      let editing =
+        Model(
+          ..model,
+          view: Authoring,
+          editing: Some(id),
+          name: case row {
+            Some(row) -> row.name
+            None -> ""
+          },
+          show_date: case row {
+            Some(row) -> row.show_date
+            None -> ""
+          },
+          drawing: draw.empty(),
+          flash: None,
+          failure: None,
+          play: None,
+          armed: None,
+        )
+      #(
+        editing,
+        effect.batch([
+          request(
+            "GET",
+            api_puzzles <> "/" <> int.to_string(id),
+            "",
+            fn(status, text) { DotsLoaded(wire.decode_dots(status, text)) },
+          ),
+          render_drawing(editing.drawing),
+        ]),
+      )
+    }
+
+    StartTest(id) -> #(
+      Model(..model, busy: True, failure: None, armed: None),
+      request(
+        "GET",
+        api_puzzles <> "/" <> int.to_string(id),
+        "",
+        fn(status, text) { TestLoaded(wire.decode_fixture(status, text)) },
+      ),
+    )
+
+    TestLoaded(Error(failure)) -> #(
+      Model(..model, busy: False, failure: Some(failure)),
+      effect.none(),
+    )
+
+    TestLoaded(Ok(fixture)) -> {
+      let play = play_from(fixture)
+      #(
+        Model(
+          ..model,
+          view: TestPlay,
+          busy: False,
+          play: Some(play),
+          failure: None,
+        ),
+        sync_board(play),
+      )
+    }
+
+    DotsLoaded(Ok(dots)) -> {
+      let drawing =
+        list.fold(dots, draw.empty(), fn(acc, point) { draw.add(acc, point) })
+      #(Model(..model, drawing: drawing), render_drawing(drawing))
+    }
+
+    DotsLoaded(Error(failure)) -> #(
+      Model(..model, failure: Some(failure)),
+      effect.none(),
+    )
+
+    DotsTapped(point) -> {
+      let drawing = draw.add(model.drawing, point)
+      #(Model(..model, drawing: drawing), render_drawing(drawing))
+    }
+
+    Undo -> {
+      let drawing = draw.undo(model.drawing)
+      #(Model(..model, drawing: drawing), render_drawing(drawing))
+    }
+
+    Clear -> {
+      let drawing = draw.clear(model.drawing)
+      #(Model(..model, drawing: drawing), render_drawing(drawing))
+    }
+
+    NameChanged(name) -> #(Model(..model, name: name), effect.none())
+
+    ShowDateChanged(date) -> #(Model(..model, show_date: date), effect.none())
+
+    Save -> {
+      let body =
+        wire.puzzle_body(model.name, model.show_date, draw.dots(model.drawing))
+      let path = case model.editing {
+        Some(id) -> api_puzzles <> "/" <> int.to_string(id)
+        None -> api_puzzles
+      }
+      let method = case model.editing {
+        Some(_) -> "PUT"
+        None -> "POST"
+      }
+      #(
+        Model(..model, busy: True, failure: None, flash: None),
+        request(method, path, body, fn(status, text) {
+          Saved(wire.decode_nothing(status, text))
+        }),
+      )
+    }
+
+    Saved(Ok(_)) -> {
+      // a save lands back on the menu with the calendar refreshed — the new
+      // puzzle's stats row is the proof it stuck
+      let done =
+        Model(
+          ..model,
+          view: Menu,
+          busy: True,
+          editing: None,
+          name: "",
+          show_date: "",
+          drawing: draw.empty(),
+          play: None,
+          flash: Some("saved"),
+          failure: None,
+        )
+      #(done, load_rows())
+    }
+
+    Saved(Error(failure)) -> #(
+      Model(..model, busy: False, failure: Some(failure), flash: None),
+      effect.none(),
+    )
+
+    Preview -> {
+      let body =
+        wire.preview_body(model.name, model.show_date, draw.dots(model.drawing))
+      #(
+        Model(..model, busy: True, failure: None, flash: None),
+        request("POST", preview_path, body, fn(status, text) {
+          Previewed(wire.decode_fixture(status, text))
+        }),
+      )
+    }
+
+    Previewed(Ok(fixture)) -> {
+      let play = play_from(fixture)
+      #(
+        Model(
+          ..model,
+          view: TestPlay,
+          busy: False,
+          play: Some(play),
+          failure: None,
+        ),
+        sync_board(play),
+      )
+    }
+
+    Previewed(Error(failure)) -> #(
+      Model(..model, busy: False, failure: Some(failure)),
+      effect.none(),
+    )
+
+    DialStep(slot, dir) -> {
+      case model.play {
+        None -> #(model, effect.none())
+        Some(play) -> {
+          let kind = kind_at(play.kinds, slot)
+          let max_r = dial.max_radius(play.fixture.dial)
+          let terms =
+            list.index_map(play.terms, fn(term, index) {
+              case index == slot {
+                True -> dial.step(kind, term, dir, max_r)
+                False -> term
+              }
+            })
+          let match =
+            score.match_pct(
+              play.fixture.centroid,
+              terms,
+              play.target,
+              play.normalizer,
+            )
+          let #(moves, solved_once) = case play.solved_once {
+            True -> #(play.moves, True)
+            False -> #(play.moves + 1, score.solved(match))
+          }
+          let stepped =
+            Play(
+              ..play,
+              terms: terms,
+              match: match,
+              moves: moves,
+              solved_once: solved_once,
+            )
+          #(
+            Model(..model, play: Some(stepped)),
+            effect.from(fn(_dispatch) {
+              play_terms(term_triples(terms))
+              Nil
+            }),
+          )
+        }
+      }
+    }
+
+    BackToMenu -> {
+      let menu =
+        Model(
+          ..model,
+          view: Menu,
+          play: None,
+          busy: True,
+          flash: None,
+          failure: None,
+          armed: None,
+        )
+      #(menu, effect.batch([stop_board(), load_rows()]))
+    }
+
+    BackToAuthoring -> {
+      let back = Model(..model, view: Authoring, play: None, armed: None)
+      #(back, effect.batch([stop_board(), render_drawing(back.drawing)]))
+    }
+
+    ArmDelete(id) -> {
+      let armed = Model(..model, armed: Some(id))
+      let timed =
+        effect.from(fn(dispatch) {
+          after(arm_ms, fn() { dispatch(DisarmDelete(id)) })
+          Nil
+        })
+      #(armed, timed)
+    }
+
+    DisarmDelete(id) ->
+      case model.armed {
+        Some(armed_id) if armed_id == id -> #(
+          Model(..model, armed: None),
+          effect.none(),
+        )
+        _ -> #(model, effect.none())
+      }
+
+    Delete(id) -> #(
+      Model(..model, armed: None, busy: True, failure: None),
+      request(
+        "DELETE",
+        api_puzzles <> "/" <> int.to_string(id),
+        "",
+        fn(status, text) { Deleted(wire.decode_nothing(status, text)) },
+      ),
+    )
+
+    Deleted(Ok(_)) -> #(Model(..model, flash: Some("deleted")), load_rows())
+
+    Deleted(Error(failure)) -> #(
+      Model(..model, busy: False, failure: Some(failure)),
+      effect.none(),
+    )
+  }
+}
+
+/// Start a test play from a fixture: the toy's shipped starting perturbation,
+/// applied to whatever arrangement the fixture declares.
+pub fn play_from(fixture: wire.Fixture) -> Play {
+  let kinds = fixture.dials
+  let terms = dial.initial(fixture.dial, kinds, dial.standard_patches())
+  let normalizer =
+    score.rms_polar(fixture.target, fixture.centroid.0, fixture.centroid.1)
+  Play(
+    fixture: fixture,
+    kinds: kinds,
+    terms: terms,
+    target: fixture.target,
+    normalizer: normalizer,
+    match: score.match_pct(fixture.centroid, terms, fixture.target, normalizer),
+    moves: 0,
+    solved_once: False,
+  )
+}
+
+fn row_of(rows: List(wire.Row), id: Int) -> Option(wire.Row) {
+  list.find(rows, fn(row) { row.id == id })
+  |> option_from_result
+}
+
+fn option_from_result(result: Result(a, Nil)) -> Option(a) {
+  case result {
+    Ok(value) -> Some(value)
+    Error(_) -> None
+  }
+}
+
+fn kind_at(kinds: List(dial.Kind), slot: Int) -> dial.Kind {
+  case list.drop(kinds, slot) {
+    [kind, ..] -> kind
+    [] -> dial.KindFixed
+  }
+}
+
+// ---------- view ----------
+
+fn view(model: Model) -> Element(Msg) {
+  html.div([attribute.class("app")], [
+    header(model),
+    case model.view {
+      Menu -> menu_view(model)
+      Authoring -> authoring_view(model)
+      TestPlay -> test_play_view(model)
+    },
+  ])
+}
+
+fn header(model: Model) -> Element(Msg) {
+  html.header([attribute.class("head")], [
+    html.h1([], [html.text("toy admin")]),
+    html.span([attribute.class("sub")], [
+      html.text(case model.view {
+        Menu -> "the calendar"
+        Authoring ->
+          case model.editing {
+            Some(_) -> "editing a puzzle"
+            None -> "a new puzzle"
+          }
+        TestPlay -> "test play"
+      }),
+    ]),
+  ])
+}
+
+fn flash_line(model: Model) -> Element(Msg) {
+  case model.flash {
+    Some(text) -> html.p([attribute.class("flash")], [html.text(text)])
+    None -> html.p([attribute.class("flash hidden")], [])
+  }
+}
+
+fn failure_line(model: Model) -> Element(Msg) {
+  case model.failure {
+    Some(failure) ->
+      html.p([attribute.class("error")], [html.text(wire.failure_text(failure))])
+    None -> html.p([attribute.class("error hidden")], [])
+  }
+}
+
+// ---- menu ----
+
+fn menu_view(model: Model) -> Element(Msg) {
+  html.section([attribute.class("menu")], [
+    flash_line(model),
+    failure_line(model),
+    html.div([attribute.class("tools")], [
+      html.button([attribute.class("btn primary"), event.on_click(StartNew)], [
+        html.text("new puzzle"),
+      ]),
+      html.button(
+        [
+          attribute.class("btn"),
+          attribute.disabled(model.busy),
+          event.on_click(Refresh),
+        ],
+        [
+          html.text(case model.busy {
+            True -> "loading…"
+            False -> "refresh"
+          }),
+        ],
+      ),
+    ]),
+    case model.rows {
+      [] ->
+        case model.busy {
+          True ->
+            html.p([attribute.class("empty")], [
+              html.text("loading the calendar…"),
+            ])
+          False ->
+            html.p([attribute.class("empty")], [
+              html.text("no puzzles yet — draw one"),
+            ])
+        }
+      rows -> row_table(rows, model.armed)
+    },
+  ])
+}
+
+fn row_table(rows: List(wire.Row), armed: Option(Int)) -> Element(Msg) {
+  html.table([attribute.class("rows")], [
+    html.thead([], [
+      html.tr([], [
+        head_cell("name"),
+        head_cell("show date"),
+        head_cell("attempts"),
+        head_cell("solves"),
+        head_cell("solve %"),
+        head_cell("median moves"),
+        head_cell(""),
+      ]),
+    ]),
+    html.tbody([], list.map(rows, fn(row) { row_line(row, armed) })),
+  ])
+}
+
+fn head_cell(text: String) -> Element(Msg) {
+  html.th([], [html.text(text)])
+}
+
+fn row_line(row: wire.Row, armed: Option(Int)) -> Element(Msg) {
+  let is_armed = case armed {
+    Some(id) -> id == row.id
+    None -> False
+  }
+  html.tr([], [
+    html.td([attribute.class("name")], [html.text(row.name)]),
+    html.td([], [html.text(row.show_date)]),
+    html.td([attribute.class("num")], [html.text(int.to_string(row.attempts))]),
+    html.td([attribute.class("num")], [html.text(int.to_string(row.solves))]),
+    html.td([attribute.class("num")], [
+      html.text(optional_text(row.solve_pct, "—")),
+    ]),
+    html.td([attribute.class("num")], [
+      html.text(optional_number(row.median_moves)),
+    ]),
+    html.td([attribute.class("acts")], [
+      html.button(
+        [attribute.class("btn small"), event.on_click(StartTest(row.id))],
+        [html.text("test")],
+      ),
+      html.button(
+        [attribute.class("btn small"), event.on_click(StartEdit(row.id))],
+        [html.text("edit")],
+      ),
+      html.button(
+        [
+          attribute.classes([
+            #("btn", True),
+            #("small", True),
+            #("danger", True),
+          ]),
+          event.on_click(case is_armed {
+            True -> Delete(row.id)
+            False -> ArmDelete(row.id)
+          }),
+        ],
+        [
+          html.text(case is_armed {
+            True -> "sure?"
+            False -> "delete"
+          }),
+        ],
+      ),
+    ]),
+  ])
+}
+
+fn optional_text(value: Option(String), fallback: String) -> String {
+  case value {
+    Some(text) -> text
+    None -> fallback
+  }
+}
+
+fn optional_number(value: Option(Float)) -> String {
+  case value {
+    Some(number) -> dial.fmt1(number)
+    None -> "—"
+  }
+}
+
+// ---- authoring ----
+
+fn authoring_view(model: Model) -> Element(Msg) {
+  html.section([attribute.class("authoring")], [
+    flash_line(model),
+    failure_line(model),
+    html.div([attribute.class("panels")], [
+      html.div([attribute.class("panel")], [
+        html.canvas([
+          attribute.class("board"),
+          attribute.id("draw-canvas"),
+          event.on("pointerdown", tap_decoder()),
+        ]),
+        html.p([attribute.class("hint")], [
+          html.text(
+            int.to_string(draw.count(model.drawing))
+            <> " dots — tap to add, three at least, the outline closes itself",
+          ),
+        ]),
+        html.div([attribute.class("tools")], [
+          html.button(
+            [
+              attribute.class("btn"),
+              attribute.disabled(!draw.can_undo(model.drawing)),
+              event.on_click(Undo),
+            ],
+            [html.text("undo")],
+          ),
+          html.button(
+            [
+              attribute.class("btn"),
+              attribute.disabled(draw.count(model.drawing) == 0),
+              event.on_click(Clear),
+            ],
+            [html.text("clear")],
+          ),
+        ]),
+      ]),
+      html.div([attribute.class("panel form")], [
+        field_label("name", name_problem(model.failure)),
+        html.input([
+          attribute.class("input"),
+          attribute.type_("text"),
+          attribute.value(model.name),
+          attribute.placeholder("the star"),
+          event.on_input(NameChanged),
+        ]),
+        field_label("show date", date_problem(model.failure)),
+        html.input([
+          attribute.class("input"),
+          attribute.type_("date"),
+          attribute.value(model.show_date),
+          event.on_input(ShowDateChanged),
+        ]),
+        html.div([attribute.class("tools")], [
+          html.button(
+            [
+              attribute.class("btn primary"),
+              attribute.disabled(!draw.can_submit(model.drawing) || model.busy),
+              event.on_click(Save),
+            ],
+            [
+              html.text(case model.editing {
+                Some(_) -> "save changes"
+                None -> "save puzzle"
+              }),
+            ],
+          ),
+          html.button(
+            [
+              attribute.class("btn"),
+              attribute.disabled(!draw.can_submit(model.drawing) || model.busy),
+              event.on_click(Preview),
+            ],
+            [html.text("test play")],
+          ),
+          html.button([attribute.class("btn"), event.on_click(BackToMenu)], [
+            html.text("back"),
+          ]),
+        ]),
+        html.p([attribute.class("hint")], [
+          html.text(
+            "test play works on the drawing as it is — it does not save anything",
+          ),
+        ]),
+      ]),
+    ]),
+  ])
+}
+
+/// The red underline under a field the server complained about.
+fn name_problem(failure: Option(wire.Failure)) -> Bool {
+  case failure {
+    Some(failure) -> wire.name_problem(failure)
+    None -> False
+  }
+}
+
+fn date_problem(failure: Option(wire.Failure)) -> Bool {
+  case failure {
+    Some(failure) -> wire.date_problem(failure)
+    None -> False
+  }
+}
+
+fn field_label(text: String, problem: Bool) -> Element(Msg) {
+  html.label([attribute.classes([#("label", True), #("bad", problem)])], [
+    html.text(text),
+  ])
+}
+
+/// A tap on the panel becomes a dot. The mapping (pixels -> 0..100, letterbox
+/// aware) is FFI; the tap that lands outside the square is dropped.
+fn tap_decoder() -> decode.Decoder(Msg) {
+  decode.then(decode.dynamic, fn(event) {
+    case event_point(event) {
+      #(x, y, True) -> decode.success(DotsTapped(#(x, y)))
+      _ -> decode.failure(DotsTapped(#(0.0, 0.0)), "a point on the panel")
+    }
+  })
+}
+
+// ---- test play ----
+
+fn test_play_view(model: Model) -> Element(Msg) {
+  case model.play {
+    None -> html.section([], [failure_line(model)])
+    Some(play) -> {
+      html.section([attribute.class("play")], [
+        failure_line(model),
+        play_bar(play),
+        html.div([attribute.class("panels")], [
+          html.canvas([
+            attribute.class("board"),
+            attribute.id("play-board"),
+          ]),
+          html.div([attribute.class("panel dials")], dial_rows(play)),
+        ]),
+        truth_line(play),
+        html.div([attribute.class("tools")], [
+          html.button(
+            [attribute.class("btn"), event.on_click(BackToAuthoring)],
+            [html.text("back to the drawing")],
+          ),
+          html.button([attribute.class("btn"), event.on_click(BackToMenu)], [
+            html.text("the calendar"),
+          ]),
+        ]),
+      ])
+    }
+  }
+}
+
+fn play_bar(play: Play) -> Element(Msg) {
+  html.div([attribute.class("bar")], [
+    html.span(
+      [
+        attribute.classes([
+          #("score", True),
+          #("solved", score.solved(play.match)),
+        ]),
+      ],
+      [
+        html.text("Match "),
+        html.b([], [html.text(dial.fmt1(play.match) <> "%")]),
+        html.span([attribute.class("mv")], [
+          html.text(" · " <> changes_text(play.moves)),
+        ]),
+        html.span([attribute.class("ok")], [html.text("solved ✓")]),
+        html.span([attribute.class("mv")], [
+          html.text(
+            " · "
+            <> case play.fixture.show_date {
+              "" -> "no date yet"
+              date -> date
+            },
+          ),
+        ]),
+      ],
+    ),
+  ])
+}
+
+/// The derived truths, before anything is saved (plan Q2/Q3). Test play runs on
+/// a preview, so the derivation's own four terms are right here: what the shape
+/// became, printed in the same words as the steppers that can undo it.
+fn truth_line(play: Play) -> Element(Msg) {
+  let max_r = dial.max_radius(play.fixture.dial)
+  let parts =
+    list.index_map(play.fixture.dial, fn(term, slot) {
+      int.to_string(slot + 1) <> " " <> dial.truth_text(term, max_r)
+    })
+  html.p([attribute.class("hint")], [
+    html.text("derived: " <> string.join(parts, "   ·   ")),
+  ])
+}
+
+fn dial_rows(play: Play) -> List(Element(Msg)) {
+  let max_r = dial.max_radius(play.fixture.dial)
+  list.index_map(play.kinds, fn(kind, slot) {
+    let assert [term, ..] = list.drop(play.terms, slot)
+    dial_row(kind, slot, term, max_r)
+  })
+}
+
+fn dial_row(
+  kind: dial.Kind,
+  slot: Int,
+  term: score.Term,
+  max_r: Float,
+) -> Element(Msg) {
+  let head = [
+    html.div([attribute.class("id")], [
+      html.span([attribute.class("term")], [
+        html.text("term " <> int.to_string(slot + 1)),
+      ]),
+      html.span([attribute.class("sub")], [
+        html.text(dial.locked_note(kind, term, max_r)),
+      ]),
+    ]),
+  ]
+  let body = case kind {
+    dial.KindFixed -> [
+      html.div([attribute.class("val")], [html.text("not a dial")]),
+    ]
+    _ -> [
+      edge_button(slot, -1, at_min(kind, term, max_r)),
+      html.div([attribute.class("val")], [
+        html.text(dial.slot_value(kind, term, max_r)),
+      ]),
+      edge_button(slot, 1, at_max(kind, term, max_r)),
+    ]
+  }
+  html.div([attribute.class("row")], list.append(head, body))
+}
+
+fn at_min(kind: dial.Kind, term: score.Term, _max_r: Float) -> Bool {
+  case kind {
+    dial.KindK -> term.k <= dial.k_min
+    dial.KindRadius -> term.radius <=. 0.0
+    _ -> False
+  }
+}
+
+fn at_max(kind: dial.Kind, term: score.Term, max_r: Float) -> Bool {
+  case kind {
+    dial.KindK -> term.k >= dial.k_max
+    dial.KindRadius -> term.radius >=. 2.0 *. max_r
+    _ -> False
+  }
+}
+
+fn edge_button(slot: Int, dir: Int, disabled_flag: Bool) -> Element(Msg) {
+  html.button(
+    [
+      attribute.class("btn"),
+      attribute.disabled(disabled_flag),
+      event.on_click(DialStep(slot, dir)),
+    ],
+    [
+      html.text(case dir > 0 {
+        True -> "+"
+        False -> "−"
+      }),
+    ],
+  )
+}
+
+fn changes_text(n: Int) -> String {
+  case n {
+    0 -> "no changes yet"
+    1 -> "1 change"
+    _ -> int.to_string(n) <> " changes"
+  }
+}

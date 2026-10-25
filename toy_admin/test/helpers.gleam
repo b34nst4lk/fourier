@@ -4,6 +4,8 @@
 
 import gleam/float
 import gleam/int
+import gleam/option.{None}
+import toy_admin
 import toy_admin/env
 
 pub fn be_close(actual: Float, expected: Float, tolerance: Float) -> Nil {
@@ -39,6 +41,29 @@ pub fn temp_db_path(label: String) -> String {
     <> ".sqlite3"
   let _ = delete_file(path)
   path
+}
+
+/// A FRESH scratch path for a test that needs a file of its own: unique per
+/// call, in `build/` (gitignored), and deleted first so the call always means
+/// "a file that does not exist yet".
+pub fn temp_path(label: String) -> String {
+  let path =
+    "build/test-file-"
+    <> label
+    <> "-"
+    <> int.to_string(int.absolute_value(unique_integer()))
+  let _ = delete_file(path)
+  path
+}
+
+/// The app state the route tests run against: NO embedded admin UI bundle.
+///
+/// The UI is phase 4b's own section of admin_api_test (which injects a stand-in
+/// bundle, so the suite never depends on the UI build); every other route is
+/// blind to the bundle, and saying so here keeps those tests honest about what
+/// they exercise.
+pub fn app() -> toy_admin.App {
+  toy_admin.App(admin_ui: None)
 }
 
 /// Set a process environment variable, exactly as the container's entrypoint

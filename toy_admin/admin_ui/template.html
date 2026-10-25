@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>toy admin — the calendar</title>
+<!--
+  The admin UI's page. `scripts/build-admin-ui.sh` inlines the bundled Lustre
+  app into the ONE module script below and writes toy_admin/priv/admin.html,
+  which the backend serves verbatim at GET /api/admin (PLAN-daily-puzzles.md
+  §3 Q18, phase 4b): one self-contained file, no external requests, no CDN —
+  the same single-file rule the toys ship under.
+
+  Parchment cartography, the family's palette (light values; dark is the
+  lamplit variant). The page boots in dark when the system asks for it — the
+  toys default to dark there too, and the admin has no theme toggle to store
+  a choice in.
+-->
+<style>
+:root {
+  --ink: #463521;
+  --paper: #faf3e3;
+  --card: #fffdf6;
+  --line: #d9c9a8;
+  --mut: #79714f;
+  --route: #a4372a;
+  --ok: #3d7a3d;
+  color-scheme: light;
+}
+body[data-theme="dark"] {
+  --ink: #eaddb4;
+  --paper: #241d12;
+  --card: #2e2618;
+  --line: #4a3e2a;
+  --mut: #a89771;
+  --route: #d05848;
+  --ok: #8fd08f;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 16px;
+  font: 16px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+  color: var(--ink);
+  background: var(--paper);
+}
+.head { display: flex; align-items: baseline; gap: 10px; margin: 0 0 12px; }
+.head h1 { margin: 0; font-size: 1.3rem; letter-spacing: .01em; }
+.head .sub { color: var(--mut); font-size: .85rem; }
+.hidden { display: none; }
+.flash, .error { margin: 0 0 8px; font-size: .9rem; }
+.flash { color: var(--ok); }
+.error {
+  color: var(--route);
+  border-left: 3px solid var(--route);
+  padding: 2px 0 2px 8px;
+}
+.tools { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 0 0 12px; }
+.btn {
+  font: inherit;
+  padding: 6px 12px;
+  border: 1.5px solid var(--line);
+  border-radius: 7px;
+  background: var(--card);
+  color: var(--ink);
+  cursor: pointer;
+}
+.btn:hover { border-color: var(--mut); }
+.btn:disabled { opacity: .45; cursor: default; }
+.btn.small { padding: 3px 9px; font-size: .85rem; }
+.btn.primary { border-color: var(--route); color: var(--route); }
+.btn.danger { border-color: var(--line); }
+.btn.danger:hover { border-color: var(--route); color: var(--route); }
+.empty, .hint { color: var(--mut); font-size: .85rem; margin: 4px 0 0; }
+/* the calendar: a real table, because it is tabular data */
+.rows { width: 100%; border-collapse: collapse; font-size: .92rem; }
+.rows th, .rows td {
+  text-align: left;
+  padding: 7px 8px;
+  border-bottom: 1px solid var(--line);
+  vertical-align: middle;
+}
+.rows th { color: var(--mut); font-weight: 600; font-size: .8rem; text-transform: lowercase; }
+.rows td.num, .rows th:nth-child(n+3) { text-align: right; }
+.rows td.name { font-weight: 600; }
+.rows td.acts { text-align: right; white-space: nowrap; }
+.rows td.acts .btn { margin-left: 5px; }
+.panels { display: grid; gap: 16px; grid-template-columns: minmax(240px, 1fr) minmax(260px, 1fr); align-items: start; }
+@media (max-width: 700px) { .panels { grid-template-columns: 1fr; } }
+.board {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  background: var(--card);
+  border: 1.5px solid var(--line);
+  border-radius: 10px;
+  margin: 0 0 8px;
+  /* the drawing panel is a drawing surface: no panning, no double-tap zoom */
+  touch-action: none;
+  cursor: crosshair;
+}
+.panel.dials { display: grid; gap: 8px; }
+.panel.form { display: grid; gap: 6px; align-content: start; }
+.label { color: var(--mut); font-size: .8rem; text-transform: lowercase; }
+.label.bad { color: var(--route); }
+.input {
+  font: inherit;
+  width: 100%;
+  padding: 7px 9px;
+  border: 1.5px solid var(--line);
+  border-radius: 7px;
+  background: var(--card);
+  color: var(--ink);
+}
+.bar { display: flex; justify-content: space-between; align-items: center; margin: 0 0 8px; }
+.score { font-size: .92rem; }
+.score b { font-size: 1.25rem; }
+.score .mv { color: var(--mut); font-size: .82rem; margin-left: 6px; }
+.score .ok { display: none; color: var(--ok); font-weight: 600; margin-left: 8px; }
+.score.solved .ok { display: inline; }
+.score.solved b { color: var(--ok); }
+.row {
+  display: grid;
+  grid-template-columns: 1fr 52px 76px 52px;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border: 1.5px solid var(--line);
+  border-radius: 9px;
+  background: var(--card);
+}
+.row .id { display: grid; }
+.row .term { font-size: .8rem; color: var(--mut); text-transform: lowercase; }
+.row .sub { font-size: .74rem; color: var(--mut); }
+.row .val { text-align: center; font-variant-numeric: tabular-nums; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script>
+// Theme before first paint: the family's lamplit variant is the default, and a
+// system that asks for light gets parchment. (The canvas driver reads the same
+// attribute, so the board's palette can never disagree with the page's.)
+document.body.setAttribute(
+  "data-theme",
+  window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches
+    ? "light"
+    : "dark",
+);
+</script>
+<script type="module">
+/*BUNDLE*/
+</script>
+</body>
+</html>

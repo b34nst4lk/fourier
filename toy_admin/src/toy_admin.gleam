@@ -14,7 +14,9 @@
 //// Assertion must be present, and when ADMIN_ACCESS_AUD is configured its
 //// audience and expiry are checked. That module does NOT verify the token's
 //// signature — its header explains why the tunnel is the wall and what the
-//// shelf item is.
+//// shelf item is. The admin UI page (`GET /api/admin`) sits behind the SAME
+//// fence as the JSON API it drives: the page is the control panel, not a
+//// public artifact.
 ////
 //// This is the umbrella's one Erlang-native piece (Q15): it runs inside the
 //// Docker image on the Erlang target, listening on $PORT (default 8080) bound
@@ -54,13 +56,14 @@ import gleam/http/request
 import gleam/int
 import gleam/json
 import gleam/list
-import gleam/option
+import gleam/option.{type Option}
 import gleam/result
 import gleam/string
 import logging
 import mist
 import toy_admin/access
 import toy_admin/admin
+import toy_admin/admin_ui
 import toy_admin/clock
 import toy_admin/dates
 import toy_admin/envelope
@@ -88,6 +91,16 @@ type Abandon {
   Abandon(uuid: String, puzzle_date: String, move_count: Int)
 }
 
+/// The app state: what the process knows that the request does not.
+///
+/// Today that is exactly the embedded admin UI bundle, read ONCE at boot
+/// (admin_ui.gleam explains why boot and not per-request). It is a value passed
+/// to `handle_request` rather than module-level state so the route tests can say
+/// "the bundle was missing" — a boot state, not a filesystem accident.
+pub type App {
+  App(admin_ui: Option(String))
+}
+
 pub fn main() -> Nil {
   let port = port()
   let database = store.path_from_env()
@@ -102,8 +115,9 @@ pub fn main() -> Nil {
   access.announce_at_boot(access.configured_audience(), fn(line) {
     logging.log(logging.Warning, line)
   })
+  let app = load(admin_ui.bundle_path)
   let assert Ok(_) =
-    handle_request
+    fn(request: wisp.Request) { handle_request(request, app) }
     |> wisp_mist.handler(secret_key_base())
     |> mist.new
     |> mist.port(port)
@@ -112,10 +126,31 @@ pub fn main() -> Nil {
   process.sleep_forever()
 }
 
+/// Read the embedded admin UI and build the boot state.
+///
+/// A missing bundle is not fatal: the API keeps working, the page answers 500,
+/// and this warning is the one place the operator learns why. Same discipline as
+/// access.announce_at_boot — a degraded mode announces itself once, at boot,
+/// instead of being discovered from a broken page in a browser.
+pub fn load(admin_ui_path: String) -> App {
+  let bundle = admin_ui.load(admin_ui_path)
+  case bundle {
+    option.None ->
+      logging.log(
+        logging.Warning,
+        "admin UI bundle not found at "
+          <> admin_ui_path
+          <> " — GET /api/admin will answer 500. Run scripts/build-admin-ui.sh, or build the image with its `ui` stage.",
+      )
+    option.Some(_) -> Nil
+  }
+  App(admin_ui: bundle)
+}
+
 /// The route table. Public so the wire contract can be driven from tests
 /// through wisp's simulator (test/api_test.gleam, test/health_test.gleam) as well
 /// as over HTTP.
-pub fn handle_request(request: wisp.Request) -> wisp.Response {
+pub fn handle_request(request: wisp.Request, app: App) -> wisp.Response {
   case wisp.path_segments(request) {
     ["api", "health"] ->
       wisp.require_method(request, http.Get, fn() { health() })
@@ -130,6 +165,11 @@ pub fn handle_request(request: wisp.Request) -> wisp.Response {
     // methods exist.
     ["api", "admin", "puzzles"] -> admin.puzzles(request)
     ["api", "admin", "puzzles", id] -> admin.puzzle(request, id)
+    // Phase 4b: the admin UI itself and the derive-without-saving route. Same
+    // fence, same order (the bundle is handed in, never read here).
+    ["api", "admin"] -> admin.ui(request, app.admin_ui)
+    ["api", "admin", ""] -> admin.ui(request, app.admin_ui)
+    ["api", "admin", "preview"] -> admin.preview(request)
     _ -> wisp.not_found()
   }
 }

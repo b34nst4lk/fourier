@@ -9,9 +9,9 @@ Daily-puzzle backend + admin: per-feature plans, this rolling ledger.
 | 2 | Puzzle store + derivation | ✅ done (2026-10-25, coder subagent deepseek-v4.1-flash:cloud, reviewed 2026-10-24: gates re-run (build green — 108 tests inside), wire probes verified from the network (health/none/BadTimezone 400/BadUuid 400), store+throttle+fixture-json code read line-by-line) | derivation (star gold 27.57/6.59/2.93/0.54, lossless split) + dates (clamp ±14h, Hinnant civil-from-days, never-past) + ingest (uuid v4, 500-cap, adversarial) + SQLite store (sqlight): `puzzles` / `attempts`, solve/abandon upsert, per-day stats |
 | 3 | Public API | ✅ done (2026-10-25, coder subagent deepseek-v4.1-flash:cloud, reviewed 2026-10-24: gates re-run (build green — 108 tests inside), wire probes verified from the network (health/none/BadTimezone 400/BadUuid 400), store+throttle+fixture-json code read line-by-line) | puzzle/today (Wordle-style clamp, `?tz=`), solve + abandon ingest with stable error names, per-uuid + per-IP fixed-window fences (ETS, env-tuned); DB_PATH on the `toy_admin-data` volume |
 | 4a | Admin API | ✅ done (2026-10-25, coder subagent deepseek-v4.1-flash:cloud, **reviewed 2026-10-25**) | fence (`Cf-Access-Jwt-Assertion`, audience `ADMIN_ACCESS_AUD`, expiry; NO signature check — documented) + CRUD `/api/admin/puzzles[/<id>]` (create re-derives, edit re-derives on dots change, delete keeps telemetry) + Q23 menu stats (solvePct one decimal, medianMoves of all attempts incl. abandons, nulls on no data) + `envelope.gleam`; 192 tests green in the Docker gate; live wire probes with a hand-crafted JWT |
-| 4b | Admin UI | ⬜ | draw authoring, menu, test-play — against the 4a API |
-| 5 | Deploy | ⬜ | tunnel ingress rule, user's CF dashboard steps (Access, rate limit, bot fight), compose up; set `ADMIN_ACCESS_AUD` |
-| 5 | Deploy | ⬜ | tunnel ingress rule, user's CF dashboard steps (Access, rate limit, bot fight), compose up |
+| 4b | Admin UI | ✅ done (2026-10-25, coder subagent, reviewed) | Lustre bundle (admin_ui/, JS target), draw authoring + preview test-play, menu with Q23 stats, delete confirm; embedded at /api/admin behind the fence; 41 UI tests + 201 backend tests |
+| 5 | Deploy | ⬜ (code done: ui stage in Dockerfile, build-admin-ui.sh, ADMIN_ACCESS_AUD env) | tunnel ingress rule, user's CF dashboard steps (Access, rate limit, bot fight), compose up; set `ADMIN_ACCESS_AUD` |
+| 5 | Deploy | ⬜ (code done: ui stage in Dockerfile, build-admin-ui.sh, ADMIN_ACCESS_AUD env) | tunnel ingress rule, user's CF dashboard steps (Access, rate limit, bot fight), compose up |
 
 ## Notes
 
@@ -67,3 +67,17 @@ Daily-puzzle backend + admin: per-feature plans, this rolling ledger.
   fenced() wrapper, stats use exact integer tenths (no float-print drift),
   median includes abandons with the policy documented, no-op restating is a
   true store no-op. Plan §9 folded by the worker itself.
+
+- Reviewer notes (4b, 2026-10-25): all wire claims re-verified from the
+  network — UI 401 without a token, 200 text/html (`toy admin — the
+  calendar`) with one, preview derives the quad fixture (standard dial
+  pattern, centroid, extras, target) and leaves the store untouched
+  (puzzles: []), BadDrawing on junk dots. Host gates: admin_ui
+  `gleam test --target javascript` 41/41, format clean on both packages.
+  Score port is faithful (degrees→radians, extras as rotating epicycles,
+  exact integer tenths elsewhere; the star pins the score at truth ≥97%).
+  Canvas driver ports the toy's LATEST constants (receded scaffold alphas,
+  40–85% comet ramp) and stops its loop when the canvas leaves the DOM —
+  the sibling's noted wart, fixed here. Decision notes folded into PLAN
+  §10 (boot-cached bundle + 500-on-missing, preview name fallback,
+  jsdom-not-a-gate ruling, priv/ ignored).

@@ -111,7 +111,7 @@ pub fn today_is_get_only_test() {
   fresh_db("today-method")
   let response =
     simulate.request(http.Post, "/api/puzzle/today?tz=0")
-    |> toy_admin.handle_request
+    |> toy_admin.handle_request(helpers.app())
   should.equal(405, response.status)
 }
 
@@ -383,20 +383,20 @@ fn local_date(tz_offset_minutes: Int) -> String {
 }
 
 fn get(path: String) -> wisp.Response {
-  simulate.request(http.Get, path) |> toy_admin.handle_request
+  simulate.request(http.Get, path) |> toy_admin.handle_request(helpers.app())
 }
 
 fn post(path: String, body: String) -> wisp.Response {
   simulate.request(http.Post, path)
   |> simulate.string_body(body)
-  |> toy_admin.handle_request
+  |> toy_admin.handle_request(helpers.app())
 }
 
 fn post_from(from: String, path: String, body: String) -> wisp.Response {
   simulate.request(http.Post, path)
   |> simulate.string_body(body)
   |> simulate.header("x-forwarded-for", from)
-  |> toy_admin.handle_request
+  |> toy_admin.handle_request(helpers.app())
 }
 
 fn solve_moves() -> String {

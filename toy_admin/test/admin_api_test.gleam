@@ -22,12 +22,15 @@ import gleam/int
 import gleam/json
 import gleam/list
 import gleam/option.{type Option, None, Some}
+import gleam/result
 import gleam/string
 import gleeunit/should
 import helpers
+import simplifile
 import sketch
 import toy_admin
 import toy_admin/access
+import toy_admin/admin_ui
 import toy_admin/clock
 import toy_admin/dates
 import toy_admin/derivation
@@ -561,7 +564,7 @@ pub fn the_list_serves_a_puzzle_the_public_route_can_read_test() {
 
   let served =
     simulate.request(http.Get, "/api/puzzle/today?tz=0")
-    |> toy_admin.handle_request
+    |> toy_admin.handle_request(helpers.app())
   should.equal(200, served.status)
   let body = simulate.read_body(served)
   should.be_true(string.contains(body, "\"showDate\":\"" <> today <> "\""))
@@ -583,6 +586,217 @@ pub fn the_collection_answers_405_with_an_accurate_allow_header_test() {
   let item = call(Some(good_token()), http.Patch, "/api/admin/puzzles/1", None)
   should.equal(405, item.status)
   should.equal("DELETE, GET, PUT", header(item, "allow"))
+}
+
+// ---------- phase 4b: the embedded admin UI + the preview route ----------
+
+/// A stand-in for the bundled single file (scripts/build-admin-ui.sh's output).
+/// Deliberately NOT read from `priv/`: the suite must not depend on the UI build
+/// (the Docker test stage runs before the UI stage), and "verbatim" is a
+/// property of the response, not of the file on disk.
+const ui_html =
+  "<!doctype html>\n<title>admin · puzzles</title>\n<p data-x=\"1\">ünïcode ✓ &amp; </p>\n"
+
+fn ui_state() -> toy_admin.App {
+  toy_admin.App(admin_ui: Some(ui_html))
+}
+
+pub fn the_admin_ui_is_fenced_like_the_api_it_drives_test() {
+  fresh_admin_db("ui-fence")
+  configure_audience()
+  // The page and the preview are admin routes: no token, no answer. The fence
+  // runs before the method check, so an unfenced caller cannot even learn that
+  // /api/admin is a page rather than a JSON route.
+  list.each(["/api/admin", "/api/admin/", "/api/admin/preview"], fn(path) {
+    let response = call(None, http.Get, path, None)
+    should.equal(401, response.status)
+    should.equal(
+      "{\"status\":\"error\",\"errors\":[\"Unauthorized\"]}",
+      simulate.read_body(response),
+    )
+  })
+}
+
+pub fn the_admin_ui_is_served_verbatim_from_both_spellings_test() {
+  fresh_admin_db("ui-serve")
+  configure_audience()
+  // `/api/admin` and `/api/admin/` are one page: a trailing slash is how a
+  // browser spells a directory, and the Access policy covers the prefix.
+  list.each(["/api/admin", "/api/admin/"], fn(path) {
+    let response = call(Some(good_token()), http.Get, path, None)
+    should.equal(200, response.status)
+    should.equal(ui_html, simulate.read_body(response))
+    should.be_true(string.starts_with(
+      header(response, "content-type"),
+      "text/html",
+    ))
+  })
+}
+
+pub fn a_failed_boot_read_is_a_500_not_a_blank_page_test() {
+  // `load` already logged its one warning at boot; the route's job is to say
+  // "broken build" plainly rather than serve half a page.
+  fresh_admin_db("ui-missing")
+  configure_audience()
+  let response =
+    call_with(
+      toy_admin.App(admin_ui: None),
+      Some(good_token()),
+      http.Get,
+      "/api/admin",
+      None,
+    )
+  should.equal(500, response.status)
+  // wisp's plain-text 500, like its plain-text 405: a browser asking for a page
+  // has no use for the JSON envelope.
+  should.equal("Internal server error", simulate.read_body(response))
+}
+
+pub fn the_admin_ui_takes_no_writes_test() {
+  fresh_admin_db("ui-methods")
+  configure_audience()
+  let response = call(Some(good_token()), http.Post, "/api/admin", None)
+  should.equal(405, response.status)
+  should.equal("GET", header(response, "allow"))
+}
+
+pub fn the_bundle_is_read_from_disk_and_a_missing_file_is_not_an_error_test() {
+  // The boot read, in isolation: bytes in, bytes out (no decoding, no
+  // templating — the bundle is already a complete document) and `None`, not a
+  // crash, when the build never ran.
+  let path = helpers.temp_path("admin-ui") <> ".html"
+  let assert Ok(Nil) = simplifile.write(path, ui_html)
+  should.equal(Some(ui_html), admin_ui.load(path))
+  should.equal(None, admin_ui.load(path <> ".absent"))
+}
+
+pub fn preview_derives_the_fixture_and_leaves_the_store_alone_test() {
+  let path = fresh_admin_db("ui-preview")
+  configure_audience()
+  // A puzzle already occupies the date the admin is previewing for: a preview
+  // is not a create, so the taken date is not a 409 and the row must not move.
+  let created = post_puzzle(create_body("Star", show_date, star_dots))
+  should.equal(201, created.status)
+  let assert Ok(Some(before)) =
+    store.puzzle_by_id(path, created_id(simulate.read_body(created)))
+
+  let response =
+    call(
+      Some(good_token()),
+      http.Post,
+      "/api/admin/preview",
+      Some(create_body("", show_date, triangle)),
+    )
+  should.equal(200, response.status)
+
+  // The fixture is the create route's derivation, field for field: a preview
+  // the admin reads and a save the toy reads are one document (asserted against
+  // the derivation itself, not by counting keys). A blank name borrows the
+  // date it was previewed for — the labels are the editor's, not the row's.
+  let expected =
+    derivation.derive_fixture(triangle_points(), show_date, show_date)
+  let assert Ok(previewed) = response_fixture(simulate.read_body(response))
+  should.equal(expected, previewed)
+
+  should.equal(1, store.count_puzzles(path) |> result.unwrap(0))
+  let assert Ok(Some(after)) = store.puzzle_by_id(path, before.id)
+  should.equal(before.dots_json, after.dots_json)
+  should.equal(before.fixture_json, after.fixture_json)
+  should.equal(before.updated_at, after.updated_at)
+}
+
+pub fn preview_asks_for_a_drawing_but_not_for_a_name_or_a_date_test() {
+  fresh_admin_db("ui-preview-bare")
+  configure_audience()
+  // Still drawing: no name, no date picked yet. The fixture is named "preview"
+  // and dated empty — the editor shows it, the store never sees it.
+  let response =
+    call(
+      Some(good_token()),
+      http.Post,
+      "/api/admin/preview",
+      Some("{\"dots\":" <> triangle <> "}"),
+    )
+  should.equal(200, response.status)
+  let assert Ok(previewed) = response_fixture(simulate.read_body(response))
+  should.equal(
+    derivation.derive_fixture(triangle_points(), "preview", ""),
+    previewed,
+  )
+
+  // A name that is only spaces is a blank name (the create route's rule).
+  let blank =
+    call(
+      Some(good_token()),
+      http.Post,
+      "/api/admin/preview",
+      Some(create_body("   ", show_date, triangle)),
+    )
+  should.equal(200, blank.status)
+  let assert Ok(named) = response_fixture(simulate.read_body(blank))
+  should.equal(show_date, named.name)
+}
+
+pub fn preview_validates_the_drawing_and_the_date_like_create_test() {
+  fresh_admin_db("ui-preview-bad")
+  configure_audience()
+  // Fewer than three dots: nothing renderable, exactly as on create.
+  let thin = preview_of(create_body("S", show_date, "[[0,0],[10,0]]"))
+  should.equal(400, thin.status)
+  should.equal("BadDrawing", first_error(simulate.read_body(thin)))
+
+  // A date that is present but impossible is a typo, not "not picked yet".
+  let bad_date = preview_of(create_body("S", "2026-13-45", triangle))
+  should.equal(400, bad_date.status)
+  should.equal("BadPuzzleDate", first_error(simulate.read_body(bad_date)))
+
+  // No drawing at all is the same BadDrawing as an unusable one.
+  let none = preview_of("{\"name\":\"S\"}")
+  should.equal(400, none.status)
+  should.equal("BadDrawing", first_error(simulate.read_body(none)))
+
+  // An undecodable body is the request's fault, not a field's.
+  let junk = preview_of("not json")
+  should.equal(400, junk.status)
+  should.equal("BadRequest", first_error(simulate.read_body(junk)))
+
+  // A read is not a preview: derive-only, POST-only.
+  let read = call(Some(good_token()), http.Get, "/api/admin/preview", None)
+  should.equal(405, read.status)
+  should.equal("POST", header(read, "allow"))
+}
+
+fn preview_of(body: String) -> wisp.Response {
+  call(Some(good_token()), http.Post, "/api/admin/preview", Some(body))
+}
+
+fn triangle_points() -> List(sketch.Dot) {
+  [#(0.0, 0.0), #(10.0, 0.0), #(10.0, 10.0)]
+}
+
+fn response_fixture(body: String) -> Result(derivation.Fixture, Nil) {
+  json.parse(body, using: fixture_doc_decoder())
+  |> result.map_error(fn(_error) { Nil })
+}
+
+fn fixture_doc_decoder() -> decode.Decoder(derivation.Fixture) {
+  use status <- decode.field("status", decode.string)
+  case status {
+    "ok" -> {
+      use fixture <- decode.field("fixture", fixture_json.fixture_decoder())
+      decode.success(fixture)
+    }
+    _ -> decode.failure(derivation.derive_fixture([], "", ""), "status ok")
+  }
+}
+
+/// The created row's id, read from its own document (the store row is what the
+/// preview must leave alone, and the document is how the test learns its id).
+fn created_id(body: String) -> Int {
+  case response_puzzle(body) {
+    Ok(puzzle) -> puzzle.id
+    Error(_) -> 0
+  }
 }
 
 // ---------- infrastructure ----------
@@ -623,6 +837,18 @@ fn call(
   path: String,
   body: Option(String),
 ) -> wisp.Response {
+  call_with(ui_state(), presented_token, method, path, body)
+}
+
+/// The same request against an explicit app state, so the phase 4b tests can
+/// drive "the boot read found nothing" without touching the filesystem.
+fn call_with(
+  app: toy_admin.App,
+  presented_token: Option(String),
+  method: http.Method,
+  path: String,
+  body: Option(String),
+) -> wisp.Response {
   let base = simulate.request(method, path)
   let with_token = case presented_token {
     Some(presented) -> simulate.header(base, access.token_header, presented)
@@ -632,7 +858,7 @@ fn call(
     Some(body) -> simulate.string_body(with_token, body)
     None -> with_token
   }
-  toy_admin.handle_request(with_body)
+  toy_admin.handle_request(with_body, app)
 }
 
 fn post_puzzle(body: String) -> wisp.Response {

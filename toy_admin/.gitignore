@@ -3,3 +3,9 @@
 /build
 /erl_crash.dump
 dist/
+# The admin UI's built page (scripts/build-admin-ui.sh, and the Dockerfile's
+# `ui` stage). A build artifact, never a source: admin_ui/ is the source and
+# the image builds it. Same rule as the toys' dist/.
+/priv/
+# and the UI package's own build output
+/admin_ui/build
