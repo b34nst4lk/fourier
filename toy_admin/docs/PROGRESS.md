@@ -87,3 +87,10 @@ Daily-puzzle backend + admin: per-feature plans, this rolling ledger.
   off the public repo; blank/absent = presence-only fail-safe (verified in
   `docker compose config` + access.audience_from's trim rule); compose
   recreates on a .env change (up -d — no rebuild needed).
+
+- AUD enforcement live (2026-10-25): ADMIN_ACCESS_AUD set in the box's .env
+  (interpolated; recreated, no rebuild). Wire-verified with the REAL aud:
+  wrong-aud 403, real-aud 200, expired 403 (exp-before-aud), no-token 401;
+  the presence-only boot warning is gone. Real tokens come from Access
+  itself (signed; signature verification remains a shelf item backed by
+  tunnel-only ingress).
