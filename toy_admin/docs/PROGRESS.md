@@ -81,3 +81,9 @@ Daily-puzzle backend + admin: per-feature plans, this rolling ledger.
   the sibling's noted wart, fixed here. Decision notes folded into PLAN
   §10 (boot-cached bundle + 500-on-missing, preview name fallback,
   jsdom-not-a-gate ruling, priv/ ignored).
+
+- Compose carries `ADMIN_ACCESS_AUD: ${ADMIN_ACCESS_AUD}` interpolated from
+  the gitignored `.env` next to it (2026-10-25): deployment identifiers stay
+  off the public repo; blank/absent = presence-only fail-safe (verified in
+  `docker compose config` + access.audience_from's trim rule); compose
+  recreates on a .env change (up -d — no rebuild needed).

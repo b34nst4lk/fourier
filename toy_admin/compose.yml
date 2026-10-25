@@ -34,12 +34,13 @@ services:
       # THROTTLE_UUID_WINDOW_SECONDS: "300"
       # THROTTLE_IP_LIMIT: "60"
       # THROTTLE_IP_WINDOW_SECONDS: "300"
-      # The admin fence (access.gleam, PLAN §9). Set it to the Cloudflare Access
-      # application's AUD tag (Access dashboard -> the app -> "Audience tag").
-      # UNSET (or blank) = presence-only: /api/admin/* still demands a
-      # Cf-Access-Jwt-Assertion header, but its audience and expiry are not
-      # checked, and the app says so once at boot (logger warning). Set it.
-      # ADMIN_ACCESS_AUD: "<the Access app's AUD tag>"
+      # The admin fence (access.gleam, PLAN §9): the Cloudflare Access
+      # application's AUD tag. The VALUE lives in the gitignored .env next to
+      # this file (`ADMIN_ACCESS_AUD=<tag>`) — the repo is public, deployment
+      # identifiers are not its business. Interpolated here: set -> audience
+      # and expiry enforced; unset (no .env or no key) -> presence-only
+      # fail-safe, announced once at boot.
+      ADMIN_ACCESS_AUD: ${ADMIN_ACCESS_AUD}
     volumes:
       # Named volume, not a bind mount: the database is the container's own
       # state and must survive `up --build` (which recreates the container)

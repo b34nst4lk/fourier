@@ -9,3 +9,7 @@ dist/
 /priv/
 # and the UI package's own build output
 /admin_ui/build
+# Deployment identifiers (compose interpolation): the real values live only
+# on the box — the repo is public, PLAN §9's fail-safe (presence-only) runs
+# when the file is absent.
+.env
