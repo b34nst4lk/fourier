@@ -40,6 +40,12 @@ pub type Row {
 /// A puzzle as the editor uses it: the drawing (when the API sent one) plus the
 /// derived fixture. `dials` is data, not a constant (Q19) — the editor renders
 /// the dials the fixture declares.
+///
+/// `patches` is the puzzle's starting perturbation, one entry per dial slot,
+/// derived by the backend with the fixture (fixture_json.gleam) so the editor's
+/// test play opens exactly where the player's board opens. An empty list means
+/// a fixture stored before the field existed: `play_from` then falls back to the
+/// editor's old standard row.
 pub type Fixture {
   Fixture(
     name: String,
@@ -49,6 +55,7 @@ pub type Fixture {
     dial: List(score.Term),
     extras: List(score.Term),
     target: List(score.Point),
+    patches: List(dial.Patch),
     dots: Option(List(score.Point)),
   )
 }
@@ -149,6 +156,11 @@ pub fn fixture_decoder() -> decode.Decoder(Fixture) {
   use dial_terms <- decode.field("dial", decode.list(term_decoder()))
   use extras <- decode.field("extras", decode.list(term_decoder()))
   use target <- decode.field("target", points_decoder())
+  use patches <- decode.optional_field(
+    "patches",
+    [],
+    decode.list(patch_decoder()),
+  )
   use dots <- decode.optional_field(
     "dots",
     None,
@@ -162,8 +174,29 @@ pub fn fixture_decoder() -> decode.Decoder(Fixture) {
     dial: dial_terms,
     extras: extras,
     target: target,
+    patches: patches,
     dots: dots,
   ))
+}
+
+/// One starting patch, told apart by its `kind` word; each kind carries its own
+/// field, so a k stays an integer and a percentage a float. The words match
+/// fixture_json.gleam and the toy's decoder — one vocabulary, three readers.
+fn patch_decoder() -> decode.Decoder(dial.Patch) {
+  use kind <- decode.field("kind", decode.string)
+  case kind {
+    "phase" ->
+      decode.field("deg", number_decoder(), fn(deg) {
+        decode.success(dial.PhaseDeg(deg))
+      })
+    "radius" ->
+      decode.field("pct", number_decoder(), fn(pct) {
+        decode.success(dial.RPct(pct))
+      })
+    "k" -> decode.field("k", decode.int, fn(k) { decode.success(dial.KSet(k)) })
+    "keep" -> decode.success(dial.Keep)
+    _ -> decode.failure(dial.Keep, "a patch kind")
+  }
 }
 
 fn kind_decoder() -> decode.Decoder(dial.Kind) {

@@ -42,6 +42,31 @@ pub fn the_menu_rows_decode_with_and_without_stats_test() {
   should.equal(0, second.attempts)
 }
 
+pub fn a_fixture_carries_its_starting_patches_test() {
+  // The start rides with the fixture, one object per dial slot in slot order.
+  // Each kind carries its own field, so a k is an int and a percentage a float.
+  let document =
+    "{\"status\":\"ok\",\"fixture\":{\"name\":\"the star\",\"showDate\":\"2026-10-25\",\"centroid\":[50.0,49.9],\"dials\":[\"phase\",\"radius\",\"k\",\"fixed\"],\"dial\":[],\"extras\":[],\"patches\":[{\"kind\":\"phase\",\"deg\":0.0},{\"kind\":\"radius\",\"pct\":73.0},{\"kind\":\"k\",\"k\":4},{\"kind\":\"keep\"}],\"target\":[]}}"
+  let assert Ok(fixture) = wire.decode_fixture(200, document)
+  should.equal(
+    [dial.PhaseDeg(0.0), dial.RPct(73.0), dial.KSet(4), dial.Keep],
+    fixture.patches,
+  )
+
+  // a document without the field (a row stored before it existed) still decodes
+  let assert Ok(bare) = wire.decode_fixture(200, fixture_ok)
+  should.equal([], bare.patches)
+}
+
+pub fn an_unknown_patch_kind_is_a_decode_failure_test() {
+  let document =
+    "{\"status\":\"ok\",\"fixture\":{\"name\":\"a\",\"showDate\":\"2026-10-25\",\"centroid\":[0.0,0.0],\"dials\":[\"phase\",\"radius\",\"k\",\"fixed\"],\"dial\":[],\"extras\":[],\"patches\":[{\"kind\":\"wobble\"}],\"target\":[]}}"
+  // the wire layer names failures rather than leaking decode paths: an unknown
+  // kind is a refused document, same as any other malformed one
+  let assert Error(wire.Failure(_, errors)) = wire.decode_fixture(200, document)
+  should.equal(["BadResponse"], errors)
+}
+
 pub fn a_fixture_decodes_with_its_whole_arrangement_test() {
   let assert Ok(fixture) = wire.decode_fixture(200, fixture_ok)
   should.equal("the star", fixture.name)

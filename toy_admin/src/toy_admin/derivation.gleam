@@ -19,9 +19,39 @@
 //// == samples), so paying for an O(N²) inverse here would buy nothing.
 //// derive_test pins that claim by rebuilding the trace from centroid + dial +
 //// extras.
+////
+//// Starting patches (PLAN-daily-puzzles.md §1: the deterministic start)
+//// ----------------------------------------------------------------------
+//// A daily puzzle never opens at truth — the player's job is to walk four
+//// perturbed dials back onto it. The vocabulary is four constructors, one per
+//// dial slot, and the formula is the shipped quaver's own start generalised:
+////
+////   Patch = PhaseDeg(Float) | RPct(Float) | KSet(Int) | Keep
+////
+////   slot 1 (phase)   PhaseDeg(snap5(truth_phase + 90°))   — a quarter turn
+////   slot 2 (radius)  RPct(73.0)                           — 73% of dial_max_r
+////   slot 3 (k)       KSet(truth_k − 2), or truth_k + 2 when that would fall
+////                    below k_min (−16): the shift flips instead of clamping,
+////                    so the player always has room to step back
+////   slot 4 (fixed)   Keep                                 — a fixed term is
+////                    already correct, and the player cannot turn it anyway
+////
+//// Why exactly these numbers: they are fourier_toy/puzzle.gleam's quaver
+//// Setup — the start the shipped single puzzle has always had. The gold test
+//// (quaver_equivalent_drawing_reproduces_the_toys_start_test) runs the quaver's
+//// own drawing through this pipeline and demands that byte-for-byte patch
+//// list, so a fetched daily starts the way the built-in puzzle starts.
+//// Why snap to 5°: the phase dial steps in 5°, so an off-grid start could never
+//// be stepped onto.
+////
+//// Patches are resolved against the SHAPE, not baked here: RPct is a percentage
+//// of the shape's biggest dialable radius and KSet is an absolute kind. The toy
+//// resolves them (fourier_toy/puzzle.initial); the wire shape is documented in
+//// fixture_json.
 
 import complex
 import dft
+import gleam/float
 import gleam/int
 import gleam/list
 import gleam/order
@@ -62,10 +92,33 @@ pub type Fixture {
     dial: List(Dial),
     /// The rest of the spectrum, amplitude-ordered and held fixed.
     extras: List(Dial),
+    /// The deterministic start, one patch per dial slot (see the header).
+    patches: List(Patch),
     /// The 512-point comparison trace.
     target: List(#(Float, Float)),
   )
 }
+
+/// How one dial slot starts, before the player touches it (see the header for
+/// the formula). Resolved against the shape by the toy: `RPct` is a percentage
+/// of the biggest dialable radius, not a unit length.
+pub type Patch {
+  PhaseDeg(Float)
+  RPct(Float)
+  KSet(Int)
+  Keep
+}
+
+/// The dial's lower k bound (fourier_toy/puzzle.gleam k_min): the k shift
+/// flips rather than pushes a slot outside the dial.
+pub const k_min = -16
+
+/// The start's three constants, named so a test can point at them.
+pub const start_phase_turn_deg = 90.0
+
+pub const start_radius_pct = 73.0
+
+pub const start_k_shift = -2
 
 /// v1's dial pattern: slot 1 phase, slot 2 radius, slot 3 k, slot 4 fixed.
 pub fn standard_dial_arrangement() -> List(DialKind) {
@@ -95,7 +148,7 @@ pub fn derive_fixture(
   show_date: String,
 ) -> Fixture {
   case can_derive(dots) {
-    False -> Fixture(name, show_date, #(0.0, 0.0), [], [], [], [])
+    False -> Fixture(name, show_date, #(0.0, 0.0), [], [], [], [], [])
     True -> {
       let samples = resample.resample_closed(dots, sample_count)
       let spectrum = dft.forward(samples)
@@ -120,9 +173,60 @@ pub fn derive_fixture(
         standard_dial_arrangement(),
         dial,
         extras,
+        standard_patches(dial),
         samples,
       )
     }
+  }
+}
+
+/// The starting patches for a derived dial, in slot order (see the header).
+/// Public so the vocabulary is observable outside the pipeline and so the k
+/// wall at `k_min` can be tested without hunting for a drawing that lands on
+/// it.
+pub fn standard_patches(dial: List(Dial)) -> List(Patch) {
+  case dial {
+    [] -> []
+    [phase_slot, _radius_slot, k_slot, _fixed_slot, ..rest] -> {
+      let _ = rest
+      [
+        PhaseDeg(snap5(phase_slot.phase_deg +. start_phase_turn_deg)),
+        RPct(start_radius_pct),
+        KSet(start_k(k_slot.k)),
+        Keep,
+      ]
+    }
+    // A short dial (only reachable below the 3-dot gate, which yields an empty
+    // dial) has nothing to perturb per slot: emit what the slots we have can
+    // express, and let the toy refuse anything but four.
+    short -> list.map(short, fn(_row) { Keep })
+  }
+}
+
+/// The quaver's k perturbation, kept inside the dial: −2 normally, +2 instead
+/// when −2 would fall below `k_min`.
+pub fn start_k(truth_k: Int) -> Int {
+  let shifted = truth_k + start_k_shift
+  case shifted < k_min {
+    True -> truth_k - start_k_shift
+    False -> shifted
+  }
+}
+
+/// Snap to the dial's 5° grid, [0, 360) — the same grid the toy's phase row
+/// steps along (fourier_toy/shapes.snap5).
+pub fn snap5(degrees: Float) -> Float {
+  mod360(int.to_float(float.round(degrees /. 5.0)) *. 5.0)
+}
+
+fn mod360(degrees: Float) -> Float {
+  case degrees <. 0.0 {
+    True -> mod360(degrees +. 360.0)
+    False ->
+      case degrees >=. 360.0 {
+        True -> mod360(degrees -. 360.0)
+        False -> degrees
+      }
   }
 }
 

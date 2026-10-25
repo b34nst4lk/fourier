@@ -6,8 +6,8 @@
 ////   stored dots     a JSON array of [x, y] pairs: the drawing, i.e. the source
 ////                   of truth the admin re-derives from
 ////   stored fixture  {"name","showDate","centroid","dials","dial","extras",
-////                   "target"} — everything the toy needs to render, derived
-////                   at save time so serving never runs the DFT
+////                   "patches","target"} — everything the toy needs to render,
+////                   derived at save time so serving never runs the DFT
 ////   served puzzle   the stored fixture's fields plus "dots"
 ////
 //// Why "dots" rides along (Q19): the toy can draw the puzzle AND show the
@@ -19,6 +19,22 @@
 //// It is the standard pattern in v1 — one source of truth for it lives in
 //// `derivation.standard_dial_arrangement`, and the client reads the array.
 ////
+//// "patches" is the puzzle's deterministic start (PLAN-daily-puzzles.md §1;
+//// the vocabulary and the formula live in derivation's header). One object per
+//// dial slot, in slot order, each naming its kind so nothing depends on
+//// position and a future patch kind needs no index bookkeeping:
+////
+////   {"kind":"phase","deg":355.0}    the slot starts at this phase, degrees
+////   {"kind":"radius","pct":73.0}    the slot starts at this % of dial_max_r
+////   {"kind":"k","k":-5}             the slot starts at this k (an integer —
+////                                   a k is never fractional)
+////   {"kind":"keep"}                 the slot starts at its truth
+////
+//// The toy resolves them against the SHAPE it just decoded (puzzle.initial):
+//// percentages need `dial_max_r`, and the unit step needs the shape. A
+//// document with no "patches" is refused rather than served half-formed — the
+//// board cannot open without its four starts.
+////
 //// Floats go out in gleam_json's shortest round-trip form ("27.57", "0.0"),
 //// which decodes back to the identical value: storing a fixture and serving it
 //// is lossless, so a re-served puzzle matches what the admin derived.
@@ -29,7 +45,7 @@ import gleam/json
 import gleam/list
 import gleam/result
 import sketch.{type Dot}
-import toy_admin/derivation.{type Dial, type DialKind, type Fixture}
+import toy_admin/derivation.{type Dial, type DialKind, type Fixture, type Patch}
 
 /// The stored fixture document, as text.
 pub fn to_string(fixture: Fixture) -> String {
@@ -108,6 +124,7 @@ fn derived_fields(fixture: Fixture) -> List(#(String, json.Json)) {
     ),
     #("dial", json.array(fixture.dial, of: dial_to_json)),
     #("extras", json.array(fixture.extras, of: dial_to_json)),
+    #("patches", patches_to_json(fixture.patches)),
     #("target", json.array(fixture.target, of: point_to_json)),
   ]
 }
@@ -122,6 +139,50 @@ fn dial_to_json(dial: Dial) -> json.Json {
     #("radius", json.float(dial.radius)),
     #("phase", json.float(dial.phase_deg)),
   ])
+}
+
+/// The starting patches as a JSON array, one object per dial slot (see the
+/// module header for the wire spelling). Public so a caller can pin the
+/// vocabulary without rebuilding a whole fixture.
+pub fn patches_to_json(patches: List(Patch)) -> json.Json {
+  json.array(patches, of: patch_to_json)
+}
+
+fn patch_to_json(patch: Patch) -> json.Json {
+  case patch {
+    derivation.PhaseDeg(deg) ->
+      json.object([#("kind", json.string("phase")), #("deg", json.float(deg))])
+    derivation.RPct(pct) ->
+      json.object([#("kind", json.string("radius")), #("pct", json.float(pct))])
+    derivation.KSet(k) ->
+      json.object([#("kind", json.string("k")), #("k", json.int(k))])
+    derivation.Keep -> json.object([#("kind", json.string("keep"))])
+  }
+}
+
+/// Read ONE starting patch back. Kind first, then the kind's own field: the
+/// field name is what makes a k an int and a percentage a float, so the
+/// decoder never guesses from shape.
+pub fn patch_decoder() -> decode.Decoder(Patch) {
+  use kind <- decode.field("kind", decode.string)
+  case kind {
+    "phase" ->
+      decode.field("deg", number_decoder(), fn(deg) {
+        decode.success(derivation.PhaseDeg(deg))
+      })
+    "radius" ->
+      decode.field("pct", number_decoder(), fn(pct) {
+        decode.success(derivation.RPct(pct))
+      })
+    "k" ->
+      decode.field("k", decode.int, fn(k) { decode.success(derivation.KSet(k)) })
+    "keep" -> decode.success(derivation.Keep)
+    other ->
+      decode.failure(
+        derivation.Keep,
+        "one of \"phase\", \"radius\", \"k\", \"keep\" (got " <> other <> ")",
+      )
+  }
 }
 
 /// The dial-kind spelling on the wire. Deliberately lowercase and short — it is
@@ -183,6 +244,7 @@ pub fn fixture_decoder() -> decode.Decoder(Fixture) {
   use dials <- decode.field("dials", decode.list(dial_kind_decoder()))
   use dial <- decode.field("dial", decode.list(dial_decoder()))
   use extras <- decode.field("extras", decode.list(dial_decoder()))
+  use patches <- decode.field("patches", decode.list(patch_decoder()))
   use target <- decode.field("target", decode.list(point_decoder()))
   decode.success(derivation.Fixture(
     name: name,
@@ -191,6 +253,7 @@ pub fn fixture_decoder() -> decode.Decoder(Fixture) {
     dials: dials,
     dial: dial,
     extras: extras,
+    patches: patches,
     target: target,
   ))
 }

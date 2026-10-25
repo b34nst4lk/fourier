@@ -98,8 +98,14 @@ pub fn step(kind: Kind, term: Term, dir: Int, max_r: Float) -> Term {
   }
 }
 
-/// The shipped puzzle's start (fourier_toy's P6 row): phase 0°, radius 72% of
-/// the biggest dialable radius, k 8, fourth slot untouched.
+/// The editor's FALLBACK start (fourier_toy's P6 row: phase 0°, radius 72% of
+/// the biggest dialable radius, k 8, fourth slot untouched).
+///
+/// A puzzle saved since the patches field exists carries its own start with its
+/// fixture (`wire.Fixture.patches`) and this is not consulted — the derived start
+/// is the one the toy boots with, and the editor test-plays that. Kept for rows
+/// stored before the field: they have no start to read, and an old row that
+/// cannot test-play would be worse than one that test-plays the old way.
 pub fn standard_patches() -> List(Patch) {
   [PhaseDeg(0.0), RPct(72.0), KSet(8), Keep]
 }

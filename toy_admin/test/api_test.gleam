@@ -37,7 +37,7 @@ const uuid = "2f1c8e1a-1a2b-4c3d-8e4f-0123456789ab"
 const dots = "[[0.0,0.0],[10.0,0.0],[10.0,10.0]]"
 
 const fixture =
-  "{\"name\":\"Star\",\"showDate\":\"2026-10-25\",\"centroid\":[1.5,2.5],\"dials\":[\"phase\",\"radius\",\"k\",\"fixed\"],\"dial\":[{\"k\":2,\"radius\":27.57,\"phase\":270.0}],\"extras\":[],\"target\":[[0.0,0.0],[1.5,2.5]]}"
+  "{\"name\":\"Star\",\"showDate\":\"2026-10-25\",\"centroid\":[1.5,2.5],\"dials\":[\"phase\",\"radius\",\"k\",\"fixed\"],\"dial\":[{\"k\":2,\"radius\":27.57,\"phase\":270.0}],\"extras\":[],\"patches\":[{\"kind\":\"phase\",\"deg\":0.0},{\"kind\":\"radius\",\"pct\":73.0},{\"kind\":\"k\",\"k\":0},{\"kind\":\"keep\"}],\"target\":[[0.0,0.0],[1.5,2.5]]}"
 
 // ---------- GET /api/puzzle/today ----------
 
@@ -63,6 +63,23 @@ pub fn today_serves_the_puzzle_for_the_visitors_local_date_test() {
     json.parse(simulate.read_body(response), using: today_decoder())
   should.equal(today, show_date)
   should.equal(3, dot_count)
+}
+
+pub fn today_serves_the_starting_patches_test() {
+  // Q1's "renders the puzzle exactly as any fixture today": the served puzzle
+  // carries the deterministic start (one patch per dial slot), so the toy's
+  // board opens where the admin's derivation says it opens — no client-side
+  // guess, no difference between the built-in quaver and a fetched daily.
+  let path = fresh_db("today-patches")
+  let today = local_date(0)
+  let assert Ok(_) = store.insert_puzzle(path, "Star", today, dots, fixture)
+
+  let assert Ok(patches) =
+    json.parse(
+      simulate.read_body(get("/api/puzzle/today?tz=0")),
+      using: patches_decoder(),
+    )
+  should.equal(["phase", "radius", "k", "keep"], patches)
 }
 
 pub fn today_defaults_to_utc_without_a_tz_param_test() {
@@ -434,6 +451,13 @@ fn today_decoder() -> decode.Decoder(#(String, option.Option(#(String, Int)))) {
     decode.optional(puzzle_summary_decoder()),
   )
   decode.success(#(status, puzzle))
+}
+
+fn patches_decoder() -> decode.Decoder(List(String)) {
+  decode.at(
+    ["puzzle", "patches"],
+    decode.list(decode.field("kind", decode.string, decode.success)),
+  )
 }
 
 fn puzzle_summary_decoder() -> decode.Decoder(#(String, Int)) {

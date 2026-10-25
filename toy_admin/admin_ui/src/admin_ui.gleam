@@ -526,11 +526,17 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
   }
 }
 
-/// Start a test play from a fixture: the toy's shipped starting perturbation,
-/// applied to whatever arrangement the fixture declares.
+/// Start a test play from a fixture: the fixture's OWN starting perturbation
+/// (derived with it, §1), applied to whatever arrangement it declares. A fixture
+/// stored before the patches field has none — it falls back to the editor's old
+/// standard row, so an old row still test-plays.
 pub fn play_from(fixture: wire.Fixture) -> Play {
   let kinds = fixture.dials
-  let terms = dial.initial(fixture.dial, kinds, dial.standard_patches())
+  let patches = case fixture.patches {
+    [] -> dial.standard_patches()
+    own -> own
+  }
+  let terms = dial.initial(fixture.dial, kinds, patches)
   let normalizer =
     score.rms_polar(fixture.target, fixture.centroid.0, fixture.centroid.1)
   Play(

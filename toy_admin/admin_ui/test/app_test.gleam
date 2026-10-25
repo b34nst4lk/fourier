@@ -31,6 +31,7 @@ fn star() -> wire.Fixture {
     dial: star_fixture.dial(),
     extras: [],
     target: star_fixture.target(),
+    patches: [],
     dots: Some([]),
   )
 }
@@ -86,6 +87,32 @@ pub fn a_previewed_fixture_starts_a_test_play_at_the_toys_start_test() {
   // and the target/normalizer came from the fixture, not from a re-derivation
   close(play.normalizer, star_fixture.rms_polar, 1.0e-6)
   should.equal(512, list.length(play.target))
+}
+
+pub fn a_test_play_starts_from_the_fixtures_own_patches_test() {
+  // The fixture's start (derived with it) is what the editor test-plays — the
+  // same numbers the toy boots a daily with, not a client-side constant.
+  let fixture =
+    wire.Fixture(..star(), patches: [
+      dial.PhaseDeg(355.0),
+      dial.RPct(73.0),
+      dial.KSet(8),
+      dial.Keep,
+    ])
+  let play = play_state(started(fixture))
+
+  let assert [phase_slot, radius_slot, k_slot, fixed_slot] = play.terms
+  close(phase_slot.phase_deg, 355.0, 1.0e-9)
+  close(
+    radius_slot.radius,
+    0.73 *. dial.max_radius(star_fixture.dial()),
+    1.0e-9,
+  )
+  should.equal(8, k_slot.k)
+  // the fixed slot keeps truth: a patch never moves it
+  let last_truth = list.last(star_fixture.dial())
+  let assert Ok(last_truth) = last_truth
+  close(fixed_slot.radius, last_truth.radius, 1.0e-12)
 }
 
 pub fn a_phase_step_moves_the_comet_and_the_score_test() {

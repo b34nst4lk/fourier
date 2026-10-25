@@ -290,3 +290,53 @@ open; this section governs the backend it will talk to.
   if the UI grows complex enough to warrant render contracts.
 - `priv/` is a build artifact (never committed) — same rule as the toys'
   `dist/`; `admin_ui/manifest.toml` IS committed (it pins the dep set).
+
+## 11. Implementation decisions (toy-side integration + patches, recorded 2026-10-25)
+
+- **The fixture carries `patches`** (the puzzle's starting dial states) —
+  derived at save by the STANDARD vocabulary, constants in
+  `derivation.gleam`: `start_radius_pct = 73.0` (of dial_max_r),
+  `start_k_shift = -2` (the umbrella's recorded "k −2 on the kind-3 slot"
+  vocabulary — the review brief's −5 was a slip; the quaver gold test
+  KSet(−5) keeps the generalisation honest), phase = truth + 90° then
+  **snapped to the 5° dial grid** (a patch phase must be reachable by
+  steps!), fixed slot = Keep. Wire encoding: one object per slot,
+  `{"kind":"phase","deg":355} | {"kind":"radius","pct":73} | {"kind":"k",
+  "k":-5} | {"kind":"keep"}` — named kinds, nothing positional.
+- **Toy wire decode** (`fourier_toy/src/fourier_toy/wire.gleam`): the whole
+  envelope decodes; `dials` (arrangement) is DATA (Q19); numbers accept
+  int-or-float (browser JSON.stringify emits ints); the board contract is
+  4/4/4 — anything else falls back rather than crash.
+- **Identity + attempts in the toy (Q16/Q21)**: identity `j-uid`
+  (crypto.randomUUID, created on first visit); attempt state `j-att`
+  (one JSON object: v, date (the SHOW DATE it belongs to), state (dial
+  array), moves ([slot,dir] pairs until the freeze), count, solved,
+  reported). Resume restores dials/counter/solved badge exactly; a solve
+  POSTs `/api/solve` once and marks `reported`; a solve that never
+  confirmed re-POSTs on the next boot (the store's upsert makes the
+  duplicate free); abandon fires on reset (unsolved, count > 0) and on
+  new-day overwrite, carrying the OLD attempt's data before it is
+  replaced. Post-solve steps are neither counted nor recorded.
+- **Fallback = no telemetry**: the built-in quaver is not a published
+  puzzle (`UnknownPuzzle` would reject its solve reports by design), so
+  the fallback mode writes nothing — documented, deliberate.
+- **The toy's match for dailies**: client-side (Q24), the normalizer
+  (`rms_polar`) recomputed from the served target — `shapes.from_parts`
+  is the fetched-puzzle seam; the built-in quaver path is untouched.
+- **The date is presented subordinate to the name**: `<name> · <date>` in
+  a `.when` span; the fallback shows just `quaver`.
+
+## 12. Remaining deployment steps (as of 2026-10-25)
+
+Backend deployed to the box (inert until the rule), the AUD fence
+ENFORCED (real tag in the gitignored .env, verified: wrong-aud 403 /
+real-aud 200 / expired 403 / no token 401, boot warning gone). Open:
+(1) the tunnel ingress rule (path `^/api(/.*)?$ → http://toy_admin:8080`,
+added ABOVE the jacks.im blog catch-all, validate + recreate cloudflared,
+then outside-verify); (2) the user's CF dashboard: the edge rate-limit
+rule (solve/abandon paths, >30/min per IP) + Bot Fight Mode; (3) then the
+toy publishes through the blog pipeline and the site goes dynamic — the
+safe-rollout property holds either way (a 404 fetch falls back to the
+quaver by construction). Cross-repo seam VERIFIED live: a puzzle saved
+via the admin API served by /api/puzzle/today decodes through the toy's
+wire.decode and scores 99.99999...% at truth, 0% at the patches' start.
