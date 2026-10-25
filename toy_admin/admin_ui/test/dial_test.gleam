@@ -215,3 +215,14 @@ pub fn the_derived_readout_speaks_the_dial_rows_words_test() {
     dial.truth_value(dial.KindK, term, max_r),
   )
 }
+
+pub fn kind_codes_are_the_canvas_ink_contract_test() {
+  // canvas.mjs's term_color switches on these codes to ink a chain row: red =
+  // phase, yellow = radius, blue = k, neutral = fixed. The colour follows the
+  // KIND (the arrangement is data), so a re-arranged puzzle keeps its colours —
+  // the numbers may never move without the .mjs switch moving with them.
+  should.equal(0, dial.kind_code(dial.KindPhase))
+  should.equal(1, dial.kind_code(dial.KindRadius))
+  should.equal(2, dial.kind_code(dial.KindK))
+  should.equal(3, dial.kind_code(dial.KindFixed))
+}

@@ -17,6 +17,9 @@
 //     measures at every dial position.
 //   - Theme: the toy owns the toggle, so the caller pushes dark/light
 //     directly (no MutationObserver).
+//   - Ink: one colour per dial KIND (red phase, yellow radius, blue k,
+//     neutral wash for non-dialable terms), never per slot index — the
+//     arrangement is data. The kind codes come from puzzle.kind_code.
 
 const SPEED = 0.125; // laps per second — 50% of the sibling's max (0.25)
 const STEPS = 512; // trace resolution — matches the metric's sampling
@@ -35,8 +38,9 @@ const anim = {
   h: 0,
   dpr: 1,
   shape: null, // {centroid:[cx,cy], target:[[x,y]...], extras:[[k,r,deg]...]}
-  chain: [], // dial rows + extras rows, in draw order (refreshed in rebuild)
+  chain: [], // draw-order rows [k, r, deg, slot, movable] (rebuilt in rebuild)
   dial: [], // [[k, radius, deg], ...] the four dialable terms
+  kinds: [], // per-dial colour codes (puzzle.kind_code), parallel to `dial`
   trace: null, // Float64Array(2*STEPS): full-lap cache of the metric synthesis
   dialKey: null,
   shapeKey: null,
@@ -48,22 +52,52 @@ const anim = {
   dark: false,
 };
 
+// The ink scheme: black ink on white (light) / white ink on black (dark), with
+// exactly four term colours. They are keyed on the dial KIND (the numbers are
+// puzzle.kind_code's codes) — the arrangement decides the colour, never the
+// slot index.
+//
+// Light-mode yellow is #8a6d00, NOT a bright print-yellow: #c9a411 measures
+// 2.39:1 on the white card and 2.31:1 on the page paper — below the 3:1
+// non-text floor, and far below the 4.5:1 the row's readout text needs (the
+// page wears the same hex). #8a6d00 measures 4.92:1 on the card / 4.75:1 on
+// the paper: legibility wins, and the hue is still the radius ink.
 const PALETTES = {
   light: {
-    target: "rgba(134, 97, 63, 0.55)",
-    circles: "rgba(70, 53, 31, 0.2)",
-    links: "rgba(70, 53, 31, 0.45)",
-    trace: "#a4372a",
-    pen: "#d9a92f",
+    phase: "#c8321e", // 5.34:1 on the white card
+    radius: "#8a6d00", // 4.92:1 on the card (darkened print-yellow — see above)
+    k: "#1f5fae", // 6.35:1 on the white card
+    neutral: "rgba(17,17,17,0.18)", // non-dialable rows: scaffold, not ink
+    target: "rgba(17,17,17,0.35)", // the dashed target: barely there
+    trace: "#111", // comet
+    pen: "#111", // pen dot
   },
   dark: {
-    target: "rgba(200, 174, 120, 0.55)",
-    circles: "rgba(234, 217, 180, 0.095)",
-    links: "rgba(234, 217, 180, 0.28)",
-    trace: "#d05848",
-    pen: "#d9a92f",
+    phase: "#e05a4a", // 5.37:1 on #0b0b0b
+    radius: "#ffd93d", // 14.29:1 on #0b0b0b
+    k: "#5aa0e8", // 7.15:1 on #0b0b0b
+    neutral: "rgba(245,245,245,0.10)",
+    target: "rgba(245,245,245,0.25)",
+    trace: "#f5f5f5",
+    pen: "#f5f5f5",
   },
 };
+
+const KIND_FIXED = 3; // puzzle.kind_code(DialFixed)
+
+// kind code → palette entry; anything unknown (a missing push) is scaffold ink
+function term_color(kind, pal) {
+  switch (kind) {
+    case 0:
+      return pal.phase;
+    case 1:
+      return pal.radius;
+    case 2:
+      return pal.k;
+    default:
+      return pal.neutral;
+  }
+}
 
 function palette() {
   return palette_for(anim.dark);
@@ -118,6 +152,17 @@ function terms_equal(a, b) {
     if (a[i][0] !== b[i][0] || a[i][1] !== b[i][1] || a[i][2] !== b[i][2]) {
       return false;
     }
+  }
+  return true;
+}
+
+// the arrangement is part of the payload: a re-arranged puzzle re-inks the
+// board even when the terms happen to be unchanged
+function kinds_equal(a, b) {
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] !== b[i]) return false;
   }
   return true;
 }
@@ -189,12 +234,17 @@ export function canvas_shape(centroid, target, extras) {
   ensure_boot();
 }
 
-export function canvas_terms(dial) {
-  // dial rows arrive as tuples #(k, r, phase_deg) — index, don't record-access.
-  // Same unconditional-stash rule as canvas_shape: payload first, boot after.
+export function canvas_terms(dial, kinds) {
+  // dial rows arrive as tuples #(k, r, phase_deg) — index, don't record-access —
+  // and the arrangement arrives as its kind codes (puzzle.kind_code) so the ink
+  // can follow the KIND. Same unconditional-stash rule as canvas_shape:
+  // payload first, boot after.
   const flat = Array.from(dial, (t) => [t[0], t[1], t[2]]);
-  if (!terms_equal(flat, anim.dial)) {
+  const kindArr =
+    kinds === undefined || kinds === null ? [] : Array.from(kinds, (k) => k | 0);
+  if (!terms_equal(flat, anim.dial) || !kinds_equal(kindArr, anim.kinds)) {
     anim.dial = flat;
+    anim.kinds = kindArr;
     rebuild();
     anim.dirty = true;
   }
@@ -211,12 +261,22 @@ export function canvas_theme(dark) {
 // rebuild_cache: one lap of the FULL metric synthesis — the dial terms plus
 // the fixed extras, every term rotating at its own k (exactly the score's
 // shapes.synth_trace — the extras are NOT a constant offset). Also caches
-// the draw-order chain (dials first, extras after) for the epicycle pass.
+// the draw-order chain: [k, radius, deg, slot, movable] — the four dial rows
+// carry their slot index and wear their kind's ink when the arrangement
+// leaves them movable; the extras are scaffold (slot −1, neutral wash).
 // O(STEPS × terms) — the dedupe pays for itself on every no-op sync,
 // exactly like the sibling.
 function rebuild() {
   if (!anim.shape) return;
-  anim.chain = anim.dial.concat(anim.shape.extras);
+  anim.chain = [];
+  for (let i = 0; i < anim.dial.length; i++) {
+    const t = anim.dial[i];
+    const kind = anim.kinds[i];
+    anim.chain.push([t[0], t[1], t[2], i, kind !== undefined && kind !== KIND_FIXED]);
+  }
+  for (const t of anim.shape.extras) {
+    anim.chain.push([t[0], t[1], t[2], -1, false]);
+  }
   if (!anim.trace || anim.trace.length !== 2 * STEPS) {
     anim.trace = new Float64Array(2 * STEPS);
   }
@@ -290,31 +350,36 @@ function draw() {
     c[2 * (i + 1) + 1] = c[2 * i + 1] + term[1] * Math.sin(a);
   }
 
-  // circles: one beginPath+stroke over the whole chain (sub-pixel radii
-  // skipped — most extras vanish, the visible few are honest epicycles)
+  // circles: one beginPath+stroke PER ROW, in the row's own ink — a movable
+  // dial term wears its kind's colour, everything else (the fixed slot, the
+  // rotating extras) is the neutral wash. Per-row strokes cost nothing
+  // measurable (≤ 30 rows) and are what makes the colour legible as data.
+  // Sub-pixel radii are skipped: most extras vanish, the visible few are
+  // honest epicycles.
   ctx.lineWidth = 1;
-  ctx.strokeStyle = pal.circles;
-  ctx.beginPath();
   for (let i = 0; i < n; i++) {
     const r = chain[i][1] * scale;
     if (r <= 1.2) continue;
+    const row = chain[i];
+    ctx.strokeStyle = row[4] ? term_color(anim.kinds[row[3]], pal) : pal.neutral;
+    ctx.beginPath();
     const X = sx(c[2 * i]);
     const Y = sy(c[2 * i + 1]);
     ctx.moveTo(X + r, Y);
     ctx.arc(X, Y, r, 0, 2 * Math.PI);
+    ctx.stroke();
   }
-  ctx.stroke();
 
-  // links: one beginPath+stroke (sub-pixel arms skipped)
-  ctx.strokeStyle = pal.links;
-  ctx.beginPath();
-  ctx.moveTo(sx(c[0]), sy(c[1]));
-  for (let i = 1; i <= n; i++) {
-    if (chain[i - 1][1] * scale > 1.2) {
-      ctx.lineTo(sx(c[2 * i]), sy(c[2 * i + 1]));
-    }
+  // links: one arm per row, same ink rule (sub-pixel arms skipped)
+  for (let i = 0; i < n; i++) {
+    const row = chain[i];
+    if (row[1] * scale <= 1.2) continue;
+    ctx.strokeStyle = row[4] ? term_color(anim.kinds[row[3]], pal) : pal.neutral;
+    ctx.beginPath();
+    ctx.moveTo(sx(c[2 * i]), sy(c[2 * i + 1]));
+    ctx.lineTo(sx(c[2 * i + 2]), sy(c[2 * i + 3]));
+    ctx.stroke();
   }
-  ctx.stroke();
 
   // comet: the cached trace redrawn in alpha-stepped chunks behind the pen.
   // Chunk boundaries end EXACTLY at the sample index (sibling math) so the
@@ -322,7 +387,7 @@ function draw() {
   // gap, no overshoot.
   const TAIL = Math.floor(TAIL_FRAC * STEPS);
   const idx = Math.max(1, Math.floor(t * STEPS));
-  ctx.lineWidth = 1.6;
+  ctx.lineWidth = 2.6; // the comet is the subject now: bolder than the scaffold
   ctx.strokeStyle = pal.trace;
   for (let k = 0; k < CHUNKS; k++) {
     // tail at COMET_TAIL, tip at COMET_TIP, linear across the chunks —
@@ -346,7 +411,7 @@ function draw() {
   // and links, so the pen can never desync from the comet (whose head is
   // the sample idx = floor(t·STEPS), at most one sample behind the tip)
   ctx.strokeStyle = pal.pen;
-  ctx.lineWidth = 2;
+  ctx.lineWidth = 2.6;
   ctx.beginPath();
   ctx.arc(sx(c[2 * n]), sy(c[2 * n + 1]), 2.2, 0, 2 * Math.PI);
   ctx.stroke();

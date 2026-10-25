@@ -67,7 +67,7 @@ fn play_shape(
 ) -> Nil
 
 @external(javascript, "./canvas.mjs", "play_terms")
-fn play_terms(dial: List(#(Int, Float, Float))) -> Nil
+fn play_terms(dial: List(#(Int, Float, Float)), kinds: List(Int)) -> Nil
 
 @external(javascript, "./canvas.mjs", "play_stop")
 fn play_stop() -> Nil
@@ -207,7 +207,7 @@ fn sync_board(play: Play) -> Effect(Msg) {
       play.target,
       term_triples(play.fixture.extras),
     )
-    play_terms(term_triples(play.terms))
+    play_terms(term_triples(play.terms), kind_codes(play.kinds))
     Nil
   })
 }
@@ -221,6 +221,13 @@ fn stop_board() -> Effect(Msg) {
 
 fn term_triples(terms: List(score.Term)) -> List(#(Int, Float, Float)) {
   list.map(terms, fn(term) { #(term.k, term.radius, term.phase_deg) })
+}
+
+// The arrangement's ink codes (dial.kind_code), parallel to `term_triples`:
+// the canvas inks a row by its KIND, so the kinds cross the boundary with the
+// terms.
+fn kind_codes(kinds: List(dial.Kind)) -> List(Int) {
+  list.map(kinds, dial.kind_code)
 }
 
 // ---------- update ----------
@@ -461,7 +468,7 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
           #(
             Model(..model, play: Some(stepped)),
             effect.from(fn(_dispatch) {
-              play_terms(term_triples(terms))
+              play_terms(term_triples(terms), kind_codes(play.kinds))
               Nil
             }),
           )

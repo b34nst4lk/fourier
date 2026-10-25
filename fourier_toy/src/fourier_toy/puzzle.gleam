@@ -218,6 +218,34 @@ pub fn locked_note(kind: DialKind, s: TermState, max_r: Float) -> String {
   }
 }
 
+// ---------- the canvas ink contract (colour follows the KIND) ----------
+// The arrangement is DATA: v1 ships P/R/K/Fixed, and the fixed slot is a slot
+// like any other. So the ink follows the dial KIND, not the slot index — a
+// rearranged puzzle still inks its phase dial red, its radius dial yellow and
+// its k dial blue. Two surfaces key on these:
+//   - fourier_toy_ffi.mjs PALETTES, whose term colours are switched on
+//     kind_code (the numbers below are a wire contract with that switch);
+//   - index.html's per-row classes, which carry the readout colour.
+
+pub fn kind_code(kind: DialKind) -> Int {
+  case kind {
+    DialP -> 0
+    DialR -> 1
+    DialK -> 2
+    DialFixed -> 3
+  }
+}
+
+/// The dial row's colour class (index.html `.kind-*`).
+pub fn kind_class(kind: DialKind) -> String {
+  case kind {
+    DialP -> "kind-phase"
+    DialR -> "kind-radius"
+    DialK -> "kind-k"
+    DialFixed -> "kind-fixed"
+  }
+}
+
 /// One-decimal match display, matching the JS prototype's toFixed(1).
 pub fn fmt1(m: Float) -> String {
   float.to_string(int.to_float(float.round(m *. 10.0)) /. 10.0)

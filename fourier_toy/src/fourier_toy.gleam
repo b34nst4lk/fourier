@@ -112,7 +112,7 @@ fn init(_: Nil) -> #(Model, Effect(Msg)) {
     ),
     batch([
       hold_driver(),
-      sync_effect(shape, state),
+      sync_effect(shape, state, setup.dials),
       theme_apply(dark),
       fetch_effect(),
     ]),
@@ -144,15 +144,22 @@ fn hold_driver() -> Effect(Msg) {
 
 /// Push the canvas everything it needs: this puzzle's shape plus the current
 /// dial terms.
-fn sync_effect(shape: shapes.Shape, state: List(TermState)) -> Effect(Msg) {
+fn sync_effect(
+  shape: shapes.Shape,
+  state: List(TermState),
+  kinds: List(puzzle.DialKind),
+) -> Effect(Msg) {
   effect.from(fn(_dispatch) {
     ffi.canvas_shape(shape)
-    ffi.canvas_terms(state)
+    ffi.canvas_terms(state, kinds)
   })
 }
 
-fn push_terms(state: List(TermState)) -> Effect(Msg) {
-  effect.from(fn(_dispatch) { ffi.canvas_terms(state) })
+fn push_terms(
+  state: List(TermState),
+  kinds: List(puzzle.DialKind),
+) -> Effect(Msg) {
+  effect.from(fn(_dispatch) { ffi.canvas_terms(state, kinds) })
 }
 
 /// Ask for today's puzzle. `tz` is minutes to ADD to UTC (the API's spelling),
@@ -280,7 +287,13 @@ fn slot_step(model: Model, slot: Int, dir: Int) -> #(Model, Effect(Msg)) {
   }
   #(
     model,
-    batch(list.flatten([[push_terms(stepped)], effects, saved(next_attempt)])),
+    batch(
+      list.flatten([
+        [push_terms(stepped, model.setup.dials)],
+        effects,
+        saved(next_attempt),
+      ]),
+    ),
   )
 }
 
@@ -298,7 +311,15 @@ fn reset(model: Model) -> #(Model, Effect(Msg)) {
       }
       let model =
         Model(..model, state: state, match: match, attempt: next_attempt)
-      #(model, batch(list.flatten([[push_terms(state)], saved(next_attempt)])))
+      #(
+        model,
+        batch(
+          list.flatten([
+            [push_terms(state, model.setup.dials)],
+            saved(next_attempt),
+          ]),
+        ),
+      )
     }
     False -> {
       // an unsolved attempt that was actually played is ABANDONED before it is
@@ -317,7 +338,7 @@ fn reset(model: Model) -> #(Model, Effect(Msg)) {
             model,
             batch(
               list.flatten([
-                [push_terms(state)],
+                [push_terms(state, model.setup.dials)],
                 retire,
                 [persist_effect(fresh)],
               ]),
@@ -327,7 +348,7 @@ fn reset(model: Model) -> #(Model, Effect(Msg)) {
         // the built-in fallback has no attempt to end
         Quaver -> #(
           Model(..model, attempt: None),
-          batch(list.flatten([[push_terms(state)], retire])),
+          batch(list.flatten([[push_terms(state, model.setup.dials)], retire])),
         )
       }
     }
@@ -387,7 +408,12 @@ fn resume(model: Model, stored: attempt.Attempt) -> #(Model, Effect(Msg)) {
   }
   #(
     model,
-    batch(list.flatten([[sync_effect(model.shape, stored.state)], replay])),
+    batch(
+      list.flatten([
+        [sync_effect(model.shape, stored.state, model.setup.dials)],
+        replay,
+      ]),
+    ),
   )
 }
 
@@ -430,7 +456,7 @@ fn open_fresh(
     batch(
       list.flatten([
         before,
-        [sync_effect(model.shape, start)],
+        [sync_effect(model.shape, start, model.setup.dials)],
         [persist_effect(fresh)],
       ]),
     ),
@@ -579,7 +605,16 @@ fn dial_row(
       edge_button(i, 1, at_max(kind, s, max_r)),
     ]
   }
-  html.div([attribute.class("row")], list.append(head, body))
+  html.div(
+    [
+      attribute.classes([
+        #("row", True),
+        #(puzzle.kind_class(kind), True),
+        // the row wears its kind's ink
+      ]),
+    ],
+    list.append(head, body),
+  )
 }
 
 fn at_min(kind: puzzle.DialKind, s: TermState) -> Bool {

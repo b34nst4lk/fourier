@@ -13,7 +13,11 @@
 //     (fourier_sketch's letterbox math, square panel);
 //   - `draw_render` paints the authoring panel: the polygon through the dots
 //     plus the draft's closing edge — no target, no comet, no animation
-//     (nothing is derived in the browser: the fixture comes from the API).
+//     (nothing is derived in the browser: the fixture comes from the API);
+//   - the test-play board wears the TOY'S ink scheme (index.html /
+//     fourier_toy_ffi.mjs PALETTES): one colour per dial KIND — red phase,
+//     yellow radius, blue k, neutral wash for non-dialable terms — keyed on
+//     dial.kind_code, never on the slot index (the arrangement is data).
 //
 // Sketch space is 0..100 with y growing DOWN (the toys' convention); every
 // panel is square and letterboxed, never stretched.
@@ -30,24 +34,49 @@ const COMET_TIP = 0.85; // comet alpha at the pen
 const PLAY_ID = "play-board";
 const DRAW_ID = "draw-canvas";
 
+// The toy's ink scheme, verbatim (fourier_toy_ffi.mjs PALETTES) — the test-play
+// board must look like the thing it previews. Keyed on dial.Kind::kind_code:
+// the colour follows the KIND, so a re-arranged fixture keeps red phase /
+// yellow radius / blue k / neutral fixed. Light-mode yellow is the print-yellow
+// darkened until it clears the contrast floor on white (4.92:1; #c9a411 is
+// 2.39:1 — unreadable); the admin PAGE stays parchment, only the canvas ink
+// follows the scheme.
 const PALETTES = {
   light: {
-    target: "rgba(134, 97, 63, 0.55)",
-    circles: "rgba(70, 53, 31, 0.2)",
-    links: "rgba(70, 53, 31, 0.45)",
-    trace: "#a4372a",
-    pen: "#d9a92f",
-    ink: "#463521",
+    phase: "#c8321e",
+    radius: "#8a6d00",
+    k: "#1f5fae",
+    neutral: "rgba(17,17,17,0.18)",
+    target: "rgba(17,17,17,0.35)",
+    trace: "#111",
+    pen: "#111",
   },
   dark: {
-    target: "rgba(200, 174, 120, 0.55)",
-    circles: "rgba(234, 217, 180, 0.095)",
-    links: "rgba(234, 217, 180, 0.28)",
-    trace: "#d05848",
-    pen: "#d9a92f",
-    ink: "#eaddb4",
+    phase: "#e05a4a",
+    radius: "#ffd93d",
+    k: "#5aa0e8",
+    neutral: "rgba(245,245,245,0.10)",
+    target: "rgba(245,245,245,0.25)",
+    trace: "#f5f5f5",
+    pen: "#f5f5f5",
   },
 };
+
+const KIND_FIXED = 3; // dial.kind_code(KindFixed)
+
+// kind code -> palette entry; anything unknown is scaffold ink
+function term_color(kind, pal) {
+  switch (kind) {
+    case 0:
+      return pal.phase;
+    case 1:
+      return pal.radius;
+    case 2:
+      return pal.k;
+    default:
+      return pal.neutral;
+  }
+}
 
 function dark_mode() {
   return document.body?.getAttribute("data-theme") === "dark";
@@ -167,16 +196,17 @@ function draw_paint() {
   );
 
   // the shape's outline, in sketch units (the polygon the derivation resamples)
+  // — faint target ink, a neutral wash inside it, solid ink for the dots
   ctx.lineWidth = 0.9;
-  ctx.strokeStyle = pal.links;
-  ctx.fillStyle = pal.target;
+  ctx.strokeStyle = pal.target;
+  ctx.fillStyle = pal.neutral;
   if (draw_state.path) {
     ctx.fill(new Path2D(draw_state.path));
     ctx.stroke(new Path2D(draw_state.path));
   }
 
   // the dots themselves
-  ctx.fillStyle = pal.ink;
+  ctx.fillStyle = pal.trace;
   for (const [x, y] of draw_state.dots) {
     ctx.beginPath();
     ctx.arc(x, y, 1.1, 0, 2 * Math.PI);
@@ -221,8 +251,9 @@ const anim = {
   h: 0,
   dpr: 1,
   shape: null, // {centroid, target, extras}
-  chain: [],
-  dial: [],
+  chain: [], // draw-order rows [k, r, deg, slot, movable] (rebuilt in rebuild)
+  dial: [], // [[k, radius, deg], ...]
+  kinds: [], // per-dial colour codes (dial.kind_code), parallel to `dial`
   trace: null,
   dialKey: null,
   shapeKey: null,
@@ -324,6 +355,17 @@ function triple(term) {
   return [term[0], term[1], term[2]];
 }
 
+// the arrangement is part of the payload: a re-arranged fixture re-inks the
+// board even when the terms happen to be unchanged
+function kinds_equal(a, b) {
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] !== b[i]) return false;
+  }
+  return true;
+}
+
 // `centroid` and `target` arrive as plain arrays already (the view converts);
 // `extras` and `dial` are `#(k, r, phase_deg)` tuples — index, never record
 // access, at the FFI boundary.
@@ -341,10 +383,13 @@ export function play_shape(centroid, target, extras) {
   ensure_boot();
 }
 
-export function play_terms(dial) {
+export function play_terms(dial, kinds) {
   const flat = Array.from(dial, triple);
-  if (!terms_equal(flat, anim.dial)) {
+  const kindArr =
+    kinds === undefined || kinds === null ? [] : Array.from(kinds, (k) => k | 0);
+  if (!terms_equal(flat, anim.dial) || !kinds_equal(kindArr, anim.kinds)) {
     anim.dial = flat;
+    anim.kinds = kindArr;
     rebuild();
     anim.dirty = true;
   }
@@ -371,7 +416,18 @@ export function play_stop() {
 // each rotating at its own k — the score's `synth_trace` exactly.
 function rebuild() {
   if (!anim.shape) return;
-  anim.chain = anim.dial.concat(anim.shape.extras);
+  // [k, radius, deg, slot, movable]: dial rows carry their slot and wear their
+  // kind's ink when the arrangement leaves them movable; the extras are
+  // scaffold (slot −1, neutral wash)
+  anim.chain = [];
+  for (let i = 0; i < anim.dial.length; i++) {
+    const t = anim.dial[i];
+    const kind = anim.kinds[i];
+    anim.chain.push([t[0], t[1], t[2], i, kind !== undefined && kind !== KIND_FIXED]);
+  }
+  for (const t of anim.shape.extras) {
+    anim.chain.push([t[0], t[1], t[2], -1, false]);
+  }
   if (!anim.trace || anim.trace.length !== 2 * STEPS) {
     anim.trace = new Float64Array(2 * STEPS);
   }
@@ -439,37 +495,40 @@ function draw() {
     c[2 * (i + 1) + 1] = c[2 * i + 1] + term[1] * Math.sin(a);
   }
 
-  // circles: one beginPath+stroke for the whole chain (sub-pixel radii skipped)
+  // circles: one beginPath+stroke PER ROW, in the row's own ink — a movable
+  // dial term wears its kind's colour, the fixed slot and the rotating extras
+  // the neutral wash (sub-pixel radii skipped)
   ctx.lineWidth = 1;
-  ctx.strokeStyle = pal.circles;
-  ctx.beginPath();
   for (let i = 0; i < n; i++) {
     const r = chain[i][1] * scale;
     if (r <= 1.2) continue;
+    const row = chain[i];
+    ctx.strokeStyle = row[4] ? term_color(anim.kinds[row[3]], pal) : pal.neutral;
+    ctx.beginPath();
     const X = sx(c[2 * i]);
     const Y = sy(c[2 * i + 1]);
     ctx.moveTo(X + r, Y);
     ctx.arc(X, Y, r, 0, 2 * Math.PI);
+    ctx.stroke();
   }
-  ctx.stroke();
 
-  // links: one beginPath+stroke over the arms
-  ctx.strokeStyle = pal.links;
-  ctx.beginPath();
-  ctx.moveTo(sx(c[0]), sy(c[1]));
-  for (let i = 1; i <= n; i++) {
-    if (chain[i - 1][1] * scale > 1.2) {
-      ctx.lineTo(sx(c[2 * i]), sy(c[2 * i + 1]));
-    }
+  // links: one arm per row, same ink rule (sub-pixel arms skipped)
+  for (let i = 0; i < n; i++) {
+    const row = chain[i];
+    if (row[1] * scale <= 1.2) continue;
+    ctx.strokeStyle = row[4] ? term_color(anim.kinds[row[3]], pal) : pal.neutral;
+    ctx.beginPath();
+    ctx.moveTo(sx(c[2 * i]), sy(c[2 * i + 1]));
+    ctx.lineTo(sx(c[2 * i + 2]), sy(c[2 * i + 3]));
+    ctx.stroke();
   }
-  ctx.stroke();
 
   // comet: the cached trace in alpha-stepped chunks behind the pen; chunk
   // boundaries end exactly at the sample index, so the bright tip is the point
   // the pen is about to occupy
   const TAIL = Math.floor(TAIL_FRAC * STEPS);
   const idx = Math.max(1, Math.floor(t * STEPS));
-  ctx.lineWidth = 1.6;
+  ctx.lineWidth = 2.6; // the comet is the subject: bolder than the scaffold
   ctx.strokeStyle = pal.trace;
   for (let k = 0; k < CHUNKS; k++) {
     ctx.globalAlpha = COMET_TAIL + ((COMET_TIP - COMET_TAIL) * k) / (CHUNKS - 1);
@@ -489,7 +548,7 @@ function draw() {
 
   // the pen: bright dot at the chain tip, from the same pass as the circles
   ctx.strokeStyle = pal.pen;
-  ctx.lineWidth = 2;
+  ctx.lineWidth = 2.6;
   ctx.beginPath();
   ctx.arc(sx(c[2 * n]), sy(c[2 * n + 1]), 2.2, 0, 2 * Math.PI);
   ctx.stroke();

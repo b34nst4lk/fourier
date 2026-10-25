@@ -6,22 +6,35 @@
 <title>fourier toy — the quaver</title>
 <style>
 :root {
-  --ink: #463521;
-  --paper: #faf3e3;
-  --card: #fffdf6;
-  --line: #d9c9a8;
-  --mut: #79714f;
-  --route: #a4372a;
-  --ok: #3d7a3d;
+  color-scheme: light;
+  --ink: #111;
+  --paper: #fbfbfb;
+  --card: #fff;
+  --line: #e5e5e5;
+  --mut: #6b6b6b;
+  --ok: #4a7a5a;
+  /* the dial kinds' ink — one colour per KIND, never per slot index. These
+     are fourier_toy_ffi.mjs PALETTES.light's term colours (the canvas and the
+     page must agree): the radius yellow is the print-yellow DARKENED until
+     its TEXT clears 4.5:1 on this paper (4.75:1), because #c9a411 is 2.31:1
+     here — unreadable. */
+  --term-phase: #c8321e;
+  --term-radius: #8a6d00;
+  --term-k: #1f5fae;
+  --term-fixed: #6b6b6b;
 }
 body[data-theme="dark"] {
-  --ink: #eaddb4;
-  --paper: #241d12;
-  --card: #2e2618;
-  --line: #4a3e2a;
-  --mut: #a89771;
-  --route: #d05848;
-  --ok: #8fd08f;
+  color-scheme: dark;
+  --ink: #f5f5f5;
+  --paper: #0b0b0b;
+  --card: #151515;
+  --line: #2a2a2a;
+  --mut: #9a9a9a;
+  --ok: #7fbf94;
+  --term-phase: #e05a4a;
+  --term-radius: #ffd93d;
+  --term-k: #5aa0e8;
+  --term-fixed: #9a9a9a;
 }
 * { box-sizing: border-box; }
 body {
@@ -74,7 +87,7 @@ body {
   align-items: stretch;
 }
 .id { display: flex; flex-direction: column; justify-content: center; font-size: .9rem; }
-.id .term { }
+.id .term { font-variant-numeric: tabular-nums; }
 .id .sub { font-size: .7rem; color: var(--mut); }
 button {
   font: inherit; font-size: 1.35rem; width: 100%;
@@ -88,14 +101,23 @@ button {
   user-select: none;
   -webkit-touch-callout: none;
 }
-button:active { background: #f1e4c8; }
-body[data-theme="dark"] button:active { background: #3d321f; }
+button:active { background: #ededed; }
+body[data-theme="dark"] button:active { background: #232323; }
 button:disabled { opacity: .35; cursor: default; }
 /* dial readouts: plain text, centered in the grid cell — no box */
 .val {
   display: flex; align-items: center; justify-content: center;
   font-size: 1.02rem;
 }
+/* the row's ink follows its dial KIND (puzzle.kind_class): the readout and
+   its small print wear the same colour as that term's orbit on the canvas.
+   Applied per kind, not per slot — a rearranged puzzle keeps its colours. */
+.kind-phase .val, .kind-phase .term, .kind-phase .sub { color: var(--term-phase); }
+.kind-radius .val, .kind-radius .term, .kind-radius .sub { color: var(--term-radius); }
+.kind-k .val, .kind-k .term, .kind-k .sub { color: var(--term-k); }
+.kind-fixed .val, .kind-fixed .term, .kind-fixed .sub { color: var(--term-fixed); }
+.kind-phase .val, .kind-radius .val, .kind-k .val { font-weight: 600; }
+.kind-fixed .val { font-weight: 400; }
 </style>
 </head>
 <body data-theme="light">

@@ -2,6 +2,7 @@
 //// hold-to-repeat input driver, and the daily puzzle's network/storage/
 //// telemetry (PLAN-daily-puzzles.md §1).
 
+import fourier_toy/puzzle
 import fourier_toy/shapes.{type TermState}
 import gleam/dynamic
 import gleam/dynamic/decode
@@ -24,13 +25,18 @@ fn js_canvas_shape(
   extras: List(#(Int, Float, Float)),
 ) -> Nil
 
-/// Push the current four dial terms (cache-deduped on the JS side).
-pub fn canvas_terms(dial: List(TermState)) -> Nil {
-  js_canvas_terms(list.map(dial, row))
+/// Push the current four dial terms and the arrangement's kind codes
+/// (puzzle.kind_code — the canvas inks a term by its KIND, not its slot).
+/// Cache-deduped on the JS side, terms and kinds alike.
+pub fn canvas_terms(
+  dial: List(TermState),
+  kinds: List(puzzle.DialKind),
+) -> Nil {
+  js_canvas_terms(list.map(dial, row), list.map(kinds, puzzle.kind_code))
 }
 
 @external(javascript, "../fourier_toy_ffi.mjs", "canvas_terms")
-fn js_canvas_terms(rows: List(#(Int, Float, Float))) -> Nil
+fn js_canvas_terms(rows: List(#(Int, Float, Float)), kinds: List(Int)) -> Nil
 
 pub fn canvas_theme(dark: Bool) -> Nil {
   js_canvas_theme(dark)

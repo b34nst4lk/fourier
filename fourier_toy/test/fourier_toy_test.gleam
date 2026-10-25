@@ -228,3 +228,23 @@ pub fn locked_note_names_the_locked_fields_test() {
     <> deg(s3),
   )
 }
+
+// ---------- the canvas ink contract: colour follows the KIND ----------
+// The FFI's PALETTES are keyed on puzzle.kind_code (fourier_toy_ffi.mjs
+// term_color), and each dial row's readout wears puzzle.kind_class in
+// index.html. Both follow the KIND — so a rearranged puzzle still inks its
+// phase dial red, its radius dial yellow and its k dial blue, never the slot
+// index (the arrangement is data: v1 is P/R/K/Fixed, and slot 4 is fixed).
+// The codes are a wire contract with the .mjs palette switch: they may never
+// be renumbered without moving that switch.
+pub fn kind_ink_is_keyed_on_the_dial_kind_test() {
+  puzzle.kind_code(DialP) |> should.equal(0)
+  puzzle.kind_code(DialR) |> should.equal(1)
+  puzzle.kind_code(DialK) |> should.equal(2)
+  puzzle.kind_code(puzzle.DialFixed) |> should.equal(3)
+
+  puzzle.kind_class(DialP) |> should.equal("kind-phase")
+  puzzle.kind_class(DialR) |> should.equal("kind-radius")
+  puzzle.kind_class(DialK) |> should.equal("kind-k")
+  puzzle.kind_class(puzzle.DialFixed) |> should.equal("kind-fixed")
+}

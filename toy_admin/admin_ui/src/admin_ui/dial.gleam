@@ -212,6 +212,20 @@ pub fn slot_label(kind: Kind) -> String {
   }
 }
 
+/// The kind's ink code — the test-play canvas (canvas.mjs `term_color`) keys
+/// its palette on it: red phase, yellow radius, blue k, neutral fixed. The
+/// colour follows the KIND, so a re-arranged fixture keeps its colours. The
+/// numbers are a wire contract with that switch; they may never move without
+/// the .mjs moving with them (dial_test pins both sides).
+pub fn kind_code(kind: Kind) -> Int {
+  case kind {
+    KindPhase -> 0
+    KindRadius -> 1
+    KindK -> 2
+    KindFixed -> 3
+  }
+}
+
 /// The fixture's own value for one slot, lettered so it reads on its own in a
 /// list: "φ 270°" / "r 73%" / "k +3". The number half IS `slot_value` — the
 /// stepper's readout — so the derived display and the steppers speak one
