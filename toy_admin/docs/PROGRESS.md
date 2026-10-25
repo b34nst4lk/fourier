@@ -144,3 +144,24 @@ Daily-puzzle backend + admin: per-feature plans, this rolling ledger.
   one-request contracts), format clean both packages, in-image test stage
   green; host priv/admin.html md5 a8a5d00a4a280630b545d699160e54b1 (96K)
   baked with the rebuild.
+
+- **Bug session: the empty live panel + the canvas's missing delete/move
+  (2026-10-25)**: the user reported (1) the preview empty even after three
+  dots, (2) no deletion/moving of drawn nodes. Fixed in two commits:
+  f2db978 (server) the editor ALWAYS sends {name, showDate} even while both
+  are empty strings — validated_preview now reads present-but-empty as "not
+  picked yet" (the create route stays strict), so previews that drew first
+  answered 400 BadPuzzleDate ALL session; the API test that omitted the
+  fields and the smoke's unparse-preferring canned answers both hid it, so
+  present-but-empty is its own committed test. d6dfeea (admin_ui) a preview
+  answer cleared BOTH clock slots, killing the armed fire when a real-network
+  answer landed mid-arm — the panel could stop updating entirely; the answer
+  now clears ONLY inflight (RED probe committed). 942af36 (admin_ui) the
+  canvas moves/deletes nodes via the sketch's vocabulary (grab/set/drop with
+  a one-snapshot drag, click-costs-nothing, right-button delete within
+  reach, contextmenu prevented; every real change funnels the panel's
+  schedule_preview; mid-drag moves never schedule) — admin declared
+  desktop-only, touch-delete parked. Gates by hand at each step; mutation
+  checks ran at both ends. Bug-1 fix deployed (bundle db2ef03b…, in-image
+  md5 verified, endpoints healthy); the vocabulary build deploys with its
+  commit's verification.

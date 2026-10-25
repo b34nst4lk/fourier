@@ -350,3 +350,26 @@ Implementation decisions (worker, verified in review):
 - **Start = `dial.initial` over the fixture's OWN patches** (the standard set when the fixture carries none) — the same derivation the full board boots with; the toggle is a repaint, never a request.
 - **Read-only rows reuse the full board's formatters** (same words and numbers, steppers omitted; non-dial slots skipped by KIND — the arrangement is data).
 - **Mutation-tested**: both generation guards bite (failures under mutation, source restored; suites green after).
+
+## 14. Implementation decisions (the authoring canvas's pointer vocabulary, recorded 2026-10-25)
+
+- **The admin page is DESKTOP-ONLY (user, 2026-10-25)** — only the toy itself
+  must be mobile-friendly. The authoring canvas's delete affordance is the
+  right pointer button (no right-click on touch); touch-delete is PARKED, not
+  designed.
+- **The vocabulary is fourier_sketch's, ported verbatim**: press within
+  `hit_radius = 3.0` units (the family's constant, pinned by a parity test in
+  the same 0..100 space) on the LEFT button grabs the nearest dot — the dot
+  follows the pointer (`set`, no history) — and the release closes the drag:
+  a real move = exactly ONE undo step and ONE preview schedule; a press that
+  never moves (or drags back to the exact start) pops its own snapshot — a
+  click costs nothing, adds nothing. Press on empty space with the LEFT
+  button adds a dot (unchanged). The RIGHT button deletes the nearest dot in
+  reach, deletes NOTHING when none is in reach. Other buttons are ignored.
+  `nearest` uses squared distances with ties to the earliest index (the
+  sketch's rule). Up AND pointerleave close the drag (a drag released off
+  the panel cannot stay open); the browser contextmenu is prevented and
+  ignored. Mid-drag moves repaint ONLY — the drop schedules the preview (the
+  debounce cannot fire once per pointermove sample).
+- **The editor deliberately keeps the polygon path** (no sketch smoothing):
+  it shows what the derivation will actually resample.
