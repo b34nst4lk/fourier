@@ -165,3 +165,21 @@ Daily-puzzle backend + admin: per-feature plans, this rolling ledger.
   checks ran at both ends. Bug-1 fix deployed (bundle db2ef03b…, in-image
   md5 verified, endpoints healthy); the vocabulary build deploys with its
   commit's verification.
+
+- **Bug: the menu's test button answered a bad response (2026-10-25)** — the
+  user asked first whether the docker logs explain it; they did not, because
+  the backend wired NO request logging (the only line was the boot notice).
+  Diagnosed instead by live probe (scripts/probe-single-get.sh, now a
+  committed tool: mints a fence-acceptable token from .env and wget's the
+  app inside the container — the runtime image has no curl). TWO findings,
+  both fixed: (b8b5a81) GET /api/admin/puzzles/<id> nests the fixture inside
+  "puzzle" while StartTest decoded a TOP-LEVEL fixture — 200s decoded as
+  BadResponse; new decode_saved_fixture reads ["puzzle","fixture]; the edit
+  flow's dots read already used the nested shape (its sibling). uismoke S8
+  added: the stub had NO single-GET handling at all (the button was never
+  smoke-driven — the same stub-shape gap class as the preview-body bug);
+  S8's canned shape is the server's, and the pre-fix artifact run fails the
+  pin. (3ef20ab) request logging: wisp.log_request middleware + the Erlang
+  logger level set to INFO at boot (the default NOTICE swallowed every
+  line — verified empirically); '<status> METHOD path' lines now appear in
+  the container logs through the tunnel.
