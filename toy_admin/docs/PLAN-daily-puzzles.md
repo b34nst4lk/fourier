@@ -330,7 +330,12 @@ open; this section governs the backend it will talk to.
 
 Backend deployed to the box (inert until the rule), the AUD fence
 ENFORCED (real tag in the gitignored .env, verified: wrong-aud 403 /
-real-aud 200 / expired 403 / no token 401, boot warning gone). Open:
+real-aud 200 / expired 403 / no token 401, boot warning gone). The toy's
+daily integration PUBLISHED (blog pipeline 9bd2663; live bundle
+byte-identical to the gated build — j-uid/j-att/fetch wired; a test
+puzzle for 2026-10-25 sits in the backend's SQLite, invisible until the
+tunnel routes /api — and the live fetch 404s to the quaver fallback,
+verified at https://jacks.im/api/puzzle/today). Open:
 (1) the tunnel ingress rule (path `^/api(/.*)?$ → http://toy_admin:8080`,
 added ABOVE the jacks.im blog catch-all, validate + recreate cloudflared,
 then outside-verify); (2) the user's CF dashboard: the edge rate-limit
