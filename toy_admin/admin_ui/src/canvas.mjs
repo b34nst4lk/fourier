@@ -308,14 +308,24 @@ function frame(now) {
 }
 
 let boot_retry = null;
+// The board the latest play_* call asked for: it is mounted a frame later
+// (Lustre patches the DOM after the effect), so the retry must read the
+// freshest request rather than the id its own chain started with. ONE driver
+// serves both boards — Gleam names the id it wants (`play-board` for test play,
+// `preview-board` for the authoring panel; see admin_ui.gleam's two constants),
+// ensure_boot looks up exactly that id, and the two boards are never mounted at
+// once, so the loop can never attach to the canvas that is about to leave the
+// DOM. PLAY_ID is only the fallback for a call that names nothing.
+let want_id = PLAY_ID;
 
-function ensure_boot() {
-  const el = document.getElementById(PLAY_ID);
+function ensure_boot(board_id) {
+  want_id = board_id === undefined || board_id === null ? PLAY_ID : board_id;
+  const el = document.getElementById(want_id);
   if (!el) {
     if (boot_retry === null) {
       boot_retry = requestAnimationFrame(() => {
         boot_retry = null;
-        ensure_boot();
+        ensure_boot(want_id);
       });
     }
     return;
@@ -368,8 +378,8 @@ function kinds_equal(a, b) {
 
 // `centroid` and `target` arrive as plain arrays already (the view converts);
 // `extras` and `dial` are `#(k, r, phase_deg)` tuples — index, never record
-// access, at the FFI boundary.
-export function play_shape(centroid, target, extras) {
+// access, at the FFI boundary. `board_id` names the canvas this view mounts.
+export function play_shape(board_id, centroid, target, extras) {
   const centroidArr = [centroid[0], centroid[1]];
   const targetArr = Array.from(target, (p) => [p[0], p[1]]);
   const extrasArr = Array.from(extras, triple);
@@ -380,10 +390,10 @@ export function play_shape(centroid, target, extras) {
     rebuild();
   }
   anim.dirty = true;
-  ensure_boot();
+  ensure_boot(board_id);
 }
 
-export function play_terms(dial, kinds) {
+export function play_terms(board_id, dial, kinds) {
   const flat = Array.from(dial, triple);
   const kindArr =
     kinds === undefined || kinds === null ? [] : Array.from(kinds, (k) => k | 0);
@@ -393,15 +403,21 @@ export function play_terms(dial, kinds) {
     rebuild();
     anim.dirty = true;
   }
-  ensure_boot();
+  ensure_boot(board_id);
 }
 
-// Stop the loop when the test-play view is left (a no-op when it is idle).
+// Stop the loop when the play view is left (a no-op when it is idle).
 export function play_stop() {
   anim.stopped = true;
   if (anim.raf !== null) {
     cancelAnimationFrame(anim.raf);
     anim.raf = null;
+  }
+  // a boot that has not found its canvas yet must not revive the board after
+  // this stop (BackToAuthoring stops, then asks for the panel, in that order)
+  if (boot_retry !== null) {
+    cancelAnimationFrame(boot_retry);
+    boot_retry = null;
   }
   anim.ctx = null;
   anim.canvas = null;

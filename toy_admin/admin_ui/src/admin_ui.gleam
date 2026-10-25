@@ -4,8 +4,9 @@
 ////
 ////   MENU       the calendar: every puzzle with its Q23 numbers, and the three
 ////              verbs that act on a row (test / edit / delete)
-////   AUTHORING  draw dots, name the puzzle, pick a show date, save it — or test
-////              play it straight away, unsaved (POST /api/admin/preview)
+////   AUTHORING  draw dots, name the puzzle, pick a show date, save it — and see
+////              a LIVE panel of the toy's board while drawing; anything can be
+////              test-played full-size, unsaved (POST /api/admin/preview)
 ////   TEST-PLAY  the toy's own board: the four dials, the comet, the match
 ////
 //// Design notes that outlive this file:
@@ -53,21 +54,37 @@ fn fetch_request(
 @external(javascript, "./fetch.mjs", "after")
 fn after(ms: Int, callback: fn() -> Nil) -> Nil
 
+// The preview debounce's timer. fetch.mjs keeps ONE slot and cancels the
+// previous timer on every call, so a burst of taps leaves exactly one live
+// timer (the generation guard in `update` is the second line of defence, for a
+// timer that fires after the drawing moved on).
+@external(javascript, "./fetch.mjs", "preview_after")
+fn preview_after(ms: Int, callback: fn() -> Nil) -> Nil
+
 @external(javascript, "./canvas.mjs", "event_point")
 fn event_point(event: dynamic.Dynamic) -> #(Float, Float, Bool)
 
 @external(javascript, "./canvas.mjs", "draw_render")
 fn draw_render(path: String, dots: List(#(Float, Float))) -> Nil
 
+// One play driver, two boards: `board_id` says which canvas this view mounts
+// (`play-board` for test play, `preview-board` for the authoring panel). The
+// driver looks up exactly that id, so a view swap can never attach to the
+// canvas that is about to leave the DOM.
 @external(javascript, "./canvas.mjs", "play_shape")
 fn play_shape(
+  board_id: String,
   centroid: #(Float, Float),
   target: List(#(Float, Float)),
   extras: List(#(Int, Float, Float)),
 ) -> Nil
 
 @external(javascript, "./canvas.mjs", "play_terms")
-fn play_terms(dial: List(#(Int, Float, Float)), kinds: List(Int)) -> Nil
+fn play_terms(
+  board_id: String,
+  dial: List(#(Int, Float, Float)),
+  kinds: List(Int),
+) -> Nil
 
 @external(javascript, "./canvas.mjs", "play_stop")
 fn play_stop() -> Nil
@@ -78,6 +95,16 @@ const preview_path = "/api/admin/preview"
 
 /// How long a delete button stays armed, in milliseconds.
 const arm_ms = 2000
+
+/// How long a drawing change waits before the panel asks for a preview: a
+/// burst of taps is one request, not one per dot.
+const preview_debounce_ms = 300
+
+/// The full board's canvas (test play) and the authoring panel's; one play
+/// driver serves whichever is mounted.
+const play_board_id = "play-board"
+
+const preview_board_id = "preview-board"
 
 // ---------- state ----------
 
@@ -103,6 +130,22 @@ pub type Play {
   )
 }
 
+/// The panel's debounce record. The timer itself is the FFI's one slot
+/// (fetch.mjs `preview_after`), which this record cannot see; what it carries
+/// is what makes a fire or an answer discardable on this side:
+///
+///   - `generation` is monotone and bumps on every draw change — it is the
+///     request id, stamped on the fire and on the POST that follows it;
+///   - `scheduled` is the generation whose timer is armed (None once it fired
+///     or was superseded), so a superseded fire is a no-op;
+///   - `inflight` is the generation of the POST awaiting an answer, so an
+///     answer that lands after a newer request was SENT is discarded.
+///
+/// The panel keeps the last good fixture while this record churns.
+pub type PreviewClock {
+  PreviewClock(generation: Int, scheduled: Option(Int), inflight: Option(Int))
+}
+
 pub type Model {
   Model(
     view: View,
@@ -116,6 +159,11 @@ pub type Model {
     drawing: draw.Drawing,
     play: Option(Play),
     armed: Option(Int),
+    preview: Option(wire.Fixture),
+    preview_pending: Bool,
+    preview_stale: Bool,
+    preview_start: Bool,
+    preview_scheduled: PreviewClock,
   )
 }
 
@@ -136,6 +184,10 @@ pub type Msg {
   Saved(Result(Nil, wire.Failure))
   Preview
   Previewed(Result(wire.Fixture, wire.Failure))
+  PreviewFire(Int)
+  PanelPreviewed(Int, Result(wire.Fixture, wire.Failure))
+  StartView
+  TruthView
   DialStep(Int, Int)
   BackToMenu
   BackToAuthoring
@@ -167,6 +219,11 @@ fn init(_: Nil) -> #(Model, Effect(Msg)) {
       drawing: draw.empty(),
       play: None,
       armed: None,
+      preview: None,
+      preview_pending: False,
+      preview_stale: False,
+      preview_start: False,
+      preview_scheduled: PreviewClock(0, None, None),
     ),
     load_rows(),
   )
@@ -203,13 +260,90 @@ fn render_drawing(drawing: draw.Drawing) -> Effect(Msg) {
 fn sync_board(play: Play) -> Effect(Msg) {
   effect.from(fn(_dispatch) {
     play_shape(
+      play_board_id,
       play.fixture.centroid,
       play.target,
       term_triples(play.fixture.extras),
     )
-    play_terms(term_triples(play.terms), kind_codes(play.kinds))
+    play_terms(play_board_id, term_triples(play.terms), kind_codes(play.kinds))
     Nil
   })
+}
+
+/// Paint the authoring panel from a fixture: shape first (the target trace, the
+/// fixed extras), then the terms the toggle picked. No request — the fixture is
+/// already here.
+fn sync_panel(fixture: wire.Fixture, start: Bool) -> Effect(Msg) {
+  effect.from(fn(_dispatch) {
+    play_shape(
+      preview_board_id,
+      fixture.centroid,
+      fixture.target,
+      term_triples(fixture.extras),
+    )
+    play_terms(
+      preview_board_id,
+      term_triples(panel_terms(fixture, start)),
+      kind_codes(fixture.dials),
+    )
+    Nil
+  })
+}
+
+/// Come back to the authoring view with a panel to show: the play driver is a
+/// singleton, so stop whatever board was running and boot the panel's in one
+/// effect (a batch would run in reverse order — stop would land last).
+fn restart_panel(fixture: Option(wire.Fixture), start: Bool) -> Effect(Msg) {
+  case fixture {
+    None -> stop_board()
+    Some(fixture) ->
+      effect.from(fn(_dispatch) {
+        play_stop()
+        play_shape(
+          preview_board_id,
+          fixture.centroid,
+          fixture.target,
+          term_triples(fixture.extras),
+        )
+        play_terms(
+          preview_board_id,
+          term_triples(panel_terms(fixture, start)),
+          kind_codes(fixture.dials),
+        )
+        Nil
+      })
+  }
+}
+
+/// Arm the debounce for a drawing change: cancel the previous timer and, one
+/// window later, dispatch the fire that owns this generation. In a test the
+/// fire is dispatched by hand — same message, same guard.
+fn arm_preview(generation: Int) -> Effect(Msg) {
+  effect.from(fn(dispatch) {
+    preview_after(preview_debounce_ms, fn() {
+      dispatch(PreviewFire(generation))
+    })
+    Nil
+  })
+}
+
+/// A draw change: bump the generation, arm the debounce, and paint the dot the
+/// tap added. The panel keeps its last fixture until the answer lands.
+fn schedule_preview(model: Model, paint: Effect(Msg)) -> #(Model, Effect(Msg)) {
+  let generation = model.preview_scheduled.generation + 1
+  let clock =
+    PreviewClock(generation, Some(generation), model.preview_scheduled.inflight)
+  #(
+    Model(..model, preview_scheduled: clock),
+    effect.batch([arm_preview(generation), paint]),
+  )
+}
+
+/// A generation nothing may answer any more: supersede the armed timer and the
+/// in-flight request (both become stale by construction: `scheduled` and
+/// `inflight` are None, so every later fire/answer is discarded).
+fn invalidate_preview(clock: PreviewClock) -> PreviewClock {
+  PreviewClock(clock.generation + 1, None, None)
 }
 
 fn stop_board() -> Effect(Msg) {
@@ -261,6 +395,11 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
           failure: None,
           play: None,
           armed: None,
+          preview: None,
+          preview_pending: False,
+          preview_stale: False,
+          preview_start: False,
+          preview_scheduled: invalidate_preview(model.preview_scheduled),
         )
       #(fresh, render_drawing(fresh.drawing))
     }
@@ -285,6 +424,11 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
           failure: None,
           play: None,
           armed: None,
+          preview: None,
+          preview_pending: False,
+          preview_stale: False,
+          preview_start: False,
+          preview_scheduled: invalidate_preview(model.preview_scheduled),
         )
       #(
         editing,
@@ -332,7 +476,8 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
     DotsLoaded(Ok(dots)) -> {
       let drawing =
         list.fold(dots, draw.empty(), fn(acc, point) { draw.add(acc, point) })
-      #(Model(..model, drawing: drawing), render_drawing(drawing))
+      let next = Model(..model, drawing: drawing)
+      schedule_preview(next, render_drawing(drawing))
     }
 
     DotsLoaded(Error(failure)) -> #(
@@ -342,17 +487,20 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
 
     DotsTapped(point) -> {
       let drawing = draw.add(model.drawing, point)
-      #(Model(..model, drawing: drawing), render_drawing(drawing))
+      let next = Model(..model, drawing: drawing)
+      schedule_preview(next, render_drawing(drawing))
     }
 
     Undo -> {
       let drawing = draw.undo(model.drawing)
-      #(Model(..model, drawing: drawing), render_drawing(drawing))
+      let next = Model(..model, drawing: drawing)
+      schedule_preview(next, render_drawing(drawing))
     }
 
     Clear -> {
       let drawing = draw.clear(model.drawing)
-      #(Model(..model, drawing: drawing), render_drawing(drawing))
+      let next = Model(..model, drawing: drawing)
+      schedule_preview(next, render_drawing(drawing))
     }
 
     NameChanged(name) -> #(Model(..model, name: name), effect.none())
@@ -393,6 +541,11 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
           play: None,
           flash: Some("saved"),
           failure: None,
+          preview: None,
+          preview_pending: False,
+          preview_stale: False,
+          preview_start: False,
+          preview_scheduled: invalidate_preview(model.preview_scheduled),
         )
       #(done, load_rows())
     }
@@ -406,7 +559,16 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
       let body =
         wire.preview_body(model.name, model.show_date, draw.dots(model.drawing))
       #(
-        Model(..model, busy: True, failure: None, flash: None),
+        Model(
+          ..model,
+          busy: True,
+          failure: None,
+          flash: None,
+          // the full board's preview is its own flow: the panel's armed
+          // timer and any in-flight panel request must not follow it
+          preview_pending: False,
+          preview_scheduled: invalidate_preview(model.preview_scheduled),
+        ),
         request("POST", preview_path, body, fn(status, text) {
           Previewed(wire.decode_fixture(status, text))
         }),
@@ -431,6 +593,76 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
       Model(..model, busy: False, failure: Some(failure)),
       effect.none(),
     )
+
+    PreviewFire(generation) -> {
+      case model.view, model.preview_scheduled.scheduled {
+        Authoring, Some(scheduled) if scheduled == generation -> {
+          let body =
+            wire.preview_body(
+              model.name,
+              model.show_date,
+              draw.dots(model.drawing),
+            )
+          let clock = PreviewClock(generation, None, Some(generation))
+          #(
+            Model(
+              ..model,
+              preview_pending: True,
+              preview_scheduled: clock,
+              failure: None,
+            ),
+            request("POST", preview_path, body, fn(status, text) {
+              PanelPreviewed(generation, wire.decode_fixture(status, text))
+            }),
+          )
+        }
+        _, _ -> #(model, effect.none())
+      }
+    }
+
+    PanelPreviewed(generation, Ok(fixture)) -> {
+      case model.view, model.preview_scheduled.inflight {
+        Authoring, Some(inflight) if inflight == generation -> {
+          let clock =
+            PreviewClock(model.preview_scheduled.generation, None, None)
+          #(
+            Model(
+              ..model,
+              preview: Some(fixture),
+              preview_pending: False,
+              preview_stale: False,
+              preview_scheduled: clock,
+            ),
+            sync_panel(fixture, model.preview_start),
+          )
+        }
+        _, _ -> #(model, effect.none())
+      }
+    }
+
+    PanelPreviewed(generation, Error(_)) -> {
+      case model.view, model.preview_scheduled.inflight {
+        Authoring, Some(inflight) if inflight == generation -> {
+          let clock =
+            PreviewClock(model.preview_scheduled.generation, None, None)
+          #(
+            Model(
+              ..model,
+              preview_pending: False,
+              preview_stale: True,
+              preview_scheduled: clock,
+            ),
+            // the panel keeps the last fixture it drew; only the hint moves
+            effect.none(),
+          )
+        }
+        _, _ -> #(model, effect.none())
+      }
+    }
+
+    StartView -> set_panel_view(model, True)
+
+    TruthView -> set_panel_view(model, False)
 
     DialStep(slot, dir) -> {
       case model.play {
@@ -468,7 +700,11 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
           #(
             Model(..model, play: Some(stepped)),
             effect.from(fn(_dispatch) {
-              play_terms(term_triples(terms), kind_codes(play.kinds))
+              play_terms(
+                play_board_id,
+                term_triples(terms),
+                kind_codes(play.kinds),
+              )
               Nil
             }),
           )
@@ -486,13 +722,21 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
           flash: None,
           failure: None,
           armed: None,
+          preview_pending: False,
+          preview_scheduled: invalidate_preview(model.preview_scheduled),
         )
       #(menu, effect.batch([stop_board(), load_rows()]))
     }
 
     BackToAuthoring -> {
       let back = Model(..model, view: Authoring, play: None, armed: None)
-      #(back, effect.batch([stop_board(), render_drawing(back.drawing)]))
+      #(
+        back,
+        effect.batch([
+          restart_panel(back.preview, back.preview_start),
+          render_drawing(back.drawing),
+        ]),
+      )
     }
 
     ArmDelete(id) -> {
@@ -539,11 +783,7 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
 /// standard row, so an old row still test-plays.
 pub fn play_from(fixture: wire.Fixture) -> Play {
   let kinds = fixture.dials
-  let patches = case fixture.patches {
-    [] -> dial.standard_patches()
-    own -> own
-  }
-  let terms = dial.initial(fixture.dial, kinds, patches)
+  let terms = fixture_start(fixture)
   let normalizer =
     score.rms_polar(fixture.target, fixture.centroid.0, fixture.centroid.1)
   Play(
@@ -567,6 +807,36 @@ pub fn play_from(fixture: wire.Fixture) -> Play {
 fn row_of(rows: List(wire.Row), id: Int) -> Option(wire.Row) {
   list.find(rows, fn(row) { row.id == id })
   |> option_from_result
+}
+
+/// The panel's two readings of the same fixture: the dial truth (what the
+/// puzzle is) or the player's start (the fixture's patches applied). Both come
+/// from data already in hand — switching views never asks the server again.
+pub fn panel_terms(fixture: wire.Fixture, start: Bool) -> List(score.Term) {
+  case start {
+    False -> fixture.dial
+    True -> fixture_start(fixture)
+  }
+}
+
+/// The fixture's OWN starting perturbation, applied to its dial truth — the
+/// same list `play_from` boots the full board with.
+fn fixture_start(fixture: wire.Fixture) -> List(score.Term) {
+  let patches = case fixture.patches {
+    [] -> dial.standard_patches()
+    own -> own
+  }
+  dial.initial(fixture.dial, fixture.dials, patches)
+}
+
+/// The panel's toggle: flip which reading the board and the rows show. A
+/// repaint, never a request.
+fn set_panel_view(model: Model, start: Bool) -> #(Model, Effect(Msg)) {
+  let next = Model(..model, preview_start: start)
+  case model.preview {
+    None -> #(next, effect.none())
+    Some(fixture) -> #(next, sync_panel(fixture, start))
+  }
 }
 
 fn option_from_result(result: Result(a, Nil)) -> Option(a) {
@@ -758,88 +1028,160 @@ fn authoring_view(model: Model) -> Element(Msg) {
   html.section([attribute.class("authoring")], [
     flash_line(model),
     failure_line(model),
-    html.div([attribute.class("panels")], [
-      html.div([attribute.class("panel")], [
-        html.canvas([
-          attribute.class("board"),
-          attribute.id("draw-canvas"),
-          event.on("pointerdown", tap_decoder()),
-        ]),
-        html.p([attribute.class("hint")], [
-          html.text(
-            int.to_string(draw.count(model.drawing))
-            <> " dots — tap to add, three at least, the outline closes itself",
-          ),
-        ]),
-        html.div([attribute.class("tools")], [
-          html.button(
-            [
-              attribute.class("btn"),
-              attribute.disabled(!draw.can_undo(model.drawing)),
-              event.on_click(Undo),
-            ],
-            [html.text("undo")],
-          ),
-          html.button(
-            [
-              attribute.class("btn"),
-              attribute.disabled(draw.count(model.drawing) == 0),
-              event.on_click(Clear),
-            ],
-            [html.text("clear")],
-          ),
+    html.div([attribute.class("studio")], [
+      draw_panel(model),
+      preview_panel(model),
+    ]),
+    html.div([attribute.class("panel form")], [
+      field_label("name", name_problem(model.failure)),
+      html.input([
+        attribute.class("input"),
+        attribute.type_("text"),
+        attribute.value(model.name),
+        attribute.placeholder("the star"),
+        event.on_input(NameChanged),
+      ]),
+      field_label("show date", date_problem(model.failure)),
+      html.input([
+        attribute.class("input"),
+        attribute.type_("date"),
+        attribute.value(model.show_date),
+        event.on_input(ShowDateChanged),
+      ]),
+      html.div([attribute.class("tools")], [
+        html.button(
+          [
+            attribute.class("btn primary"),
+            attribute.disabled(!draw.can_submit(model.drawing) || model.busy),
+            event.on_click(Save),
+          ],
+          [
+            html.text(case model.editing {
+              Some(_) -> "save changes"
+              None -> "save puzzle"
+            }),
+          ],
+        ),
+        html.button([attribute.class("btn"), event.on_click(BackToMenu)], [
+          html.text("back"),
         ]),
       ]),
-      html.div([attribute.class("panel form")], [
-        field_label("name", name_problem(model.failure)),
-        html.input([
-          attribute.class("input"),
-          attribute.type_("text"),
-          attribute.value(model.name),
-          attribute.placeholder("the star"),
-          event.on_input(NameChanged),
-        ]),
-        field_label("show date", date_problem(model.failure)),
-        html.input([
-          attribute.class("input"),
-          attribute.type_("date"),
-          attribute.value(model.show_date),
-          event.on_input(ShowDateChanged),
-        ]),
-        html.div([attribute.class("tools")], [
-          html.button(
-            [
-              attribute.class("btn primary"),
-              attribute.disabled(!draw.can_submit(model.drawing) || model.busy),
-              event.on_click(Save),
-            ],
-            [
-              html.text(case model.editing {
-                Some(_) -> "save changes"
-                None -> "save puzzle"
-              }),
-            ],
-          ),
-          html.button(
-            [
-              attribute.class("btn"),
-              attribute.disabled(!draw.can_submit(model.drawing) || model.busy),
-              event.on_click(Preview),
-            ],
-            [html.text("test play")],
-          ),
-          html.button([attribute.class("btn"), event.on_click(BackToMenu)], [
-            html.text("back"),
-          ]),
-        ]),
-        html.p([attribute.class("hint")], [
-          html.text(
-            "test play works on the drawing as it is — it does not save anything",
-          ),
-        ]),
+      html.p([attribute.class("hint")], [
+        html.text(
+          "the panel and the full board both show the drawing as it is — "
+          <> "nothing is saved until you save it",
+        ),
       ]),
     ]),
   ])
+}
+
+fn draw_panel(model: Model) -> Element(Msg) {
+  html.div([attribute.class("panel draw")], [
+    html.canvas([
+      attribute.class("board"),
+      attribute.id("draw-canvas"),
+      event.on("pointerdown", tap_decoder()),
+    ]),
+    html.p([attribute.class("hint")], [
+      html.text(
+        int.to_string(draw.count(model.drawing))
+        <> " dots — tap to add, three at least, the outline closes itself",
+      ),
+    ]),
+    html.div([attribute.class("tools")], [
+      html.button(
+        [
+          attribute.class("btn"),
+          attribute.disabled(!draw.can_undo(model.drawing)),
+          event.on_click(Undo),
+        ],
+        [html.text("undo")],
+      ),
+      html.button(
+        [
+          attribute.class("btn"),
+          attribute.disabled(draw.count(model.drawing) == 0),
+          event.on_click(Clear),
+        ],
+        [html.text("clear")],
+      ),
+    ]),
+  ])
+}
+
+/// The live panel: the toy's own board for the LAST previewed fixture, the
+/// dials read-only (no steppers — this is a look, not a play), and the toggle
+/// between the puzzle's truth and the player's start. It never blanks: a
+/// refused preview keeps the last fixture drawn and says so underneath.
+fn preview_panel(model: Model) -> Element(Msg) {
+  html.div([attribute.class("panel preview")], [
+    html.canvas([
+      attribute.class("board"),
+      attribute.id(preview_board_id),
+    ]),
+    html.div([attribute.class("toggle")], [
+      toggle_button("solved view", !model.preview_start, TruthView),
+      toggle_button("player start", model.preview_start, StartView),
+    ]),
+    case model.preview {
+      None ->
+        html.p([attribute.class("hint")], [
+          html.text("the toy's board, previewed — draw to begin"),
+        ])
+      Some(fixture) -> preview_dial_rows(fixture, model.preview_start)
+    },
+    html.p(
+      [
+        attribute.classes([
+          #("preview-stale", True),
+          #("hidden", !model.preview_stale),
+        ]),
+      ],
+      [html.text("preview stale")],
+    ),
+    html.div([attribute.class("tools")], [
+      html.button(
+        [
+          attribute.class("btn small link"),
+          attribute.disabled(!draw.can_submit(model.drawing) || model.busy),
+          event.on_click(Preview),
+        ],
+        [html.text("open full board")],
+      ),
+    ]),
+  ])
+}
+
+fn toggle_button(label: String, on: Bool, msg: Msg) -> Element(Msg) {
+  html.button(
+    [
+      attribute.classes([#("btn", True), #("on", on)]),
+      event.on_click(msg),
+    ],
+    [html.text(label)],
+  )
+}
+
+/// The panel's rows: same words and numbers as the full board's steppers, with
+/// the steppers left out. Non-dial slots are skipped by KIND (the arrangement
+/// is data), exactly as the derived list skips them.
+pub fn preview_dial_rows(fixture: wire.Fixture, start: Bool) -> Element(Msg) {
+  let terms = panel_terms(fixture, start)
+  let max_r = dial.max_radius(fixture.dial)
+  let rows =
+    list.index_map(fixture.dials, fn(kind, slot) {
+      #(kind, slot, list.drop(terms, slot))
+    })
+    |> list.filter_map(fn(entry) {
+      let #(kind, slot, rest) = entry
+      case kind, rest {
+        dial.KindFixed, _ -> Error(Nil)
+        _, [term, ..] -> Ok(dial_row(kind, slot, term, max_r, ReadOnly))
+        _, [] -> Error(Nil)
+      }
+    })
+  html.div([attribute.class("preview-dials")], rows)
 }
 
 /// The red underline under a field the server complained about.
@@ -983,8 +1325,16 @@ fn dial_rows(play: Play) -> List(Element(Msg)) {
   let max_r = dial.max_radius(play.fixture.dial)
   list.index_map(play.kinds, fn(kind, slot) {
     let assert [term, ..] = list.drop(play.terms, slot)
-    dial_row(kind, slot, term, max_r)
+    dial_row(kind, slot, term, max_r, Interactive)
   })
+}
+
+/// How a row is drawn: the full board's rows are the player's (steppers on
+/// either side of the value), the panel's are a reading of the same numbers.
+/// One renderer, so the two can never word a slot differently.
+type DialRowMode {
+  Interactive
+  ReadOnly
 }
 
 fn dial_row(
@@ -992,6 +1342,7 @@ fn dial_row(
   slot: Int,
   term: score.Term,
   max_r: Float,
+  mode: DialRowMode,
 ) -> Element(Msg) {
   let head = [
     html.div([attribute.class("id")], [
@@ -1003,19 +1354,33 @@ fn dial_row(
       ]),
     ]),
   ]
-  let body = case kind {
-    dial.KindFixed -> [
-      html.div([attribute.class("val")], [html.text("not a dial")]),
-    ]
-    _ -> [
-      edge_button(slot, -1, at_min(kind, term, max_r)),
-      html.div([attribute.class("val")], [
-        html.text(dial.slot_value(kind, term, max_r)),
-      ]),
-      edge_button(slot, 1, at_max(kind, term, max_r)),
-    ]
+  let value =
+    html.div([attribute.class("val")], [
+      html.text(dial.slot_value(kind, term, max_r)),
+    ])
+  let body = case mode {
+    ReadOnly -> [value]
+    Interactive ->
+      case kind {
+        dial.KindFixed -> [
+          html.div([attribute.class("val")], [html.text("not a dial")]),
+        ]
+        _ -> [
+          edge_button(slot, -1, at_min(kind, term, max_r)),
+          value,
+          edge_button(slot, 1, at_max(kind, term, max_r)),
+        ]
+      }
   }
-  html.div([attribute.class("row")], list.append(head, body))
+  html.div(
+    [
+      attribute.classes([
+        #("row", True),
+        #("read-only", mode == ReadOnly),
+      ]),
+    ],
+    list.append(head, body),
+  )
 }
 
 fn at_min(kind: dial.Kind, term: score.Term, _max_r: Float) -> Bool {

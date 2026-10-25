@@ -40,3 +40,19 @@ export function after(ms, callback) {
   const handle = setTimeout(callback, ms);
   return () => clearTimeout(handle);
 }
+
+// The preview debounce. ONE slot for the whole app (the panel is the only
+// debounced thing): every call cancels the timer the previous call armed, so a
+// burst of taps leaves exactly one timer. The callback dispatches
+// PreviewFire(generation); Gleam's generation guard discards a fire whose
+// generation a newer tap has superseded.
+let preview_timer = null;
+
+export function preview_after(ms, callback) {
+  if (preview_timer !== null) clearTimeout(preview_timer);
+  preview_timer = setTimeout(() => {
+    preview_timer = null;
+    callback();
+  }, ms);
+  return undefined;
+}

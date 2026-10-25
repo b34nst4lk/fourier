@@ -60,6 +60,11 @@ fn model() -> admin_ui.Model {
     drawing: draw.empty(),
     play: None,
     armed: None,
+    preview: None,
+    preview_pending: False,
+    preview_stale: False,
+    preview_start: False,
+    preview_scheduled: admin_ui.PreviewClock(0, None, None),
   )
 }
 

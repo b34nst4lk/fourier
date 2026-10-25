@@ -103,6 +103,41 @@ const FIXTURE = {
   patches: [{ kind: "keep" }, { kind: "keep" }, { kind: "keep" }, { kind: "keep" }],
 };
 
+// The served fixture keeps every dial at truth, so its two readings coincide.
+// The PANEL's fixture carries a real perturbation, so the toggle's two readings
+// differ in the DOM (a toggle that silently did nothing would still pass a
+// keep-only fixture). The start is computed by the compiled `dial.initial` —
+// the same call the app makes — so the expected strings are the app's words.
+const PANEL_PATCHES = [
+  { kind: "phase", deg: 90 },
+  { kind: "radius", pct: 40 },
+  { kind: "k", k: -1 },
+  { kind: "keep" },
+];
+const PANEL_FIXTURE = { ...FIXTURE, patches: PANEL_PATCHES };
+
+// the arrangement and the patch vocabulary, as the app holds them
+const KIND_CTORS = {
+  phase: dial.KindPhase,
+  radius: dial.KindRadius,
+  k: dial.KindK,
+  fixed: dial.KindFixed,
+};
+const KINDS = DIAL_WORDS.map((word) => new KIND_CTORS[word]());
+const PATCH_CTORS = {
+  phase: (p) => new dial.PhaseDeg(p.deg),
+  radius: (p) => new dial.RPct(p.pct),
+  k: (p) => new dial.KSet(p.k),
+  keep: () => new dial.Keep(),
+};
+const PANEL_START_TERMS = Array.from(
+  dial.initial(
+    toList(START),
+    toList(KINDS),
+    toList(PANEL_PATCHES.map((p) => PATCH_CTORS[p.kind](p))),
+  ),
+);
+
 const ROWS = [
   {
     id: 7,
@@ -184,12 +219,24 @@ function make_ctx() {
 
 // jsdom has no real API surface for the app's network: answer by path+method.
 // `saves` is the queue of answers for POST/PUT /api/admin/puzzles (a 409 then a
-// 201 is the duplicate-date-then-fixed flow the editor must survive).
-function install_fetch(window, { rows = ROWS, saves = [], onSave = null } = {}) {
+// 201 is the duplicate-date-then-fixed flow the editor must survive); `previews`
+// is the same queue for POST /api/admin/preview (a 500 mid-drawing is the panel's
+// stale test), and `previewFixture` is the fixture every unqueued preview gets.
+function install_fetch(
+  window,
+  {
+    rows = ROWS,
+    saves = [],
+    previews = [],
+    previewFixture = FIXTURE,
+    onSave = null,
+  } = {},
+) {
   const calls = [];
   window.__calls = calls;
   let list_calls = 0;
   let save_calls = 0;
+  let preview_calls = 0;
   let saved_ok = false;
   const answer = (status, body) => ({
     ok: status >= 200 && status < 300,
@@ -201,7 +248,12 @@ function install_fetch(window, { rows = ROWS, saves = [], onSave = null } = {}) 
     const path = String(url).replace(/^https?:\/\/[^/]+/, "");
     calls.push({ path, method, body: init.body === undefined ? null : init.body });
     if (path === "/api/admin/preview" && method === "POST") {
-      return Promise.resolve(answer(200, { status: "ok", fixture: FIXTURE }));
+      const plan = previews[preview_calls] ?? {
+        status: 200,
+        body: { status: "ok", fixture: previewFixture },
+      };
+      preview_calls++;
+      return Promise.resolve(answer(plan.status, plan.body));
     }
     if (/^\/api\/admin\/puzzles(\/\d+)?$/.test(path) && method !== "GET") {
       const plan = saves[save_calls] ?? { status: 201, body: { status: "ok" } };
@@ -438,8 +490,9 @@ console.log("S2 · authoring — [new puzzle] mounts a canvas that paints");
   // three dots total: the second paint draws 2, the third 3
   check("the second and third taps repaint the whole drawing", delta.d_arc === 5, JSON.stringify(delta));
   check(
-    "three dots unlock save and test play",
-    !button(dom, "save puzzle").disabled && !button(dom, "test play").disabled,
+    "three dots unlock save and the full board",
+    !button(dom, "save puzzle").disabled &&
+      !button(dom, "open full board").disabled,
   );
 
   // undo / clear repaint, they do not just forget
@@ -471,7 +524,8 @@ console.log("S3 · test play — one terms list for the picture and the number")
   tap(dom, 60, 60);
   tap(dom, 150, 90);
   tap(dom, 120, 210);
-  click(button(dom, "test play"));
+  // the settled affordance: the only way in is the panel's link
+  click(button(dom, "open full board"));
   await settle(); // the preview POST lands, the play view renders
 
   const board = doc(dom).getElementById("play-board");
@@ -565,7 +619,7 @@ console.log("S4 · back to authoring — the drawing is still there");
   const before_arcs = canvas_ops(dom, "draw-canvas").arc;
   check("the drawing paints before leaving", before_arcs === 6, "arc ops: " + before_arcs);
 
-  click(button(dom, "test play"));
+  click(button(dom, "open full board"));
   await settle();
   check("test play took over", doc(dom).getElementById("play-board") !== null);
   click(button(dom, "back to the drawing"));
@@ -648,6 +702,160 @@ console.log("S5 · save — the server's refusal is shown, then the save lands")
     "rows: " + rows.length,
   );
   check("the second save was a POST too", posted.length === 2 && posted[1].method === "POST");
+  dom.window.close();
+}
+
+// ==== S6 · the live panel: two columns, one debounced preview ==============
+console.log("S6 · live panel — the drawing previews itself");
+{
+  // the first answer lands (the panel has something to show), the second is
+  // refused (the panel must keep what it has and say so), the rest land
+  const dom = boot_dom({
+    previewFixture: PANEL_FIXTURE,
+    previews: [
+      { status: 200, body: { status: "ok", fixture: PANEL_FIXTURE } },
+      { status: 500, body: { status: "error", errors: ["BadDrawing"] } },
+    ],
+  });
+  await settle();
+  click(button(dom, "new puzzle"));
+  tick();
+
+  const studio = doc(dom).querySelector(".studio");
+  const cols = studio ? dom.window.getComputedStyle(studio).gridTemplateColumns : "missing";
+  // jsdom resolves the stylesheet (width 1024), so 900px+ is the wide case
+  check(
+    "on a wide viewport the drawing and the panel are two columns",
+    cols === "1fr 1fr",
+    "grid-template-columns: " + JSON.stringify(cols),
+  );
+  check(
+    "both boards are mounted at once",
+    doc(dom).getElementById("draw-canvas") !== null &&
+      doc(dom).getElementById("preview-board") !== null,
+  );
+
+  const preview_calls = () =>
+    dom.window.__calls.filter((c) => c.method === "POST" && c.path === "/api/admin/preview")
+      .length;
+  const rows = () => [...doc(dom).querySelectorAll(".preview-dials .row")];
+  const values = () => rows().map((row) => text(row.querySelector(".val")));
+  const stale_visible = () => {
+    const el = doc(dom).querySelector(".preview-stale");
+    return el !== null && !el.classList.contains("hidden");
+  };
+  const truth_vals = movable_slots.map((slot) =>
+    dial.slot_value(KINDS[slot], START[slot], MAX_R),
+  );
+  const start_vals = movable_slots.map((slot) =>
+    dial.slot_value(KINDS[slot], PANEL_START_TERMS[slot], MAX_R),
+  );
+
+  // three taps inside one debounce window: ONE request, and not before the
+  // window closes (the seam is the module's single timer slot + the fire msg)
+  const panel_before = canvas_ops(dom, "preview-board") ?? { arc: 0, clearRect: 0 };
+  tap(dom, 60, 60);
+  tap(dom, 150, 90);
+  tap(dom, 120, 210);
+  check("a burst of taps does not POST before the window closes", preview_calls() === 0, "calls: " + preview_calls());
+  await sleep(150);
+  check(
+    "half a window later it still has not POSTed",
+    preview_calls() === 0,
+    "calls: " + preview_calls(),
+  );
+  await sleep(250);
+  await settle();
+  check(
+    "three taps inside one window sent exactly ONE preview",
+    preview_calls() === 1,
+    "calls: " + preview_calls(),
+  );
+
+  const panel_after = canvas_ops(dom, "preview-board");
+  check(
+    "the panel repaints after the last dot settles",
+    panel_after !== null &&
+      panel_after.arc > panel_before.arc &&
+      panel_after.clearRect > panel_before.clearRect,
+    JSON.stringify(panel_before) + " -> " + JSON.stringify(panel_after),
+  );
+  check("the panel's board drew finite coordinates", panel_after !== null && panel_after.nan === 0);
+  check(
+    "the panel's rows are the movable slots only",
+    rows().length === 3,
+    "rows: " + rows().length,
+  );
+  check(
+    "the panel's rows are read-only (no steppers)",
+    doc(dom).querySelectorAll(".preview-dials .row button").length === 0,
+  );
+  check(
+    "the panel opens on the dial truth",
+    JSON.stringify(values()) === JSON.stringify(truth_vals),
+    JSON.stringify(values()) + " vs truth " + JSON.stringify(truth_vals),
+  );
+  check("the truth view is the lit toggle", button(dom, "solved view").classList.contains("on"));
+  check("nothing is stale after a good preview", !stale_visible());
+
+  // the toggle re-reads the fixture ALREADY in hand: no second request
+  const calls_before_toggle = preview_calls();
+  click(button(dom, "player start"));
+  tick();
+  check(
+    "the toggle switches the rows to the player's patched start",
+    JSON.stringify(values()) === JSON.stringify(start_vals),
+    JSON.stringify(values()) + " vs start " + JSON.stringify(start_vals),
+  );
+  check(
+    "the two readings really differ (the fixture perturbs its dials)",
+    JSON.stringify(start_vals) !== JSON.stringify(truth_vals),
+    JSON.stringify(start_vals) + " == " + JSON.stringify(truth_vals),
+  );
+  check("the start view is the lit toggle", button(dom, "player start").classList.contains("on"));
+  check(
+    "the toggle repaints without asking the server",
+    preview_calls() === calls_before_toggle,
+    "calls: " + calls_before_toggle + " -> " + preview_calls(),
+  );
+
+  // a refused preview: the hint appears, the last fixture keeps drawing
+  const panel_el = doc(dom).getElementById("preview-board");
+  tap(dom, 40, 40);
+  await sleep(360);
+  await settle();
+  check("a refused preview says 'preview stale'", stale_visible());
+  check(
+    "the refused preview kept the last fixture's rows",
+    JSON.stringify(values()) === JSON.stringify(start_vals),
+    JSON.stringify(values()) + " vs kept " + JSON.stringify(start_vals),
+  );
+  check(
+    "the panel never blanked (same canvas, still mounted)",
+    panel_el !== null && doc(dom).getElementById("preview-board") === panel_el,
+  );
+  check("the stale panel still shows its board", canvas_ops(dom, "preview-board").arc > 0);
+
+  // ...and the next good answer clears the hint
+  tap(dom, 80, 80);
+  await sleep(360);
+  await settle();
+  check("the next good preview clears the stale hint", !stale_visible());
+
+  // 'open full board' keeps its own flow: the panel's pending clock is voided,
+  // so a tap just before it cannot leak a SECOND preview request
+  const before_open = preview_calls();
+  tap(dom, 200, 200);
+  click(button(dom, "open full board"));
+  await settle();
+  await sleep(360);
+  await settle();
+  check(
+    "opening the full board voids the panel's timer (one request, not two)",
+    preview_calls() === before_open + 1,
+    "calls: " + before_open + " -> " + preview_calls(),
+  );
+  check("the full board took over", doc(dom).getElementById("play-board") !== null);
   dom.window.close();
 }
 

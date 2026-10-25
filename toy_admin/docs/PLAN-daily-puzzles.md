@@ -326,22 +326,27 @@ open; this section governs the backend it will talk to.
 - **The date is presented subordinate to the name**: `<name> · <date>` in
   a `.when` span; the fallback shows just `quaver`.
 
-## 12. Remaining deployment steps (as of 2026-10-25)
+## 12. Remaining deployment steps (as of 2026-10-25, post go-live)
 
-Backend deployed to the box (inert until the rule), the AUD fence
-ENFORCED (real tag in the gitignored .env, verified: wrong-aud 403 /
-real-aud 200 / expired 403 / no token 401, boot warning gone). The toy's
-daily integration PUBLISHED (blog pipeline 9bd2663; live bundle
-byte-identical to the gated build — j-uid/j-att/fetch wired; a test
-puzzle for 2026-10-25 sits in the backend's SQLite, invisible until the
-tunnel routes /api — and the live fetch 404s to the quaver fallback,
-verified at https://jacks.im/api/puzzle/today). Open:
-(1) the tunnel ingress rule (path `^/api(/.*)?$ → http://toy_admin:8080`,
-added ABOVE the jacks.im blog catch-all, validate + recreate cloudflared,
-then outside-verify); (2) the user's CF dashboard: the edge rate-limit
-rule (solve/abandon paths, >30/min per IP) + Bot Fight Mode; (3) then the
-toy publishes through the blog pipeline and the site goes dynamic — the
-safe-rollout property holds either way (a 404 fetch falls back to the
-quaver by construction). Cross-repo seam VERIFIED live: a puzzle saved
-via the admin API served by /api/puzzle/today decodes through the toy's
-wire.decode and scores 99.99999...% at truth, 0% at the patches' start.
+LIVE behind Access: the tunnel path rule `^/api(/.*)?$ → http://toy_admin:8080` sits ABOVE the blog catch-all (applied + cloudflared RESTARTED — `up -d` is a no-op for bind-mounted config changes — and verified through Cloudflare: /api/health 200 ok, /api/puzzle/today serves the day's puzzle, /api/admin 302 to the Access login, site intact elsewhere; AUD provenance kid==AUD against the gitignored .env tag). The toy's daily integration is published (blog pipeline 9bd2663) and the cross-repo seam verified live end-to-end. Remaining:
+(1) the USER'S dashboard items (agent cannot touch): the edge rate-limit rule (solve/abandon paths, >30/min per IP) + Bot Fight Mode;
+(2) the toy page's last blog publish (9bd2663) predates the theme revamp (2eefd90) — re-publish through the blog pipeline (`make deploy`) so the live page carries the B/W palette;
+(3) the authoring live-preview panel (§13 below) deploys as a container rebuild with its commit.
+
+## 13. Implementation decisions (the authoring live-preview panel, recorded 2026-10-25)
+
+The grill's settled answers (one at a time, user):
+- **State (Q1)**: TRUTH by default — judge the shape you drew (the comet traces the target); a small-caps toggle peeks at the PLAYER'S START (the fixture's own patches applied — judge the challenge). Labels: "solved view" / "player start".
+- **Read-only (Q2)**: the panel renders; steppers stay in the full board — the panel's job is seeing, not playing.
+- **Live (Q3)**: debounced ~300ms on EVERY drawing change (DotsTapped / Undo / Clear / DotsLoaded). The panel NEVER blanks: a refused preview keeps the last fixture rendering and shows a "preview stale" hint; the next good answer clears it.
+- **Layout (Q4)**: two equal columns ≥ 900px (`.studio`: drawing left, panel right), stacked below (drawing first). The full-screen test-play REMAINS — its ONLY entry is the panel's "open full board" link; the form's own "test play" button was RETIRED in review (one affordance per Q4c; smoke reworded accordingly).
+- **No score line (Q5)**: the panel is a shape-preview; Match % stays in the full board (at the start-state the same number measures the perturbation and invites misreading).
+
+Implementation decisions (worker, verified in review):
+- **Debounce seam = an FFI timer slot** (`fetch.mjs` `preview_after`): one module-local handle, every call clears the previous timer — a burst leaves exactly one timer. The TEST seam is the message: arming dispatches `PreviewFire(generation)` when the window expires; tests dispatch that message by hand (same message, same guard).
+- **The clock = `PreviewClock(generation, scheduled, inflight)`**: every drawing change bumps the generation and names the armed timer; a fire whose generation isn't `scheduled` is a no-op; an answer whose generation isn't `inflight` is DISCARDED — a superseded answer leaves the newer request pending (not None). Two independent layers (timer-cancel + generation guards), deliberate redundancy, mutation-proven: dropping either leaves exactly one request standing.
+- **`invalidate_preview` kills the clock** on Preview (full board), BackToMenu, StartNew, StartEdit and Saved(Ok) — opening the full board voids the panel's timer, so a late panel fire can never post into the play view.
+- **One canvas driver, two board ids** (`play-board` full board, `preview-board` panel): every `play_*` call names its canvas first; the boot retry re-reads the FRESHEST requested id (`want_id`) rather than the id its own chain started with, so a remount can never attach the loop to a canvas about to leave the DOM; `play_stop` also cancels a still-pending boot retry (stop-then-panel ordering). The two boards are never mounted at once.
+- **Start = `dial.initial` over the fixture's OWN patches** (the standard set when the fixture carries none) — the same derivation the full board boots with; the toggle is a repaint, never a request.
+- **Read-only rows reuse the full board's formatters** (same words and numbers, steppers omitted; non-dial slots skipped by KIND — the arrangement is data).
+- **Mutation-tested**: both generation guards bite (failures under mutation, source restored; suites green after).

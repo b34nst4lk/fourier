@@ -127,3 +127,20 @@ Daily-puzzle backend + admin: per-feature plans, this rolling ledger.
   project gate by this bug. Baked prod image verified: the running
   container serves ec0d0bf3… (== local build; curl can't verify prod by
   design — the wall answers first).
+
+- **The authoring live-preview panel (2026-10-25)**: the editing view gains
+  the toy's own board LIVE beside the drawing (grilled and settled: truth
+  default + a "player start" toggle; read-only; debounced ~300ms on every
+  drawing change; the panel never blanks — a refused preview keeps the last
+  fixture and shows "preview stale"; two equal columns ≥ 900px, stacked
+  below; no score line; the full board's only entry is the panel's
+  "open full board" link, the form's "test play" button retired). The
+  clock contract: PreviewClock(generation/scheduled/inflight) — superseded
+  fires and late answers are no-ops (mutation-proven; a late answer leaves
+  the newer request pending), opening the full board voids the panel's
+  timer; the canvas driver's boot retry now re-reads the freshest board id
+  and play_stop cancels a pending retry. Gates: admin_ui 59/59 (8 new
+  preview tests), uismoke 65/65 (23 new, incl. the never-blank and
+  one-request contracts), format clean both packages, in-image test stage
+  green; host priv/admin.html md5 a8a5d00a4a280630b545d699160e54b1 (96K)
+  baked with the rebuild.

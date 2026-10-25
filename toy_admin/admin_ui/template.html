@@ -90,6 +90,37 @@ body {
 .rows td.acts .btn { margin-left: 5px; }
 .panels { display: grid; gap: 16px; grid-template-columns: minmax(240px, 1fr) minmax(260px, 1fr); align-items: start; }
 @media (max-width: 700px) { .panels { grid-template-columns: 1fr; } }
+/* the authoring studio: the drawing and the LIVE panel side by side when there
+   is room, stacked (drawing first) when there is not. Both boards are square
+   because .board is; equal columns keep them the same size. */
+.studio { display: grid; gap: 16px; grid-template-columns: 1fr 1fr; align-items: start; }
+@media (max-width: 899px) { .studio { grid-template-columns: 1fr; } }
+.studio .panel { display: grid; gap: 4px; align-content: start; }
+/* the panel's board is a look, not a drawing surface */
+.panel.preview .board { cursor: default; }
+.toggle { display: flex; gap: 6px; margin: 0; }
+.toggle .btn {
+  font-variant: small-caps;
+  letter-spacing: .05em;
+  font-size: .82rem;
+  padding: 2px 8px;
+  color: var(--mut);
+  background: none;
+  border-color: transparent;
+}
+.toggle .btn:hover { border-color: var(--line); }
+.toggle .btn.on { color: var(--ink); background: var(--card); border-color: var(--line); }
+.preview-dials { display: grid; gap: 6px; }
+.row.read-only { grid-template-columns: 1fr 76px; }
+.preview-stale { color: var(--mut); font-size: .75rem; margin: 4px 0 0; }
+.btn.link {
+  border: 0;
+  background: none;
+  padding: 2px 0;
+  color: var(--route);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
 .board {
   display: block;
   width: 100%;
@@ -103,7 +134,7 @@ body {
   cursor: crosshair;
 }
 .panel.dials { display: grid; gap: 8px; }
-.panel.form { display: grid; gap: 6px; align-content: start; }
+.panel.form { display: grid; gap: 6px; align-content: start; margin-top: 16px; }
 .label { color: var(--mut); font-size: .8rem; text-transform: lowercase; }
 .label.bad { color: var(--route); }
 .input {
