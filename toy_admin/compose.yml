@@ -1,0 +1,36 @@
+# toy_admin — the only service here (PLAN-daily-puzzles.md §3 Q13).
+#
+# Deploy is `docker compose up -d --build` on the home box, driven by the
+# cloudflared tunnel: the ingress rule `^/api(/.*)?$ -> http://toy_admin:8080`
+# resolves the container by name across home_server-network, so NO host ports
+# are published — the tunnel is the only ingress.
+#
+#   cd toy_admin && docker compose up -d --build
+#
+# The build context is the umbrella root (..), because the math core arrives as
+# a path dependency on ../fourier_sketch. See ../.dockerignore.
+
+name: toy_admin
+
+services:
+  toy_admin:
+    build:
+      context: ..
+      dockerfile: toy_admin/Dockerfile
+    image: toy_admin:latest
+    container_name: toy_admin
+    environment:
+      # The wisp app binds 0.0.0.0 and reads PORT (8080 default in code too).
+      PORT: "8080"
+    networks:
+      - home_server-network
+    restart: unless-stopped
+
+networks:
+  # The tunnel's network, created by the HOME SERVER's own compose project —
+  # docker therefore knows it as `home_server_home_server-network` (project
+  # prefix). The external name is pinned here so this file can keep the
+  # plan's logical name; nothing creates or removes this network.
+  home_server-network:
+    external: true
+    name: home_server_home_server-network

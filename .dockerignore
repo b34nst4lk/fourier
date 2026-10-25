@@ -1,0 +1,19 @@
+# Build context for toy_admin/Dockerfile is the umbrella root (the
+# fourier_sketch path dependency lives beside toy_admin). Keep it to sources:
+# no VCS metadata, no build caches, no sibling toy, no docs.
+
+.git
+.github
+
+# the sibling toy is not part of the backend image
+fourier_toy
+
+# build artifacts / caches (both projects)
+**/build
+**/dist
+**/node_modules
+**/erl_crash.dump
+
+# documentation and house rules are not build inputs
+toy_admin/docs
+*.md

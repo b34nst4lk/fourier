@@ -1,0 +1,30 @@
+name = "toy_admin"
+version = "0.1.0"
+
+description = "Daily-puzzle backend for the fourier toys: fixture derivation, scheduleable puzzles, anonymous solve/abandon ingest."
+licences = ["MIT"]
+
+# The one Erlang-native piece of the umbrella (PLAN-daily-puzzles.md §3 Q15):
+# the house `--target javascript` rule governs the toys' UI code, not this
+# server. `gleam test` / `gleam run` here are run INSIDE Docker (no Erlang on
+# the host) — see toy_admin/Dockerfile and toy_admin/README.md.
+
+[dependencies]
+gleam_stdlib = ">= 1.0.0 and < 2.0.0"
+gleam_json = ">= 3.1.0 and < 4.0.0"
+# HTTP method types are used directly by the route table (`http.Get`), so
+# gleam_http is a direct dependency (mist/wisp re-export types, not methods).
+gleam_http = ">= 4.0.0 and < 5.0.0"
+mist = ">= 6.0.0 and < 7.0.0"
+wisp = ">= 2.2.0 and < 3.0.0"
+sqlight = ">= 1.2.0 and < 2.0.0"
+# PORT / SECRET_KEY_BASE come from the environment (compose sets them).
+envoy = ">= 1.2.0 and < 2.0.0"
+# process.sleep_forever keeps the mist supervisor alive (the mist docs' idiom).
+gleam_erlang = ">= 1.0.0 and < 2.0.0"
+# The math core (complex / resample / dft / terms / sketch presets) is shared
+# with the toys — fixture derivation must not fork it (Q2/Q15).
+fourier_sketch = { path = "../fourier_sketch" }
+
+[dev_dependencies]
+gleeunit = ">= 1.0.0 and < 2.0.0"
