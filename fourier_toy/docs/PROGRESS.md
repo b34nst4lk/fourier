@@ -441,3 +441,14 @@ changed.
   verified: the new page 200 with the glyph in the bundle + the B/W palette
   (the theme revamp's PUBLISH gap closed by the same deploy), the stub
   refreshes, the cards list Doodle.
+
+  Reworked within the day (user's second read): the `e` is a VERTICALLY
+  FLIPPED capital G — the bowl incomplete on the right (the cross stroke
+  sits where the gap is), the bar a chord from the edge to the centre, the
+  chin hanging UP from the bar's outer end (a free tip), the whole mark
+  tilted 45° up; bar+chin one joined path; the crop retightened (11 7 77 87).
+  Commit 21540c9; live glyph verified in the served bundle. THE REDIRECT IS
+  SCRAPPED (user: "as if fourier-toy never existed"): the static/ stub
+  deleted (the blog's 98a8c4b), the server-side toys/fourier-toy/ removed by
+  hand (the rsync keeps no --delete), the old URL now answers the site's 404;
+  doodle.md's moot aliases line dropped with it.
