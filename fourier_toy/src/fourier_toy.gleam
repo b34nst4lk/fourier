@@ -526,23 +526,26 @@ fn when_tag(source: Source) -> Element(Msg) {
   ])
 }
 
-/// The game's name — Doodle with the custom `e`: a vertically flipped
-/// capital G read as a lowercase e — the bowl incomplete on the RIGHT (the
-/// cross stroke sits where the gap is), the bar a chord from the edge to the
-/// centre, the chin hanging UP from the bar's outer end with a free tip; the
+/// The game's name — Doodle with the custom `e`: the bowl's arc is the
+/// whole circle except a 55° aperture that opens UP-RIGHT of the tilt; the
+/// bar docks INTO the bowl at the aperture's upper rim (the arc's own end
+/// point — a direct connection, no chin) and runs inward to the centre; the
 /// whole mark tilted 45° up. Raster-verified before insertion.
 fn wordmark() -> Element(Msg) {
   html.div([attribute.class("brand")], [
     html.span([attribute.class("wm")], [
       html.text("Doodl"),
       svg.svg(
-        [attribute.class("e"), attribute.attribute("viewBox", "11 7 77 87")],
+        [
+          attribute.class("e"),
+          attribute.attribute("viewBox", "11.5 16.5 77 77"),
+        ],
         [
           svg.path([
-            attribute.attribute("d", "M 81.5 60.6 A 32 32 0 1 1 44.4 23.5"),
+            attribute.attribute("d", "M 81.5 60.6 A 32 32 0 1 1 72.6 32.4"),
           ]),
           svg.path([
-            attribute.attribute("d", "M 54.1 13.8 L 72.6 32.4 L 50 55"),
+            attribute.attribute("d", "M 72.6 32.4 L 50 55"),
           ]),
         ],
       ),
