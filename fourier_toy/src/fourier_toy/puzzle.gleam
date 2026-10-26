@@ -4,6 +4,13 @@
 //// deterministic starting perturbation (see the JS prototype's vocabulary —
 //// phase +90°, radius ~72% of max, k −2 on the kind-3 slot; same offsets
 //// scaled per shape so cross-puzzle feels compare).
+////
+//// The dial-columns board (PLAN-dial-columns.md §3): exactly THREE dialed
+//// terms, one column each, kinds ∈ {phase, radius, k}. There is no fixed slot
+//// any more — a shape's 4th+ terms are baked into its `extras` (wire.gleam
+//// normalizes an old served "fixed" slot into an extra before it reaches this
+//// module), so a dial state is always three terms long.
+////
 //// Dials: k ±1 clamped to ±16; phase ±5° wrapping 0..360; radius ±2% of the
 //// shape's biggest dialable radius, clamped to 0..200%.
 
@@ -16,7 +23,6 @@ pub type DialKind {
   DialP
   DialR
   DialK
-  DialFixed
 }
 
 /// One starting perturbation for a slot; unpatched fields stay at truth.
@@ -41,6 +47,9 @@ pub type Setup {
 const k_min = -16
 
 const k_max = 16
+
+/// The 3-lock: a board dials exactly three terms (three columns, one each).
+pub const dial_count = 3
 
 pub fn k_step(s: TermState, dir: Int) -> TermState {
   let k = s.k + dir
@@ -74,14 +83,15 @@ pub fn step(kind: DialKind, s: TermState, dir: Int, max_r: Float) -> TermState {
     DialP -> phase_step(s, dir)
     DialR -> radius_step(s, dir, max_r)
     DialK -> k_step(s, dir)
-    DialFixed -> s
   }
 }
 
 /// Apply the setup's starting patches to the shape's dial truth.
-/// One patch per dial slot, in order; unpatched values stay at truth.
+/// One patch per dialed slot, in chain order; unpatched values stay at truth.
+/// The board dials exactly three terms, so it opens with exactly three patches.
 pub fn initial(shape: Shape, patches: List(Patch)) -> List(TermState) {
-  let assert True = list.length(patches) == 4
+  let assert True = list.length(patches) == dial_count
+  let assert True = list.length(shape.dial) == dial_count
   list.map2(shape.dial, patches, fn(truth, patch) {
     case patch {
       PhaseDeg(deg) -> shapes.TermState(truth.k, truth.r, deg)
@@ -97,72 +107,21 @@ pub fn initial(shape: Shape, patches: List(Patch)) -> List(TermState) {
   })
 }
 
-// ---------- experiment configs (P6..P10, ported from the JS prototype) ----------
-// The roster stays private: it is the data table behind quaver_setup(),
-// not product API — the shipped toy exposes exactly one puzzle.
-
-fn setups() -> List(Setup) {
-  [
-    Setup(
-      "p6",
-      "P6 · star · one dial each, k on term 3",
-      "term 1 phase · term 2 radius · term 3 k · term 4 fixed",
-      "star",
-      [DialP, DialR, DialK, DialFixed],
-      [PhaseDeg(0.0), RPct(72.0), KSet(8), Keep],
-    ),
-    Setup(
-      "p7",
-      "P7 · flower · one dial each, k on term 3",
-      "term 1 phase · term 2 radius · term 3 k · term 4 fixed",
-      "flower",
-      [DialP, DialR, DialK, DialFixed],
-      [PhaseDeg(90.0), RPct(72.0), KSet(5), Keep],
-    ),
-    Setup(
-      "p8",
-      "P8 · fish · one dial each, k on term 3",
-      "term 1 phase · term 2 radius · term 3 k · term 4 fixed",
-      "fish",
-      [DialP, DialR, DialK, DialFixed],
-      [PhaseDeg(345.0), RPct(72.0), KSet(-4), Keep],
-    ),
-    Setup(
-      "p9",
-      "quaver",
-      "match the eighth note — term 1 phase · term 2 radius · term 3 k",
-      "quaver",
-      [DialP, DialR, DialK, DialFixed],
-      [PhaseDeg(355.0), RPct(73.0), KSet(-5), Keep],
-    ),
-    Setup(
-      "p10",
-      "P10 · flower · all four dialed",
-      "two radius dials: a fat one on term 2 (38%), a micro trim on term 4 (5%)",
-      "flower",
-      [DialP, DialR, DialK, DialR],
-      [PhaseDeg(90.0), RPct(72.0), KSet(5), RPct(16.0)],
-    ),
-  ]
-}
-
-fn find(id: String) -> Result(Setup, Nil) {
-  list.fold(setups(), Error(Nil), fn(acc, setup) {
-    case acc {
-      Ok(_) -> acc
-      Error(Nil) ->
-        case setup.id == id {
-          True -> Ok(setup)
-          False -> Error(Nil)
-        }
-    }
-  })
-}
+// ---------- the one shipped experiment ----------
+// The roster is private and has collapsed to the shipped quaver: P6–P10 were
+// board-data experiments ported from the JS prototype, and P10's four dials
+// violate the 3-lock. Step-logic coverage continues in the direct kind tests.
 
 /// The one shipped puzzle — the final v2 interface is single-puzzle.
 pub fn quaver_setup() -> Setup {
-  let assert Ok(setup) = find("p9")
-  setup
+  Setup(
+    id: "quaver",
+    title: "quaver",
+    desc: "match the eighth note — term 1 phase · term 2 radius · term 3 k",
+    shape: "quaver",
+    dials: [DialP, DialR, DialK],
+    patches: [PhaseDeg(355.0), RPct(73.0), KSet(-5)],
+  )
 }
 
 pub fn shape_of(key: String) -> Shape {
@@ -176,75 +135,9 @@ pub fn shape_of(key: String) -> Shape {
 }
 
 // ---------- display formatting ----------
-
-pub fn fmt_k(k: Int) -> String {
-  case k < 0 {
-    True -> "−" <> int.to_string(int.absolute_value(k))
-    False -> "+" <> int.to_string(k)
-  }
-}
-
-fn pct(r: Float, max_r: Float) -> String {
-  int.to_string(float.round(r /. max_r *. 100.0)) <> "%"
-}
-
-fn deg(d: Float) -> String {
-  int.to_string(float.round(d)) <> "°"
-}
-
-/// The current value shown in a dial row's readout.
-pub fn slot_value(kind: DialKind, s: TermState, max_r: Float) -> String {
-  case kind {
-    DialP -> deg(s.phase_deg)
-    DialR -> pct(s.r, max_r)
-    DialK -> "k " <> fmt_k(s.k)
-    DialFixed -> "not a dial"
-  }
-}
-
-/// What the row's small print says about this slot's locked terms.
-pub fn locked_note(kind: DialKind, s: TermState, max_r: Float) -> String {
-  case kind {
-    DialP -> "locked: r " <> pct(s.r, max_r) <> " · k " <> fmt_k(s.k)
-    DialR -> "locked: k " <> fmt_k(s.k) <> " · φ " <> deg(s.phase_deg)
-    DialK -> "locked: r " <> pct(s.r, max_r) <> " · φ " <> deg(s.phase_deg)
-    DialFixed ->
-      "fixed, correct: k "
-      <> fmt_k(s.k)
-      <> " · r "
-      <> pct(s.r, max_r)
-      <> " · φ "
-      <> deg(s.phase_deg)
-  }
-}
-
-// ---------- the canvas ink contract (colour follows the KIND) ----------
-// The arrangement is DATA: v1 ships P/R/K/Fixed, and the fixed slot is a slot
-// like any other. So the ink follows the dial KIND, not the slot index — a
-// rearranged puzzle still inks its phase dial red, its radius dial yellow and
-// its k dial blue. Two surfaces key on these:
-//   - fourier_toy_ffi.mjs PALETTES, whose term colours are switched on
-//     kind_code (the numbers below are a wire contract with that switch);
-//   - index.html's per-row classes, which carry the readout colour.
-
-pub fn kind_code(kind: DialKind) -> Int {
-  case kind {
-    DialP -> 0
-    DialR -> 1
-    DialK -> 2
-    DialFixed -> 3
-  }
-}
-
-/// The dial row's colour class (index.html `.kind-*`).
-pub fn kind_class(kind: DialKind) -> String {
-  case kind {
-    DialP -> "kind-phase"
-    DialR -> "kind-radius"
-    DialK -> "kind-k"
-    DialFixed -> "kind-fixed"
-  }
-}
+// The dial columns carry NO text (the board is the precision instrument), so
+// the per-dial readout helpers are gone. The score bar is not a dial and keeps
+// its one-decimal match display.
 
 /// One-decimal match display, matching the JS prototype's toFixed(1).
 pub fn fmt1(m: Float) -> String {

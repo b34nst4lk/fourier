@@ -25,14 +25,19 @@ fn js_canvas_shape(
   extras: List(#(Int, Float, Float)),
 ) -> Nil
 
-/// Push the current four dial terms and the arrangement's kind codes
-/// (puzzle.kind_code — the canvas inks a term by its KIND, not its slot).
-/// Cache-deduped on the JS side, terms and kinds alike.
+/// Push the current three dial terms and their color codes — the canvas inks a
+/// term by its KIND, not its slot, switching on the standard arrangement's slot
+/// ORDINAL (phase 0, radius 1, k 2). The shipped board is always in that
+/// arrangement, so the ordinal IS the kind code and `fourier_toy_ffi.mjs` needs
+/// no change. Cache-deduped on the JS side, terms and kinds alike.
 pub fn canvas_terms(
   dial: List(TermState),
   kinds: List(puzzle.DialKind),
 ) -> Nil {
-  js_canvas_terms(list.map(dial, row), list.map(kinds, puzzle.kind_code))
+  js_canvas_terms(
+    list.map(dial, row),
+    list.index_map(kinds, fn(_, index) { index }),
+  )
 }
 
 @external(javascript, "../fourier_toy_ffi.mjs", "canvas_terms")

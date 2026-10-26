@@ -11,7 +11,7 @@
 ////
 ////   {"status":"ok",
 ////    "puzzle":{"name":…, "showDate":…, "dots":[…],   the drawing (unused here)
-////              "centroid":[x,y], "dials":["phase","radius","k","fixed"],
+////              "centroid":[x,y], "dials":["phase","radius","k"],
 ////              "dial":[{"k":…,"radius":…,"phase":…}, …],   the dial truth
 ////              "extras":[…],                                the fixed spectrum
 ////              "patches":[{"kind":"phase","deg":…}, …],      the start
@@ -23,6 +23,15 @@
 //// the target trace's polar RMS about the centroid). Both come from
 //// `shapes.from_parts`, the same code the built-in shapes use on themselves.
 ////
+//// Normalization (PLAN-dial-columns.md §4.1d). The board dials exactly THREE
+//// terms (three columns, kinds ∈ {phase, radius, k}). A served document may
+//// still carry the retired "fixed" arrangement (the shipped puzzles used to
+//// end in it), so "fixed" survives only as a PRIVATE marker here: every fixed
+//// slot's truth term becomes an EXTRA — a fixed-correct term IS an extra — and
+//// its patch is dropped, wherever the slot sits. After that there must be
+//// exactly three dialable slots with three truth terms and three patches;
+//// anything else is `Error(Nil)` (the caller keeps the built-in quaver).
+////
 //// Everything else — a "none" envelope for an empty calendar, an "error"
 //// envelope, a network failure's empty string, a document this decoder cannot
 //// use — is `Error(Nil)`: the caller keeps the built-in quaver and tells no
@@ -30,6 +39,7 @@
 
 import fourier_toy/puzzle.{type DialKind, type Patch}
 import fourier_toy/shapes
+import gleam/bool
 import gleam/dynamic/decode
 import gleam/int
 import gleam/json
@@ -42,8 +52,18 @@ pub type DailyPuzzle {
   DailyPuzzle(setup: puzzle.Setup, shape: shapes.Shape, show_date: String)
 }
 
-/// The dial count every board has (puzzle.initial needs exactly four).
-const slots = 4
+/// The dial count every board has (puzzle.initial needs exactly three).
+const slots = 3
+
+/// A dial kind AS SERVED, "fixed" included. Private on purpose: the board has
+/// no fixed slots, and normalization erases this marker before anything else
+/// is built. A served kind the toy does not know is a decode failure.
+type ServedKind {
+  ServedPhase
+  ServedRadius
+  ServedK
+  ServedFixed
+}
 
 pub fn decode(text: String) -> Result(DailyPuzzle, Nil) {
   case json.parse(text, using: envelope_decoder()) {
@@ -69,59 +89,123 @@ fn at_puzzle() -> decode.Decoder(DailyPuzzle) {
   use name <- decode.field("name", decode.string)
   use show_date <- decode.field("showDate", decode.string)
   use centroid <- decode.field("centroid", point_decoder())
-  use dials <- decode.field("dials", decode.list(dial_kind_decoder()))
+  use kinds <- decode.field("dials", decode.list(dial_kind_decoder()))
   use dial <- decode.field("dial", decode.list(term_decoder()))
   use extras <- decode.field("extras", decode.list(term_decoder()))
   use patches <- decode.field("patches", decode.list(patch_decoder()))
   use target <- decode.field("target", decode.list(point_decoder()))
 
-  let shape =
-    shapes.from_parts(
-      name: name,
-      centroid: centroid,
-      dial: dial,
-      extras: extras,
-      target: target,
-    )
-  let setup =
-    puzzle.Setup(
-      id: name,
-      title: name,
-      desc: "the day's puzzle — match the dashed target",
-      shape: name,
-      dials: dials,
-      patches: patches,
-    )
-  let daily = DailyPuzzle(setup: setup, shape: shape, show_date: show_date)
-  // A board is four dials and four starts; anything else cannot be opened, so
-  // it is a fallback rather than a screen that crashes on the first step.
+  // The three per-slot lists are parallel: a document whose counts disagree
+  // contradicts itself, and normalizing it would misalign terms and patches.
   case
-    list.length(dials) == slots,
-    list.length(dial) == slots,
-    list.length(patches) == slots
+    list.length(kinds) == list.length(dial),
+    list.length(kinds) == list.length(patches)
   {
-    True, True, True -> decode.success(daily)
-    _, _, _ ->
-      decode.failure(daily, "four dials, four truth terms, four patches")
+    True, True -> {
+      let rows = zip3(kinds, dial, patches)
+      // A fixed slot is data, not a position: its truth term is a fixed term
+      // (an extra) and its patch is dropped, wherever the slot sits. The served
+      // extras keep their order after it.
+      let fixed_terms =
+        rows
+        |> list.filter(fn(row) { is_fixed(row.0) })
+        |> list.map(fn(row) { row.1 })
+      let dialable =
+        rows
+        |> list.filter(fn(row) { bool.negate(is_fixed(row.0)) })
+
+      let dials = list.map(dialable, fn(row) { kind_of(row.0) })
+      let dial = list.map(dialable, fn(row) { row.1 })
+      let patches = list.map(dialable, fn(row) { row.2 })
+      let extras = list.append(fixed_terms, extras)
+
+      let shape =
+        shapes.from_parts(
+          name: name,
+          centroid: centroid,
+          dial: dial,
+          extras: extras,
+          target: target,
+        )
+      let setup =
+        puzzle.Setup(
+          id: name,
+          title: name,
+          desc: "the day's puzzle — match the dashed target",
+          shape: name,
+          dials: dials,
+          patches: patches,
+        )
+      let daily = DailyPuzzle(setup: setup, shape: shape, show_date: show_date)
+
+      // The 3-lock: three dials, three truth terms, three starts — otherwise
+      // the board cannot be opened, so it is a fallback, not a screen that
+      // crashes on the first step.
+      case
+        list.length(dials) == slots,
+        list.length(dial) == slots,
+        list.length(patches) == slots
+      {
+        True, True, True -> decode.success(daily)
+        _, _, _ ->
+          decode.failure(daily, "three dials, three truth terms, three patches")
+      }
+    }
+    _, _ -> decode.failure(no_puzzle(), "matching dial and patch counts")
   }
 }
 
-fn dial_kind_decoder() -> decode.Decoder(DialKind) {
+/// A value to carry out of a decode failure (decode needs one; the caller
+/// never sees it — `decode` maps every failure to `Error(Nil)`).
+fn no_puzzle() -> DailyPuzzle {
+  DailyPuzzle(
+    setup: puzzle.Setup(
+      id: "",
+      title: "",
+      desc: "",
+      shape: "",
+      dials: [],
+      patches: [],
+    ),
+    shape: shapes.star(),
+    show_date: "",
+  )
+}
+
+fn dial_kind_decoder() -> decode.Decoder(ServedKind) {
   decode.then(decode.string, fn(name) {
     case name {
-      "phase" -> decode.success(puzzle.DialP)
-      "radius" -> decode.success(puzzle.DialR)
-      "k" -> decode.success(puzzle.DialK)
-      "fixed" -> decode.success(puzzle.DialFixed)
-      _ -> decode.failure(puzzle.DialFixed, "a dial kind")
+      "phase" -> decode.success(ServedPhase)
+      "radius" -> decode.success(ServedRadius)
+      "k" -> decode.success(ServedK)
+      "fixed" -> decode.success(ServedFixed)
+      _ -> decode.failure(ServedPhase, "a dial kind")
     }
   })
+}
+
+fn is_fixed(kind: ServedKind) -> Bool {
+  case kind {
+    ServedFixed -> True
+    _ -> False
+  }
+}
+
+fn kind_of(kind: ServedKind) -> DialKind {
+  case kind {
+    ServedPhase -> puzzle.DialP
+    ServedRadius -> puzzle.DialR
+    ServedK -> puzzle.DialK
+    // unreachable: fixed rows are filtered out before this runs
+    ServedFixed -> puzzle.DialP
+  }
 }
 
 /// One starting patch, told apart by its `kind` word; each kind carries its
 /// own field, so a k stays an integer and a percentage a float. The words match
 /// toy_admin/fixture_json.gleam and the admin UI's decoder — one vocabulary,
-/// three readers.
+/// three readers. "keep" stays a parsable patch kind (harmless: it leaves the
+/// slot at truth) even though the board's three dials always carry a value.
 fn patch_decoder() -> decode.Decoder(Patch) {
   use kind <- decode.field("kind", decode.string)
   case kind {
@@ -160,4 +244,13 @@ fn point_decoder() -> decode.Decoder(#(Float, Float)) {
 /// ints, and the backend's dots/target do exactly that.
 fn number_decoder() -> decode.Decoder(Float) {
   decode.one_of(decode.float, or: [decode.map(decode.int, int.to_float)])
+}
+
+/// Three equal-length lists as per-slot triples (the callers check the lengths
+/// first; this truncates at the shortest, like `list.zip`).
+fn zip3(a: List(x), b: List(y), c: List(z)) -> List(#(x, y, z)) {
+  case a, b, c {
+    [x, ..xs], [y, ..ys], [z, ..zs] -> [#(x, y, z), ..zip3(xs, ys, zs)]
+    _, _, _ -> []
+  }
 }

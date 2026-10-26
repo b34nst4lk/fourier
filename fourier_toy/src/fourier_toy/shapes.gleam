@@ -3,11 +3,14 @@
 //// Every number is computed through fourier_sketch's own pipeline — nothing
 //// hand-copied. Each shape carries:
 ////   - a centroid (the k=0 term's position — fixed in every synthesis),
-////   - `dial`: the top-4 terms by amplitude (the puzzle's movable truth),
-////     with phases snapped to the 5° dial grid so the dial lands exactly,
-////   - `extras`: further rows from the shape's spectrum, held FIXED and
-////     baked identically into the target and the current synthesis (the
-////     star/flower have none; the fish/quaver carry 25),
+////   - `dial`: the top-3 terms by amplitude (the puzzle's movable truth — the
+////     dial-columns board has exactly three dials), with phases snapped to
+////     the 5° dial grid so the dial lands exactly,
+////   - `extras`: every remaining row from the shape's spectrum (the former
+////     4th dial term included), held FIXED and baked identically into the
+////     target and the current synthesis (the star/flower carry 1; the
+////     fish/quaver carry 26). The synthesis term set is unchanged: top-4 =
+////     top-3 + extras[0], so no metric value moves with the split.
 ////   - `target`: the 512-point trace the comparison runs against,
 ////   - `rms_polar`: the target's RMS polar radius (the metric normalizer).
 ////
@@ -172,11 +175,12 @@ pub fn star() -> Shape {
     })
     |> list.take(4)
   // the star's truth phases come out on-grid already (all 270°): no snapping
+  let #(dial, extras) = split_dial(dial)
   Shape(
     name: "star",
     centroid: #(cx, cy),
     dial: dial,
-    extras: [],
+    extras: extras,
     dial_max_r: max_r(dial),
     rms_polar: rms_polar_of(target, cx, cy),
     target: target,
@@ -215,12 +219,14 @@ pub fn flower() -> Shape {
     |> list.map(fn(row) {
       TermState(row.0, round6(row.1), snap5(norm_deg(row.2)))
     })
-  let target = synth_trace(#(50.0, 50.0), dial)
+  let #(dial, extras) = split_dial(dial)
+  // top-3 + the baked 4th term = the same synthesis as before the split
+  let target = synth_trace(#(50.0, 50.0), list.append(dial, extras))
   Shape(
     name: "flower",
     centroid: #(50.0, 50.0),
     dial: dial,
-    extras: [],
+    extras: extras,
     dial_max_r: max_r(dial),
     rms_polar: rms_polar_of(target, 50.0, 50.0),
     target: target,
@@ -239,10 +245,14 @@ fn table_shape(
       let #(k, r, phase_rad) = row
       TermState(k, r, norm_deg(phase_rad))
     })
-  let assert [d0, d1, d2, d3, ..extras] = rows
-  let dial = [d0, d1, d2, d3]
+  // the dialed slots are the top three rows; the former 4th dial term joins
+  // the extras (still phase-snapped, exactly as it was when it was dialed) so
+  // the synthesis — and every metric derived from it — is untouched
+  let assert [d0, d1, d2, d3, ..rest] = rows
+  let dial = [d0, d1, d2]
   let dial_snapped =
     list.map(dial, fn(t) { TermState(t.k, t.r, snap5(t.phase_deg)) })
+  let extras = [TermState(d3.k, d3.r, snap5(d3.phase_deg)), ..rest]
   let target = synth_trace(c0, list.append(dial_snapped, extras))
   Shape(
     name: name,
@@ -355,6 +365,14 @@ pub fn from_parts(
 }
 
 // ---------- small helpers ----------
+
+/// The dial-columns split: a shape DIALS its top three terms; every row after
+/// them (the former 4th dial term included) is baked into `extras`. The
+/// synthesis set does not change — top-4 = top-3 + extras[0].
+fn split_dial(rows: List(TermState)) -> #(List(TermState), List(TermState)) {
+  let assert [d0, d1, d2, ..extras] = rows
+  #([d0, d1, d2], extras)
+}
 
 fn centroid_of(pts: List(#(Float, Float))) -> #(Float, Float) {
   let #(sx, sy, count) =

@@ -7,6 +7,11 @@
 //// backend decodes (`/api/solve` with the move list, `/api/attempts/abandon`
 //// with only the count) — the toy cannot import toy_admin, so these literals
 //// are the contract with the routes' decoders.
+////
+//// Schema v2 (PLAN-dial-columns.md §4.1c): the board has THREE dialed terms
+//// (the 4-slot rows are gone), so `v` bumps 1→2 and `state` is a 3-term array.
+//// A stored v1 document is STALE — the sanctioned version-bump retirement:
+//// it decodes to Error(Nil) and the board starts fresh.
 
 import fourier_toy/attempt
 import fourier_toy/shapes
@@ -22,7 +27,6 @@ fn terms() -> List(shapes.TermState) {
     shapes.TermState(-1, 17.97, 355.0),
     shapes.TermState(1, 11.3, 305.0),
     shapes.TermState(-3, 4.68, 260.0),
-    shapes.TermState(3, 2.83, 195.0),
   ]
 }
 
@@ -36,9 +40,9 @@ pub fn a_fresh_attempt_encodes_the_documented_document_test() {
   // Field names and the move-pair spelling are the contract with the next
   // reader of this storage key (the same tab after a reload, and nothing else).
   should.equal(
-    // NB: whole degrees ride as bare ints (335 not 335.0) — that is what
+    // NB: whole degrees ride as bare ints (355 not 355.0) — that is what
     // JSON.stringify emits and what the decoder accepts back.
-    "{\"v\":1,\"date\":\"2026-10-26\",\"state\":[{\"k\":-1,\"r\":17.97,\"phase\":355},{\"k\":1,\"r\":11.3,\"phase\":305},{\"k\":-3,\"r\":4.68,\"phase\":260},{\"k\":3,\"r\":2.83,\"phase\":195}],\"moves\":[],\"count\":0,\"solved\":false,\"reported\":false}",
+    "{\"v\":2,\"date\":\"2026-10-26\",\"state\":[{\"k\":-1,\"r\":17.97,\"phase\":355},{\"k\":1,\"r\":11.3,\"phase\":305},{\"k\":-3,\"r\":4.68,\"phase\":260}],\"moves\":[],\"count\":0,\"solved\":false,\"reported\":false}",
     attempt.encode(fresh()),
   )
 }
@@ -57,31 +61,64 @@ pub fn an_attempt_round_trips_test() {
   should.equal(terms(), read_back.state)
 }
 
+pub fn a_v1_document_is_stale_test() {
+  // Exactly what schema v1 wrote: four dial terms. A version bump is the
+  // sanctioned way to retire a stored format — the board starts fresh, never
+  // with a half-restored 4-slot board and never with a crash.
+  should.equal(
+    Error(Nil),
+    attempt.decode(
+      "{\"v\":1,\"date\":\"2026-10-26\",\"state\":[{\"k\":-1,\"r\":17.97,\"phase\":355},{\"k\":1,\"r\":11.3,\"phase\":305},{\"k\":-3,\"r\":4.68,\"phase\":260},{\"k\":3,\"r\":2.83,\"phase\":195}],\"moves\":[],\"count\":0,\"solved\":false,\"reported\":false}",
+    ),
+  )
+}
+
+pub fn the_state_must_be_three_terms_test() {
+  // A v2 document carries exactly the board's three terms; anything else is
+  // not this toy's attempt (and a future `v` is not this reader's document).
+  let doc = fn(state: String) {
+    "{\"v\":2,\"date\":\"2026-10-26\",\"state\":["
+    <> state
+    <> "],\"moves\":[],\"count\":0,\"solved\":false,\"reported\":false}"
+  }
+  let term = fn(k: String, r: String, phase: String) {
+    "{\"k\":" <> k <> ",\"r\":" <> r <> ",\"phase\":" <> phase <> "}"
+  }
+  // four terms: the retired 4-slot board
+  should.equal(
+    Error(Nil),
+    attempt.decode(doc(
+      term("-1", "17.97", "355.0")
+      <> ","
+      <> term("1", "11.3", "305.0")
+      <> ","
+      <> term("-3", "4.68", "260.0")
+      <> ","
+      <> term("3", "2.83", "195.0"),
+    )),
+  )
+  // two terms: not a board either
+  should.equal(
+    Error(Nil),
+    attempt.decode(doc(
+      term("-1", "17.97", "355.0") <> "," <> term("1", "11.3", "305.0"),
+    )),
+  )
+  should.equal(Error(Nil), attempt.decode("{\"v\":3,\"date\":\"2026-10-26\"}"))
+  should.equal(Error(Nil), attempt.decode("{}"))
+  should.equal(Error(Nil), attempt.decode(""))
+}
+
 pub fn whole_number_terms_read_back_as_floats_test() {
   // A state written by JSON.stringify carries 355, not 355.0 — both spellings
   // are the same number, and the dial arithmetic needs a Float either way.
   let assert Ok(read_back) =
     attempt.decode(
-      "{\"v\":1,\"date\":\"2026-10-26\",\"state\":[{\"k\":-1,\"r\":18,\"phase\":355},{\"k\":1,\"r\":11.3,\"phase\":305.0},{\"k\":-3,\"r\":4.68,\"phase\":260.0},{\"k\":3,\"r\":2.83,\"phase\":195.0}],\"moves\":[],\"count\":0,\"solved\":false,\"reported\":false}",
+      "{\"v\":2,\"date\":\"2026-10-26\",\"state\":[{\"k\":-1,\"r\":18,\"phase\":355},{\"k\":1,\"r\":11.3,\"phase\":305.0},{\"k\":-3,\"r\":4.68,\"phase\":260.0}],\"moves\":[],\"count\":0,\"solved\":false,\"reported\":false}",
     )
   should.equal(
     Ok(shapes.TermState(-1, 18.0, 355.0)),
     list.first(read_back.state),
-  )
-}
-
-pub fn a_foreign_or_broken_document_decodes_to_nothing_test() {
-  // Anything unrecognised means "start fresh" — never a crash, never a
-  // half-restored board. A version bump is how a future format retires v1.
-  should.equal(Error(Nil), attempt.decode(""))
-  should.equal(Error(Nil), attempt.decode("{}"))
-  should.equal(Error(Nil), attempt.decode("{\"v\":2,\"date\":\"2026-10-26\"}"))
-  // three terms is not a board
-  should.equal(
-    Error(Nil),
-    attempt.decode(
-      "{\"v\":1,\"date\":\"2026-10-26\",\"state\":[{\"k\":1,\"r\":1.0,\"phase\":0.0}],\"moves\":[],\"count\":0,\"solved\":false,\"reported\":false}",
-    ),
   )
 }
 

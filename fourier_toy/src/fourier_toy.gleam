@@ -483,7 +483,9 @@ fn solve_reported(model: Model) -> #(Model, Effect(Msg)) {
 fn kind_at(dials: List(puzzle.DialKind), slot: Int) -> puzzle.DialKind {
   case list.drop(dials, slot) {
     [kind, ..] -> kind
-    [] -> puzzle.DialFixed
+    // unreachable: a slot at/after the dial count matches no term, so the
+    // fallback never steers a step. Any dialable kind keeps the code total.
+    [] -> puzzle.DialP
   }
 }
 
@@ -505,7 +507,6 @@ fn board_view(model: Model) -> Element(Msg) {
     html.div(
       [attribute.class("rows")],
       list.index_map(model.setup.dials, fn(kind, i) { #(i, kind) })
-        |> list.filter(fn(pair) { pair.1 != puzzle.DialFixed })
         |> list.map(fn(pair) {
           let #(i, kind) = pair
           let assert [s, ..] = list.drop(model.state, i)
@@ -605,44 +606,26 @@ fn bar(m: Float, moves: Int, dark: Bool) -> Element(Msg) {
   ])
 }
 
+/// Transitional (PLAN-dial-columns.md §4 Phase 1): the rows keep their stepper
+/// bones until Phase 3 turns them into dial columns. The text machinery went
+/// with the puzzle helpers that formatted it (`slot_value`, `locked_note`,
+/// `kind_class`): the board and the score bar carry the reading, and Phase 3
+/// replaces these rows — label and all — with the icon-only columns.
 fn dial_row(
   kind: puzzle.DialKind,
   i: Int,
   s: TermState,
   max_r: Float,
 ) -> Element(Msg) {
-  let head = [
+  html.div([attribute.class("row")], [
     html.div([attribute.class("id")], [
       html.span([attribute.class("term")], [
         html.text("term " <> int.to_string(i + 1)),
       ]),
-      html.span([attribute.class("sub")], [
-        html.text(puzzle.locked_note(kind, s, max_r)),
-      ]),
     ]),
-  ]
-  let body = case kind {
-    puzzle.DialFixed -> [
-      html.div([attribute.class("val")], [html.text("not a dial")]),
-    ]
-    _ -> [
-      edge_button(i, -1, at_min(kind, s)),
-      html.div([attribute.class("val")], [
-        html.text(puzzle.slot_value(kind, s, max_r)),
-      ]),
-      edge_button(i, 1, at_max(kind, s, max_r)),
-    ]
-  }
-  html.div(
-    [
-      attribute.classes([
-        #("row", True),
-        #(puzzle.kind_class(kind), True),
-        // the row wears its kind's ink
-      ]),
-    ],
-    list.append(head, body),
-  )
+    edge_button(i, -1, at_min(kind, s)),
+    edge_button(i, 1, at_max(kind, s, max_r)),
+  ])
 }
 
 fn at_min(kind: puzzle.DialKind, s: TermState) -> Bool {

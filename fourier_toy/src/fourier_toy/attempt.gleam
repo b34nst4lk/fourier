@@ -1,16 +1,22 @@
 //// The stored attempt (localStorage key `j-att`): one player's progress on one
 //// puzzle date, client-side (PLAN-daily-puzzles.md §1, Q21/Q24).
 ////
-//// Schema v1 — a JSON OBJECT, one key per field, never positional:
+//// Schema v2 — a JSON OBJECT, one key per field, never positional:
 ////
-////   {"v":1,
+////   {"v":2,
 ////    "date":"2026-10-26",                the show date this attempt belongs to
-////    "state":[{"k":-1,"r":17.97,"phase":355.0}, …],
-////                                        the four dial terms, slot order
+////    "state":[{"k":-1,"r":17.97,"phase":355}, …],
+////                                        the three dial terms, slot order
 ////    "moves":[[0,1],[1,-1], …],          (slot, dir) pairs in play order
 ////    "count":7,                          the counter as shown
 ////    "solved":false,                     the record is FINAL once true
 ////    "reported":false}                   the solve POST has landed (2xx)
+////
+//// v2 (PLAN-dial-columns.md §3): the board dials three terms, not four,
+//// so `state` is a 3-term array and `v` bumps 1→2. A
+//// stored v1 document (four terms) is stale: it decodes to `Error(Nil)` and the
+//// board starts fresh. The version bump is the sanctioned way to retire a
+//// stored format, and only pre-change attempts are affected.
 ////
 //// Why both the list and the count: the list is the reproducible record the
 //// backend re-derives the final state from, and it stops growing at the first
@@ -46,7 +52,7 @@ pub type Attempt {
   Attempt(
     /// The puzzle's show date (a daily puzzle's identity).
     date: String,
-    /// The four dial terms as they stand.
+    /// The three dial terms as they stand.
     state: List(TermState),
     /// Steps in play order, recorded until the first solve (capped).
     moves: List(Move),
@@ -134,7 +140,7 @@ pub fn abandon_body(uuid: String, a: Attempt) -> String {
 
 pub fn encode(a: Attempt) -> String {
   json.object([
-    #("v", json.int(1)),
+    #("v", json.int(2)),
     #("date", json.string(a.date)),
     #("state", json.array(a.state, of: term_json)),
     #(
@@ -158,7 +164,7 @@ pub fn decode(from text: String) -> Result(Attempt, Nil) {
 fn attempt_decoder() -> decode.Decoder(Attempt) {
   use version <- decode.field("v", decode.int)
   case version {
-    1 -> {
+    2 -> {
       use date <- decode.field("date", decode.string)
       use state <- decode.field("state", decode.list(term_decoder()))
       use moves <- decode.field("moves", decode.list(move_decoder()))
@@ -166,8 +172,8 @@ fn attempt_decoder() -> decode.Decoder(Attempt) {
       use solved <- decode.field("solved", decode.bool)
       use reported <- decode.field("reported", decode.bool)
       case state {
-        // four slots or it is not this toy's board
-        [_, _, _, _] ->
+        // three slots or it is not this toy's board
+        [_, _, _] ->
           decode.success(Attempt(
             date: date,
             state: state,
@@ -176,10 +182,11 @@ fn attempt_decoder() -> decode.Decoder(Attempt) {
             solved: solved,
             reported: reported,
           ))
-        _ -> decode.failure(empty_attempt(), "four dial terms")
+        _ -> decode.failure(empty_attempt(), "three dial terms")
       }
     }
-    _ -> decode.failure(empty_attempt(), "version 1")
+    // v1 (four terms) is stale by the bump — and so is anything newer
+    _ -> decode.failure(empty_attempt(), "version 2")
   }
 }
 

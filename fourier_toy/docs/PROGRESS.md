@@ -457,3 +457,24 @@ changed.
   the aperture = the gap's lower 55° opening up-right after the tilt, the
   bar = the straight chord to the centre, the crop = the bowl's own box
   (11.5 16.5 77 77). Commit 0a82cd7, deployed, live bundle verified.
+
+## Dial columns — Phase 1: the 3-dial core (2026-10-26, PLAN-dial-columns.md)
+
+The board vocabulary rework, TDD by the coder subagent under review (RED 25
+passed/17 failures, every failure its intended reason; GREEN 42/42): every
+fixture's `dial` is the top-3 terms (the former 4th joins `extras`, still
+phase-snapped — the synthesis term set is unchanged, so targets/metrics move
+not at all: the untouched metric gold pins stay green as the proof);
+`puzzle.initial` takes exactly 3 patches; `DialFixed`, `kind_code`,
+`kind_class`, `slot_value`, `locked_note` retire (P6–P10 roster with them —
+the shipped board is `quaver_setup()` alone); the attempt schema bumps to
+v2 (3-term state; a stored v1 doc is stale → fresh); the wire normalizes
+served "fixed" slots at ANY position (truth term → extras, patch dropped) and
+locks the board at exactly 3 dialable kinds, else fallback — the deployed
+backend's documents keep working with no lockstep. Transitional compile
+touches: ffi.gleam pushes slot ordinals as the color codes (ordinal ≡
+kind-code for the standard arrangement, so the untouched JS paints
+identically), and the app module drops its DialFixed branches (rows keep
+their bones until Phase 3). Baseline note: the pre-change suite was 35, not
+34 — the count drift came from the locked-note gold test added after the
+daily-integration ledger entry.

@@ -2,8 +2,14 @@
 //// reproduce the archived JS prototype's ground-truth numbers.
 //// Gold sources: prototype_js/generate_proto.mjs console output and its
 //// jsdom artifact checks (tag prototype-js-v1).
+////
+//// Dial-columns rework (PLAN-dial-columns.md §4.1a/1b): a shape DIALS exactly
+//// its top-THREE terms and the former 4th term moves into `extras`. The
+//// synthesis term set is identical (top-4 = top-3 + extras[0]), so every
+//// metric pin below stays untouched — they are the proof the split is
+//// score-neutral, not an accident.
 
-import fourier_toy/puzzle.{DialK, DialP, DialR, KSet, Keep, PhaseDeg, RPct}
+import fourier_toy/puzzle.{DialK, DialP, DialR, KSet, PhaseDeg, RPct}
 import fourier_toy/shapes
 import gleam/int
 import gleam/list
@@ -23,19 +29,76 @@ fn approx(a: Float, b: Float, eps: Float) -> Nil {
   Nil
 }
 
-// ---------- fixtures: dialable truth matches the JS prototype ----------
+// ---------- fixtures: the dialable truth is the top 3 terms ----------
+// (the former 4th term is the first extra — same synthesis, new split)
 
-pub fn star_dial_gold_test() {
+pub fn star_dial_top3_gold_test() {
   let star = shapes.star()
   star.dial
   |> should.equal([
     shapes.TermState(1, 27.574653, 270.0),
     shapes.TermState(-4, 6.5871, 270.0),
     shapes.TermState(6, 2.927629, 270.0),
-    shapes.TermState(-14, 0.537771, 270.0),
   ])
-  star.extras |> list.length |> should.equal(0)
+  // the star's 4th term is small and baked in, not dialed
+  star.extras
+  |> should.equal([shapes.TermState(-14, 0.537771, 270.0)])
 }
+
+pub fn flower_dial_top3_gold_test() {
+  let flower = shapes.flower()
+  let assert [d0, d1, d2] = flower.dial
+  let shapes.TermState(k0, _, _) = d0
+  k0 |> should.equal(1)
+  approx(d0.r, 14.3, 1.0e-3)
+  approx(d0.phase_deg, 0.0, 1.0e-6)
+  let assert shapes.TermState(-5, _, 325.0) = d1
+  approx(d1.r, 5.46, 1.0e-3)
+  let assert shapes.TermState(7, _, 35.0) = d2
+  approx(d2.r, 5.46, 1.0e-3)
+  flower.extras
+  |> should.equal([shapes.TermState(-11, 0.78, 0.0)])
+}
+
+pub fn fish_dial_top3_gold_test() {
+  let fish = shapes.fish()
+  fish.dial
+  |> should.equal([
+    shapes.TermState(-1, 26.07, 255.0),
+    shapes.TermState(1, 16.27, 90.0),
+    shapes.TermState(-2, 7.51, 340.0),
+  ])
+  // 28 table rows, 3 dialed ⇒ 26 baked extras; the head is the old 4th term
+  fish.extras |> list.length |> should.equal(26)
+  fish.extras
+  |> list.first
+  |> should.equal(Ok(shapes.TermState(2, 4.9, 180.0)))
+}
+
+pub fn quaver_dial_top3_gold_test() {
+  let quaver = shapes.quaver()
+  quaver.dial
+  |> should.equal([
+    shapes.TermState(-1, 17.97, 265.0),
+    shapes.TermState(1, 11.3, 305.0),
+    shapes.TermState(-3, 4.68, 260.0),
+  ])
+  quaver.extras |> list.length |> should.equal(26)
+  quaver.extras
+  |> list.first
+  |> should.equal(Ok(shapes.TermState(3, 2.83, 195.0)))
+}
+
+pub fn dial_max_r_unchanged_test() {
+  // term 1 is the biggest dialable radius under BOTH splits (top-3 and
+  // top-4), so the radius dial's unit — and its 200% ceiling — cannot move
+  shapes.star().dial_max_r |> should.equal(27.574653)
+  approx(shapes.flower().dial_max_r, 14.3, 1.0e-3)
+  shapes.fish().dial_max_r |> should.equal(26.07)
+  shapes.quaver().dial_max_r |> should.equal(17.97)
+}
+
+// ---------- metric parity with the archived JS prototype ----------
 
 pub fn star_target_is_traced_not_synthesized_test() {
   // the star's cap = the truncation: the dial-at-truth cannot fully equal
@@ -47,48 +110,10 @@ pub fn star_target_is_traced_not_synthesized_test() {
   Nil
 }
 
-pub fn flower_dial_gold_test() {
-  let flower = shapes.flower()
-  let assert [d0, d1, d2, d3] = flower.dial
-  let shapes.TermState(k0, _, _) = d0
-  k0 |> should.equal(1)
-  approx(d0.r, 14.3, 1.0e-3)
-  approx(d0.phase_deg, 0.0, 1.0e-6)
-  let assert shapes.TermState(-5, _, 325.0) = d1
-  approx(d1.r, 5.46, 1.0e-3)
-  let assert shapes.TermState(7, _, 35.0) = d2
-  approx(d2.r, 5.46, 1.0e-3)
-  let assert shapes.TermState(-11, 0.78, 0.0) = d3
-  flower.extras |> list.length |> should.equal(0)
-}
-
-pub fn fish_dial_gold_and_extras_count_test() {
-  let fish = shapes.fish()
-  let assert [
-    shapes.TermState(-1, 26.07, 255.0),
-    shapes.TermState(1, 16.27, 90.0),
-    shapes.TermState(-2, 7.51, 340.0),
-    shapes.TermState(2, 4.9, 180.0),
-  ] = fish.dial
-  fish.extras |> list.length |> should.equal(25)
-}
-
-pub fn quaver_dial_gold_and_extras_count_test() {
-  let quaver = shapes.quaver()
-  let assert [
-    shapes.TermState(-1, 17.97, 265.0),
-    shapes.TermState(1, 11.3, 305.0),
-    shapes.TermState(-3, 4.68, 260.0),
-    shapes.TermState(3, 2.83, 195.0),
-  ] = quaver.dial
-  quaver.extras |> list.length |> should.equal(25)
-}
-
-// ---------- metric parity with the archived JS prototype ----------
-
 pub fn synthesizable_shapes_solve_to_about_100_test() {
   // flower + fish + quaver targets are rebuilt from their snapped synthesis,
-  // so the dial-at-truth solves them to ~100%; the star cannot (traced).
+  // so the dial-at-truth (plus its baked extras) solves them to ~100%; the
+  // star cannot (traced).
   [shapes.flower(), shapes.fish(), shapes.quaver()]
   |> list.each(fn(shape) {
     let m = shapes.match_pct(shape, shape.dial)
@@ -97,56 +122,69 @@ pub fn synthesizable_shapes_solve_to_about_100_test() {
   })
 }
 
-pub fn star_initial_p3_match_gold_test() {
-  // P3's star start (radii 72%/8%/0%/0%) = 67.1% in the JS prototype
-  let star = shapes.star()
-  let initial = [
-    shapes.TermState(1, 0.72 *. star.dial_max_r, 270.0),
-    shapes.TermState(-4, 0.08 *. star.dial_max_r, 270.0),
-    shapes.TermState(6, 0.0, 270.0),
-    shapes.TermState(-14, 0.0, 270.0),
-  ]
-  approx(shapes.match_pct(star, initial), 67.1, 0.15)
+// ---------- the 3-patch board ----------
+
+pub fn quaver_setup_is_three_dials_test() {
+  // the shipped puzzle dials exactly three terms — one of each kind
+  let setup = puzzle.quaver_setup()
+  setup.dials |> should.equal([DialP, DialR, DialK])
+  setup.patches
+  |> should.equal([PhaseDeg(355.0), RPct(73.0), KSet(-5)])
 }
 
-pub fn fish_initial_p8_start_clamps_to_zero_test() {
-  // P8 start: phase +90° on the dominant, radius 72%, k−2 on slot 3
-  let fish = shapes.fish()
-  let state =
-    puzzle.initial(fish, [
-      PhaseDeg(345.0),
-      RPct(72.0),
-      KSet(-6),
-      Keep,
-    ])
-  shapes.match_pct(fish, state) |> should.equal(0.0)
+pub fn initial_resolves_three_patches_test() {
+  // one patch per dialed slot, in chain order: slot 1's phase, slot 2's
+  // radius (73% of the biggest dialable radius), slot 3's k
+  let quaver = shapes.quaver()
+  let state = puzzle.initial(quaver, puzzle.quaver_setup().patches)
+  let assert [s0, s1, s2] = state
+  should.equal(shapes.TermState(-1, 17.97, 355.0), s0)
+  should.equal(1, s1.k)
+  approx(s1.r, 0.73 *. 17.97, 1.0e-9)
+  should.equal(305.0, s1.phase_deg)
+  should.equal(shapes.TermState(-5, 4.68, 260.0), s2)
 }
 
-pub fn flower_initial_p10_start_test() {
+pub fn quaver_start_is_unsolved_gold_test() {
+  // k −5 against the truth's −3 clamps the metric to 0: the served start is
+  // a real puzzle, not the answer (the live seam check recorded the same)
+  let quaver = shapes.quaver()
+  let state = puzzle.initial(quaver, puzzle.quaver_setup().patches)
+  shapes.match_pct(quaver, state) |> should.equal(0.0)
+}
+
+pub fn flower_p7_start_test() {
+  // P7 start: phase +90° on the dominant, radius 72%, k +5 on slot 3 — the
+  // retired P10 start's 4th patch (radius 16%) has no slot to land on now
   let flower = shapes.flower()
-  let state =
-    puzzle.initial(flower, [
-      PhaseDeg(90.0),
-      RPct(72.0),
-      KSet(5),
-      RPct(16.0),
-    ])
-  let assert [s0, s1, s2, s3] = state
-  // slot1 keeps its truth radius; phase patched to 90°
-  let assert shapes.TermState(1, _, 90.0) = s0
-  approx(s0.r, flower.dial_max_r, 1.0e-9)
-  // slot2 radius patched to 72% of max, truth phase kept (325°)
-  let assert shapes.TermState(-5, _, 325.0) = s1
-  approx(s1.r, 0.72 *. flower.dial_max_r, 1.0e-9)
-  // slot3 k patched to +5, radius/phase kept
-  let assert shapes.TermState(5, _, 35.0) = s2
-  // slot4 radius patched to 16% of max, k/phase kept
-  let assert shapes.TermState(-11, _, 0.0) = s3
-  approx(s3.r, 0.16 *. flower.dial_max_r, 1.0e-9)
+  let state = puzzle.initial(flower, [PhaseDeg(90.0), RPct(72.0), KSet(5)])
+  let assert [s0, s1, s2] = state
+  // slot 1: phase patched to 90°, radius at truth (the max ⇒ dial_max_r)
+  let shapes.TermState(k0, r0, p0) = s0
+  should.equal(1, k0)
+  approx(r0, 14.3, 1.0e-3)
+  should.equal(90.0, p0)
+  // slot 2: radius patched to 72% of max, k/phase at truth
+  let shapes.TermState(k1, r1, p1) = s1
+  should.equal(-5, k1)
+  approx(r1, 0.72 *. 14.3, 1.0e-3)
+  should.equal(325.0, p1)
+  // slot 3: k patched to +5, radius/phase at truth
+  let shapes.TermState(k2, r2, p2) = s2
+  should.equal(5, k2)
+  approx(r2, 5.46, 1.0e-3)
+  should.equal(35.0, p2)
   // the start is visibly unsolved
   let m = shapes.match_pct(flower, state)
   let assert True = m <. 95.0
   Nil
+}
+
+pub fn fish_p8_start_clamps_to_zero_test() {
+  // P8 start: phase +90° on the dominant, radius 72%, k−6 on slot 3
+  let fish = shapes.fish()
+  let state = puzzle.initial(fish, [PhaseDeg(345.0), RPct(72.0), KSet(-6)])
+  shapes.match_pct(fish, state) |> should.equal(0.0)
 }
 
 // ---------- dial stepping contracts ----------
@@ -191,60 +229,4 @@ pub fn solved_threshold_test() {
 
 pub fn k_int_to_float_sanity_test() {
   int.to_float(3) |> should.equal(3.0)
-}
-
-// ---------- display contracts: the row small print tells the truth ----------
-
-pub fn locked_note_names_the_locked_fields_test() {
-  let quaver = shapes.quaver()
-  let assert [s0, s1, s2, s3] = quaver.dial
-  let max_r = quaver.dial_max_r
-  // display helpers via the public readouts: pct through the radius readout,
-  // deg through the phase readout — numbers come from the fixture itself
-  let pct = fn(s) { puzzle.slot_value(DialR, s, max_r) }
-  let deg = fn(s) { puzzle.slot_value(DialP, s, max_r) }
-
-  // the phase dial's small print locks r and k — NOT φ (φ is what this dial
-  // changes; the DialP branch once printed r · φ)
-  let phase_note = puzzle.locked_note(DialP, s0, max_r)
-  phase_note
-  |> should.equal("locked: r " <> pct(s0) <> " · k " <> puzzle.fmt_k(s0.k))
-
-  let radius_note = puzzle.locked_note(DialR, s1, max_r)
-  radius_note
-  |> should.equal("locked: k " <> puzzle.fmt_k(s1.k) <> " · φ " <> deg(s1))
-
-  let k_note = puzzle.locked_note(DialK, s2, max_r)
-  k_note |> should.equal("locked: r " <> pct(s2) <> " · φ " <> deg(s2))
-
-  let fixed_note = puzzle.locked_note(puzzle.DialFixed, s3, max_r)
-  fixed_note
-  |> should.equal(
-    "fixed, correct: k "
-    <> puzzle.fmt_k(s3.k)
-    <> " · r "
-    <> pct(s3)
-    <> " · φ "
-    <> deg(s3),
-  )
-}
-
-// ---------- the canvas ink contract: colour follows the KIND ----------
-// The FFI's PALETTES are keyed on puzzle.kind_code (fourier_toy_ffi.mjs
-// term_color), and each dial row's readout wears puzzle.kind_class in
-// index.html. Both follow the KIND — so a rearranged puzzle still inks its
-// phase dial red, its radius dial yellow and its k dial blue, never the slot
-// index (the arrangement is data: v1 is P/R/K/Fixed, and slot 4 is fixed).
-// The codes are a wire contract with the .mjs palette switch: they may never
-// be renumbered without moving that switch.
-pub fn kind_ink_is_keyed_on_the_dial_kind_test() {
-  puzzle.kind_code(DialP) |> should.equal(0)
-  puzzle.kind_code(DialR) |> should.equal(1)
-  puzzle.kind_code(DialK) |> should.equal(2)
-  puzzle.kind_code(puzzle.DialFixed) |> should.equal(3)
-
-  puzzle.kind_class(DialP) |> should.equal("kind-phase")
-  puzzle.kind_class(DialR) |> should.equal("kind-radius")
-  puzzle.kind_class(DialK) |> should.equal("kind-k")
-  puzzle.kind_class(puzzle.DialFixed) |> should.equal("kind-fixed")
 }
