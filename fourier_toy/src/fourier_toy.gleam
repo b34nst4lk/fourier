@@ -1,5 +1,5 @@
-//// fourier toy — the daily puzzle board: tune four Fourier terms (phase,
-//// radius, k) until the solid comet closes onto the dashed target.
+//// fourier toy — the daily puzzle board: tune the three dialed Fourier terms
+//// (phase, radius, k) until the solid comet closes onto the dashed target.
 ////
 //// One screen, no routing. Two sources feed it (PLAN-daily-puzzles.md §1):
 ////
@@ -505,13 +505,11 @@ fn board_view(model: Model) -> Element(Msg) {
     ]),
     html.canvas([attribute.class("board"), attribute.id("toy-board")]),
     html.div(
-      [attribute.class("rows")],
-      list.index_map(model.setup.dials, fn(kind, i) { #(i, kind) })
-        |> list.map(fn(pair) {
-          let #(i, kind) = pair
-          let assert [s, ..] = list.drop(model.state, i)
-          dial_row(kind, i, s, model.shape.dial_max_r)
-        }),
+      [attribute.class("cols")],
+      list.index_map(model.setup.dials, fn(kind, i) {
+        let assert [s, ..] = list.drop(model.state, i)
+        dial_col(kind, i, s, model.shape.dial_max_r)
+      }),
     ),
   ])
 }
@@ -573,8 +571,8 @@ fn bar(m: Float, moves: Int, dark: Bool) -> Element(Msg) {
       ],
     ),
     html.div([attribute.class("tools")], [
-      // reset chip: the standard counterclockwise icon, icon-only (the
-      // aria-label keeps its meaning for screen readers)
+      // reset chip: skip-back-to-start, icon-only (the aria-label keeps its
+      // meaning for screen readers)
       html.button(
         [
           attribute.classes([#("chip", True), #("reset", True)]),
@@ -606,26 +604,55 @@ fn bar(m: Float, moves: Int, dark: Bool) -> Element(Msg) {
   ])
 }
 
-/// Transitional (PLAN-dial-columns.md §4 Phase 1): the rows keep their stepper
-/// bones until Phase 3 turns them into dial columns. The text machinery went
-/// with the puzzle helpers that formatted it (`slot_value`, `locked_note`,
-/// `kind_class`): the board and the score bar carry the reading, and Phase 3
-/// replaces these rows — label and all — with the icon-only columns.
-fn dial_row(
+/// One dial column: [glyph ↑][canvas col-N][glyph ↓], no text nodes at all.
+/// Up steps +1; down steps −1. The glyphs wear motion-matching feathers, and
+/// the column's ink is its ORDINAL (CSS `nth-child`), not its kind.
+fn dial_col(
   kind: puzzle.DialKind,
-  i: Int,
+  slot: Int,
   s: TermState,
   max_r: Float,
 ) -> Element(Msg) {
-  html.div([attribute.class("row")], [
-    html.div([attribute.class("id")], [
-      html.span([attribute.class("term")], [
-        html.text("term " <> int.to_string(i + 1)),
-      ]),
+  html.div([attribute.class("col")], [
+    glyph_button(kind, slot, 1, at_max(kind, s, max_r)),
+    html.canvas([
+      attribute.class("dial"),
+      attribute.id("col-" <> int.to_string(slot)),
     ]),
-    edge_button(i, -1, at_min(kind, s)),
-    edge_button(i, 1, at_max(kind, s, max_r)),
+    glyph_button(kind, slot, -1, at_min(kind, s)),
   ])
+}
+
+/// `button.btn` is the hold-to-repeat driver's hook (the FFI listens on the
+/// document for it); the glyph is the icon-only face of the same stepper.
+fn glyph_button(
+  kind: puzzle.DialKind,
+  slot: Int,
+  dir: Int,
+  at_edge: Bool,
+) -> Element(Msg) {
+  let label = case dir > 0 {
+    True -> "increase " <> kind_name(kind)
+    False -> "decrease " <> kind_name(kind)
+  }
+  html.button(
+    [
+      attribute.classes([#("btn", True), #("glyph", True)]),
+      attribute.aria_label(label),
+      attribute.disabled(at_edge),
+      event.on("click", decode.success(SlotStep(slot, dir))),
+    ],
+    [glyph_icon(kind, dir)],
+  )
+}
+
+/// The word the aria-label names the dial with (the glyph says the action).
+fn kind_name(kind: puzzle.DialKind) -> String {
+  case kind {
+    puzzle.DialP -> "phase"
+    puzzle.DialR -> "radius"
+    puzzle.DialK -> "k"
+  }
 }
 
 fn at_min(kind: puzzle.DialKind, s: TermState) -> Bool {
@@ -644,20 +671,69 @@ fn at_max(kind: puzzle.DialKind, s: TermState, max_r: Float) -> Bool {
   }
 }
 
-fn edge_button(i: Int, dir: Int, disabled_flag: Bool) -> Element(Msg) {
-  html.button(
-    [
-      attribute.class("btn"),
-      attribute.disabled(disabled_flag),
-      event.on("click", decode.success(SlotStep(i, dir))),
-    ],
-    [
-      html.text(case dir > 0 {
-        True -> "+"
-        False -> "−"
-      }),
-    ],
-  )
+/// Motion-matching glyphs (feather's 24×24 stroke geometry): the arrow shows
+/// what the button does, the column's ink shows which wheel it turns.
+fn glyph_icon(kind: puzzle.DialKind, dir: Int) -> Element(Msg) {
+  case kind, dir > 0 {
+    puzzle.DialP, True ->
+      glyph_svg([
+        svg.polyline([attribute.attribute("points", "23 4 23 10 17 10")]),
+        svg.path([
+          attribute.attribute("d", "M20.49 15a9 9 0 1 1-2.12-9.36L23 10"),
+        ]),
+      ])
+    puzzle.DialP, False ->
+      glyph_svg([
+        svg.polyline([attribute.attribute("points", "1 4 1 10 7 10")]),
+        svg.path([
+          attribute.attribute("d", "M3.51 15a9 9 0 1 0 2.13-9.36L1 10"),
+        ]),
+      ])
+    puzzle.DialR, True ->
+      glyph_svg([
+        svg.polyline([attribute.attribute("points", "15 3 21 3 21 9")]),
+        svg.polyline([attribute.attribute("points", "9 21 3 21 3 15")]),
+        svg.line([
+          attribute.attribute("x1", "21"),
+          attribute.attribute("y1", "3"),
+          attribute.attribute("x2", "14"),
+          attribute.attribute("y2", "10"),
+        ]),
+        svg.line([
+          attribute.attribute("x1", "3"),
+          attribute.attribute("y1", "21"),
+          attribute.attribute("x2", "10"),
+          attribute.attribute("y2", "14"),
+        ]),
+      ])
+    puzzle.DialR, False ->
+      glyph_svg([
+        svg.polyline([attribute.attribute("points", "4 14 10 14 10 20")]),
+        svg.polyline([attribute.attribute("points", "20 10 14 10 14 4")]),
+        svg.line([
+          attribute.attribute("x1", "14"),
+          attribute.attribute("y1", "10"),
+          attribute.attribute("x2", "21"),
+          attribute.attribute("y2", "3"),
+        ]),
+        svg.line([
+          attribute.attribute("x1", "3"),
+          attribute.attribute("y1", "21"),
+          attribute.attribute("x2", "10"),
+          attribute.attribute("y2", "14"),
+        ]),
+      ])
+    puzzle.DialK, True ->
+      glyph_svg([
+        svg.polygon([attribute.attribute("points", "13 19 22 12 13 5 13 19")]),
+        svg.polygon([attribute.attribute("points", "2 19 11 12 2 5 2 19")]),
+      ])
+    puzzle.DialK, False ->
+      glyph_svg([
+        svg.polygon([attribute.attribute("points", "11 19 2 12 11 5 11 19")]),
+        svg.polygon([attribute.attribute("points", "22 19 13 12 22 5 22 19")]),
+      ])
+  }
 }
 
 /// One change per stepper step; the singular reads better at one.
@@ -670,17 +746,26 @@ fn changes_text(n: Int) -> String {
 
 // ---- icon chips (stroke geometry, 24×24 viewBox, inked via CSS) ----
 
-/// The standard counterclockwise reset arrow (feather's rotate-ccw).
-fn reset_icon() -> Element(Msg) {
+/// The shared svg shell: a 24×24 viewBox, `.icon` sizing, currentColor ink.
+fn glyph_svg(children: List(Element(Msg))) -> Element(Msg) {
   svg.svg(
     [attribute.class("icon"), attribute.attribute("viewBox", "0 0 24 24")],
-    [
-      svg.polyline([attribute.attribute("points", "1 4 1 10 7 10")]),
-      svg.path([
-        attribute.attribute("d", "M3.51 15a9 9 0 1 0 2.13-9.36L1 10"),
-      ]),
-    ],
+    children,
   )
+}
+
+/// Skip-back-to-start: a bar and a left-pointing triangle (feather's
+/// skip-back). Reset returns the dials to the start, not the clock.
+fn reset_icon() -> Element(Msg) {
+  glyph_svg([
+    svg.polygon([attribute.attribute("points", "19 20 9 12 19 4 19 20")]),
+    svg.line([
+      attribute.attribute("x1", "5"),
+      attribute.attribute("y1", "19"),
+      attribute.attribute("x2", "5"),
+      attribute.attribute("y2", "5"),
+    ]),
+  ])
 }
 
 fn moon_icon() -> Element(Msg) {

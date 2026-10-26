@@ -13,15 +13,16 @@
   --line: #e5e5e5;
   --mut: #6b6b6b;
   --ok: #4a7a5a;
-  /* the dial kinds' ink — one colour per KIND, never per slot index. These
-     are fourier_toy_ffi.mjs PALETTES.light's term colours (the canvas and the
-     page must agree): the radius yellow is the print-yellow DARKENED until
-     its TEXT clears 4.5:1 on this paper (4.75:1), because #c9a411 is 2.31:1
+  /* the dial columns' ink — one colour per CHAIN POSITION (1st dialed term,
+     2nd, 3rd), never per dial KIND: colour answers "which wheel in the
+     chain?", never "what does it do?" (the glyphs answer that). These are
+     fourier_toy_ffi.mjs PALETTES' ordinal entries — the page and the canvas
+     must agree. The middle yellow is the print-yellow DARKENED until its
+     TEXT clears 4.5:1 on this paper (4.75:1), because #c9a411 is 2.31:1
      here — unreadable. */
-  --term-phase: #c8321e;
-  --term-radius: #8a6d00;
-  --term-k: #1f5fae;
-  --term-fixed: #6b6b6b;
+  --ord-0: #c8321e;
+  --ord-1: #8a6d00;
+  --ord-2: #1f5fae;
 }
 body[data-theme="dark"] {
   color-scheme: dark;
@@ -31,10 +32,9 @@ body[data-theme="dark"] {
   --line: #2a2a2a;
   --mut: #9a9a9a;
   --ok: #7fbf94;
-  --term-phase: #e05a4a;
-  --term-radius: #ffd93d;
-  --term-k: #5aa0e8;
-  --term-fixed: #9a9a9a;
+  --ord-0: #e05a4a;
+  --ord-1: #ffd93d;
+  --ord-2: #5aa0e8;
 }
 * { box-sizing: border-box; }
 body {
@@ -75,7 +75,8 @@ body {
   background: var(--card); color: var(--ink); cursor: pointer;
 }
 .chip .icon { display: block; width: 16px; height: 16px; }
-.chip .icon path, .chip .icon circle, .chip .icon line, .chip .icon polyline {
+.chip .icon path, .chip .icon circle, .chip .icon line, .chip .icon polyline,
+.chip .icon polygon {
   stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round;
 }
 .pt { margin: 0 0 8px; font-size: 1rem; }
@@ -98,16 +99,20 @@ body {
   /* stray double-taps on the play surface must not zoom either */
   touch-action: manipulation;
 }
-.rows { display: grid; gap: 8px; margin: 0 0 12px; }
-.row {
+/* the dial columns: three wheels under the board, one per dialed term in
+   chain order. Each column is [glyph ↑][circle space][glyph ↓] and carries
+   NO text: the column's ink is its ordinal, the glyph says what it does. */
+.cols {
   display: grid;
-  grid-template-columns: 1fr 52px 76px 52px;
-  gap: 6px;
-  align-items: stretch;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin: 0 0 12px;
 }
-.id { display: flex; flex-direction: column; justify-content: center; font-size: .9rem; }
-.id .term { font-variant-numeric: tabular-nums; }
-.id .sub { font-size: .7rem; color: var(--mut); }
+.col { display: flex; flex-direction: column; gap: 2px; }
+.col:nth-child(1) { color: var(--ord-0); }
+.col:nth-child(2) { color: var(--ord-1); }
+.col:nth-child(3) { color: var(--ord-2); }
+.col canvas { display: block; width: 100%; height: 104px; }
 button {
   font: inherit; font-size: 1.35rem; width: 100%;
   border: 1.5px solid var(--line); border-radius: 10px;
@@ -123,20 +128,22 @@ button {
 button:active { background: #ededed; }
 body[data-theme="dark"] button:active { background: #232323; }
 button:disabled { opacity: .35; cursor: default; }
-/* dial readouts: plain text, centered in the grid cell — no box */
-.val {
+/* glyph buttons: icon-only, no chrome of their own — the column's ordinal ink
+   reaches the svg through currentColor, so a column and its circle agree */
+.glyph {
+  color: inherit;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  padding: 4px 0;
   display: flex; align-items: center; justify-content: center;
-  font-size: 1.02rem;
 }
-/* the row's ink follows its dial KIND (puzzle.kind_class): the readout and
-   its small print wear the same colour as that term's orbit on the canvas.
-   Applied per kind, not per slot — a rearranged puzzle keeps its colours. */
-.kind-phase .val, .kind-phase .term, .kind-phase .sub { color: var(--term-phase); }
-.kind-radius .val, .kind-radius .term, .kind-radius .sub { color: var(--term-radius); }
-.kind-k .val, .kind-k .term, .kind-k .sub { color: var(--term-k); }
-.kind-fixed .val, .kind-fixed .term, .kind-fixed .sub { color: var(--term-fixed); }
-.kind-phase .val, .kind-radius .val, .kind-k .val { font-weight: 600; }
-.kind-fixed .val { font-weight: 400; }
+.glyph .icon { width: 20px; height: 20px; }
+.glyph .icon path, .glyph .icon polyline, .glyph .icon polygon, .glyph .icon line {
+  stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.glyph:active { background: none; opacity: .55; }
 </style>
 </head>
 <body data-theme="light">

@@ -502,3 +502,34 @@ BEHAVIOR kind codes (local to the module boundary), color never reads them.
 Contract grown to S1–S15 (123 checks): two test-side bugs caught during
 GREEN made the pins STRONGER (per-probe frame snapshots; the r=0 pin now
 counts op deltas with a control pin so it cannot pass vacuously).
+
+## Dial columns — Phases 3+4: the view, the CSS, the smoke rewrite (2026-10-26)
+
+One RED-first cycle by the coder subagent under review (the smoke rewrite IS
+the view's RED suite): the rewritten `artifact_smoke.mjs` ran against the
+old-row dist at **61/155** — every failing pin its intended reason (no
+columns, +/− text buttons, rotate-ccw reset chip, "term N" strings) — after
+a vacuity audit strengthened the RED passes that were empty-match vacuous.
+GREEN: **155/155**, boot contract 123/123, gleam 42/42, format, bench green
+(boot 0.443ms / metric 0.446ms / 4.11×), dist byte-reproducible
+(d00a6b18…, verified twice).
+
+The view: `dial_row`'s text machinery and the "+"/"−" buttons die;
+`dial_col` renders [glyph ↑][canvas col-N][glyph ↓] with NO text nodes — the
+aria-labels are the only words left ("increase/decrease phase|radius|k",
+kind from the slot, never the ordinal). Glyphs are feather stroke geometry
+inked via currentColor: rotate-cw/rotate-ccw (phase — up = +5° = clockwise,
+Q6), maximize-2/minimize-2 (radius), fast-forward/rewind (k); the reset
+chip re-glyphs to skip-back-to-start (bar + triangle), resolving its
+rotate-ccw collision with phase-down. One real dependency caught in review:
+the hold driver matches `closest("button.btn")`, so the glyph buttons keep
+`.btn` (classes `btn glyph`) — the plan's "driver covers the new buttons
+for free" held, but only through that hook. CSS: `.cols` 3×1fr grid,
+`.col` flex with nth-child ordinal inks, the circle space 104px
+(`--term-*` vars renamed `--ord-0/1/2`, same hexes both themes — the
+ordinal-ink contract now stated in one place), touch/selection guards kept.
+The smoke serves OLD-format daily documents deliberately (wire
+normalization exercised end-to-end), pins the drawn geometry as the visual
+stand-in for the deleted readouts (ring radii, the 355° start marker, op
+deltas), and carries the schema-v2 flows: same-day resume, stale v1 → fresh
+boot, abandon/solve POSTs, fallbacks with zero POSTs.
