@@ -533,3 +533,15 @@ normalization exercised end-to-end), pins the drawn geometry as the visual
 stand-in for the deleted readouts (ring radii, the 355° start marker, op
 deltas), and carries the schema-v2 flows: same-day resume, stale v1 → fresh
 boot, abandon/solve POSTs, fallbacks with zero POSTs.
+
+## Dial columns — glyph buttons wear the button chrome (2026-10-26)
+
+User ruling while testing the doodle-dev spike: the column glyph buttons
+should look like buttons. The `.glyph` rule's chrome-stripping (border 0,
+radius 0, background none + a background:none :active override) is deleted —
+the glyphs inherit the global button chrome (line border, 10px radius, card
+fill, the steppers' old look), keeping icon-only content, the ordinal ink via
+currentColor, and the .btn hold-driver hook. The chrome-less look was never
+pinned, so the smoke gained two S0 pins asserting the INHERITED chrome
+(RED 155/157 → GREEN 157/157); boot contract 123/123, gleam 42/42, format,
+dist byte-reproducible (6cac6647…).

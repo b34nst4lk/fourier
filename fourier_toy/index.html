@@ -128,13 +128,12 @@ button {
 button:active { background: #ededed; }
 body[data-theme="dark"] button:active { background: #232323; }
 button:disabled { opacity: .35; cursor: default; }
-/* glyph buttons: icon-only, no chrome of their own — the column's ordinal ink
-   reaches the svg through currentColor, so a column and its circle agree */
+/* glyph buttons: icon-only, but real BUTTONS — they keep the global button
+   chrome (line border, 10px radius, card fill — what the retired +/− steppers
+   wore) and only override what icon-only needs. The column's ordinal ink
+   reaches the svg through currentColor, so a column and its circle agree. */
 .glyph {
   color: inherit;
-  border: 0;
-  border-radius: 0;
-  background: none;
   padding: 4px 0;
   display: flex; align-items: center; justify-content: center;
 }
@@ -143,7 +142,6 @@ button:disabled { opacity: .35; cursor: default; }
   stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round;
   stroke-linejoin: round;
 }
-.glyph:active { background: none; opacity: .55; }
 </style>
 </head>
 <body data-theme="light">

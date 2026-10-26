@@ -446,6 +446,30 @@ console.log("S0 · artifact CSS — dial columns, ordinal ink, input guards kept
       /\.glyph[^{]*\{[^}]*color:\s*inherit/s.test(html),
   );
 
+  // Glyph buttons read as BUTTONS: they keep the global chrome (the retired
+  // +/− steppers' line border, 10px radius, card fill) and only override what
+  // icon-only needs. Stripping the chrome back to bare icons is the regression.
+  const glyphRule = html.match(/\n\.glyph \{[^}]*\}/);
+  check(
+    "glyph buttons wear the button chrome (line border, 10px radius, card fill — not stripped)",
+    buttonRule !== null &&
+      glyphRule !== null &&
+      /border:\s*1\.5px solid var\(--line\)/.test(buttonRule[0]) &&
+      /border-radius:\s*10px/.test(buttonRule[0]) &&
+      /background:\s*var\(--card\)/.test(buttonRule[0]) &&
+      !/border:\s*0(?![.\d])/.test(glyphRule[0]) &&
+      !/border-radius:\s*0(?![.\d])/.test(glyphRule[0]) &&
+      !/background:\s*none/.test(glyphRule[0]),
+    "glyph rule: " +
+      (glyphRule ? glyphRule[0].replace(/\s+/g, " ") : "missing") +
+      " · button rule: " +
+      (buttonRule ? buttonRule[0].replace(/\s+/g, " ").slice(0, 120) : "missing"),
+  );
+  check(
+    "glyph buttons take the global :active fill (no background:none override)",
+    !/\.glyph:active[^{]*\{[^}]*background:\s*none/.test(html),
+  );
+
   // The rows and their readouts are gone from the stylesheet.
   check(
     "the retired row/readout/kind CSS is gone",
