@@ -478,3 +478,27 @@ identically), and the app module drops its DialFixed branches (rows keep
 their bones until Phase 3). Baseline note: the pre-change suite was 35, not
 34 — the count drift came from the locked-note gold test added after the
 daily-integration ledger entry.
+
+## Dial columns — Phase 2: the FFI columns + ordinal ink (2026-10-26)
+
+The canvas loop grows the three dial columns by the coder subagent under
+review (RED 48/123 — every column pin failing its intended way, all retained
+board pins green; GREEN 123/123). One honest baseline note: the OLD contract
+crashed outright against the Phase-1 tree (`puzzle.kind_code` retired) —
+the rewrite was due regardless. The FFI: `PALETTES` re-key from kind-code to
+ORDINAL (the same contrast-documented hexes — color answers "which wheel",
+the plan's symbology answers "what does it do"); `canvas_shape` gains the
+shape-STATIC `dial_max_r` (4th payload value, in the dedupe key — deriving
+the unit from live rows would move the 200% ceiling with the dial);
+`ensure_boot` generalizes to four canvases (board + `col-0/1/2`) with the
+proven stash-first/late-boot/rebind-retry pattern, one RAF clock at 30fps
+DPR≤2 for all. Column draw per plan §2: fixed 0.5×space rings on phase/k,
+linear `r/(2·dial_max_r)×space` on radius (r=0 ⇒ NOTHING drawn, op-count
+zero), lone start-marker dot at φ on the phase ring (no arm — never
+mistakable for the pen), arm+pen at the exact position_at angle
+`2πkt+φ`. The board's chain circles re-ink by chain ordinal, extras stay
+neutral. ffi.gleam: the Phase-1 transitional ordinal hack reverts to real
+BEHAVIOR kind codes (local to the module boundary), color never reads them.
+Contract grown to S1–S15 (123 checks): two test-side bugs caught during
+GREEN made the pins STRONGER (per-probe frame snapshots; the r=0 pin now
+counts op deltas with a control pin so it cannot pass vacuously).

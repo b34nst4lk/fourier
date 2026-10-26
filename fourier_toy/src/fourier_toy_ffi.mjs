@@ -1,7 +1,25 @@
-// fourier_toy v2's panel canvas: dashed target + epicycle circles + comet.
-// Ported from fourier_sketch_ffi.mjs's panel-2 loop with the guardrails that
-// survived its phone-heat audit: 30fps draw cap, DPR ≤ 2, dirty gate,
-// batched paths, terms dedupe, rebuild-cache only on terms change.
+// fourier_toy v2's canvases: the board (dashed target + epicycle circles +
+// comet) and three dial columns (each term's epicycle in miniature, one
+// controlled indicator per dial kind). Ported from fourier_sketch_ffi.mjs's
+// panel-2 loop with the guardrails that survived its phone-heat audit: 30fps
+// draw cap, DPR ≤ 2, dirty gate, batched paths, terms dedupe, rebuild-cache
+// only on terms change.
+//
+// PLAN-dial-columns.md §2/§4. What the columns add to the board contract:
+//   - ONE clock for all four canvases: same `t`, same SPEED, one RAF pump. A
+//     column and the board circle it mirrors can never disagree.
+//   - Kind codes drive BEHAVIOR (which symbology a column draws); the slot
+//     ORDINAL drives COLOUR. `ffi.gleam` maps DialP→0, DialR→1, DialK→2 as a
+//     local wire detail; the board's chain circles use the same ordinal ink,
+//     so a column and its circle always agree. For the standard arrangement
+//     (phase, radius, k) ordinal ≡ kind visually; the roles stay distinct.
+//   - The radius column's unit is the shape-static `dial_max_r` (pushed with
+//     the shape): recomputing it from the live dial rows would move the unit
+//     with the dial. Scale = r / (2·dial_max_r) of the space, so the 200%
+//     ceiling fills the space exactly and nothing can overflow.
+//   - Column canvases (`col-0..2`) bind exactly like the board: payloads stash
+//     unconditionally, a boot binds late, a missing canvas is skipped (never
+//     an error).
 //
 // Differences from the sibling:
 //   - 50% of the sibling's max speed (SPEED 0.125 laps/s vs 0.25).
@@ -10,16 +28,13 @@
 //   - Two traces: a dashed TARGET (static per shape) and the player's comet.
 //   - No selection highlight; no IntersectionObserver (single above-fold
 //     canvas in a narrow column).
-//   - The comet draws the FULL metric synthesis: the four dialable terms
-//     chained first, the fixed extras chained after them as real (mostly
-//     sub-pixel) epicycles — comet, pen and score all share one formula
+//   - The comet draws the FULL metric synthesis: the three dialable terms
+//     chained first, the extras chained after them as real (mostly sub-pixel)
+//     epicycles — comet, pen and score all share one formula
 //     (shapes.position_at), so the illustration matches what the score
 //     measures at every dial position.
 //   - Theme: the toy owns the toggle, so the caller pushes dark/light
 //     directly (no MutationObserver).
-//   - Ink: one colour per dial KIND (red phase, yellow radius, blue k,
-//     neutral wash for non-dialable terms), never per slot index — the
-//     arrangement is data. The kind codes come from puzzle.kind_code.
 
 const SPEED = 0.125; // laps per second — 50% of the sibling's max (0.25)
 const STEPS = 512; // trace resolution — matches the metric's sampling
@@ -30,17 +45,45 @@ const TAIL_FRAC = 0.98; // fraction of the lap drawn by the comet
 const COMET_TAIL = 0.4; // comet alpha floor — the whole lap stays readable
 const COMET_TIP = 0.85; // comet alpha at the pen
 
+// Kind codes — ffi.gleam's LOCAL mapping of puzzle.DialKind (the retired
+// puzzle.kind_code wire contract). They are BEHAVIOR: phase draws the start
+// marker, radius scales the ring, k is the fixed ring whose arm speed is the
+// feedback. Colour never reads these.
+const KIND_PHASE = 0;
+const KIND_RADIUS = 1;
+const KIND_K = 2;
+
+const BOARD_ID = "toy-board";
+const COLUMN_IDS = ["col-0", "col-1", "col-2"];
+
+// One bound canvas: `el` is the live element, `ctx` its 2D context (null when
+// the platform has none — jsdom, a privacy-restricted browser). w/h/dpr are
+// the last fitted CSS size and backing-store scale.
+function make_view(id) {
+  return { id: id, el: null, ctx: null, w: 0, h: 0, dpr: 0 };
+}
+
+const views = {
+  board: make_view(BOARD_ID),
+  cols: COLUMN_IDS.map(make_view),
+};
+
+function all_views() {
+  return [views.board, ...views.cols];
+}
+
+function any_ctx() {
+  if (views.board.ctx) return true;
+  for (const view of views.cols) if (view.ctx) return true;
+  return false;
+}
+
 const anim = {
   started: false,
-  canvas: null,
-  ctx: null,
-  w: 0,
-  h: 0,
-  dpr: 1,
-  shape: null, // {centroid:[cx,cy], target:[[x,y]...], extras:[[k,r,deg]...]}
-  chain: [], // draw-order rows [k, r, deg, slot, movable] (rebuilt in rebuild)
-  dial: [], // [[k, radius, deg], ...] the four dialable terms
-  kinds: [], // per-dial colour codes (puzzle.kind_code), parallel to `dial`
+  shape: null, // {centroid:[cx,cy], target:[[x,y]...], extras:[[k,r,deg]...], dialMaxR}
+  chain: [], // draw-order rows [k, r, deg, ordinal, movable] (rebuilt in rebuild)
+  dial: [], // [[k, radius, deg], ...] the three dialable terms
+  kinds: [], // per-dial KIND codes (behavior), parallel to `dial`
   trace: null, // Float64Array(2*STEPS): full-lap cache of the metric synthesis
   dialKey: null,
   shapeKey: null,
@@ -53,29 +96,35 @@ const anim = {
 };
 
 // The ink scheme: black ink on white (light) / white ink on black (dark), with
-// exactly four term colours. They are keyed on the dial KIND (the numbers are
-// puzzle.kind_code's codes) — the arrangement decides the colour, never the
-// slot index.
+// exactly three term colours — ORDINAL ink (PLAN-dial-columns §3): the 1st
+// dialed column/term is red, the 2nd yellow, the 3rd blue, always. Colour
+// answers "which wheel in the chain?"; the dial KIND answers "what does this
+// wheel do?" through symbology (marker / ring size / arm speed). Extras stay a
+// neutral scaffold wash.
 //
 // Light-mode yellow is #8a6d00, NOT a bright print-yellow: #c9a411 measures
 // 2.39:1 on the white card and 2.31:1 on the page paper — below the 3:1
-// non-text floor, and far below the 4.5:1 the row's readout text needs (the
-// page wears the same hex). #8a6d00 measures 4.92:1 on the card / 4.75:1 on
-// the paper: legibility wins, and the hue is still the radius ink.
+// non-text floor, and far below the 4.5:1 the old row readout needed (the page
+// wears the same hex). #8a6d00 measures 4.92:1 on the card / 4.75:1 on the
+// paper: legibility wins, and the hue is still the radius ink.
 const PALETTES = {
   light: {
-    phase: "#c8321e", // 5.34:1 on the white card
-    radius: "#8a6d00", // 4.92:1 on the card (darkened print-yellow — see above)
-    k: "#1f5fae", // 6.35:1 on the white card
+    ink: [
+      "#c8321e", // ordinal 0 — 5.34:1 on the white card
+      "#8a6d00", // ordinal 1 — 4.92:1 on the card (darkened print-yellow)
+      "#1f5fae", // ordinal 2 — 6.35:1 on the white card
+    ],
     neutral: "rgba(17,17,17,0.18)", // non-dialable rows: scaffold, not ink
     target: "rgba(17,17,17,0.35)", // the dashed target: barely there
     trace: "#111", // comet
     pen: "#111", // pen dot
   },
   dark: {
-    phase: "#e05a4a", // 5.37:1 on #0b0b0b
-    radius: "#ffd93d", // 14.29:1 on #0b0b0b
-    k: "#5aa0e8", // 7.15:1 on #0b0b0b
+    ink: [
+      "#e05a4a", // ordinal 0 — 5.37:1 on #0b0b0b
+      "#ffd93d", // ordinal 1 — 14.29:1 on #0b0b0b
+      "#5aa0e8", // ordinal 2 — 7.15:1 on #0b0b0b
+    ],
     neutral: "rgba(245,245,245,0.10)",
     target: "rgba(245,245,245,0.25)",
     trace: "#f5f5f5",
@@ -83,20 +132,11 @@ const PALETTES = {
   },
 };
 
-const KIND_FIXED = 3; // puzzle.kind_code(DialFixed)
-
-// kind code → palette entry; anything unknown (a missing push) is scaffold ink
-function term_color(kind, pal) {
-  switch (kind) {
-    case 0:
-      return pal.phase;
-    case 1:
-      return pal.radius;
-    case 2:
-      return pal.k;
-    default:
-      return pal.neutral;
-  }
+// ordinal → palette entry; an ordinal beyond the palette (positions 4–6 are
+// parked, PLAN-dial-columns §5) falls back to scaffold ink rather than
+// inventing a colour
+function ordinal_ink(index, pal) {
+  return index >= 0 && index < pal.ink.length ? pal.ink[index] : pal.neutral;
 }
 
 function palette() {
@@ -107,30 +147,29 @@ function palette_for(dark) {
   return dark ? PALETTES.dark : PALETTES.light;
 }
 
-function fit(dpr) {
-  const rect = anim.canvas.getBoundingClientRect();
+function fit(view, dpr) {
+  const rect = view.el.getBoundingClientRect();
   const w = Math.max(1, Math.floor(rect.width));
   const h = Math.max(1, Math.floor(rect.height));
-  if (anim.w !== w || anim.h !== h || anim.dpr !== dpr) {
-    anim.w = w;
-    anim.h = h;
-    anim.dpr = dpr;
-    anim.canvas.width = Math.floor(w * dpr);
-    anim.canvas.height = Math.floor(h * dpr);
+  if (view.w !== w || view.h !== h || view.dpr !== dpr) {
+    view.w = w;
+    view.h = h;
+    view.dpr = dpr;
+    view.el.width = Math.floor(w * dpr);
+    view.el.height = Math.floor(h * dpr);
     anim.dirty = true;
   }
 }
 
 function pump() {
-  if (anim.raf === null && anim.ctx) {
+  if (anim.raf === null && any_ctx()) {
     anim.raf = requestAnimationFrame(frame);
   }
 }
 
 function frame(now) {
   anim.raf = null;
-  if (!anim.ctx) return;
-  fit(Math.min(Math.max(window.devicePixelRatio || 1, 1), MAX_DPR));
+  if (!any_ctx()) return;
   const dt = anim.last === null ? 0 : Math.min((now - anim.last) / 1000, 0.05);
   anim.last = now;
   if (now - anim.lastDraw >= FRAME_MS) {
@@ -140,7 +179,11 @@ function frame(now) {
   }
   if (anim.dirty) {
     anim.dirty = false;
-    draw();
+    const dpr = Math.min(Math.max(window.devicePixelRatio || 1, 1), MAX_DPR);
+    // fit only on frames that paint: 4 layout reads per DRAWN frame, not per
+    // display frame (the 30fps gate runs below the browser's 60fps tick)
+    for (const view of all_views()) if (view.ctx) fit(view, dpr);
+    draw_all();
   }
   anim.raf = requestAnimationFrame(frame);
 }
@@ -157,7 +200,7 @@ function terms_equal(a, b) {
 }
 
 // the arrangement is part of the payload: a re-arranged puzzle re-inks the
-// board even when the terms happen to be unchanged
+// board and re-behaves the columns even when the terms happen to be unchanged
 function kinds_equal(a, b) {
   if (a === b) return true;
   if (a.length !== b.length) return false;
@@ -169,19 +212,47 @@ function kinds_equal(a, b) {
 
 let boot_retry = null;
 
-// Bind the board canvas, booting LATE when Lustre hasn't mounted it yet.
+// Bind every canvas that exists — the board and the three dial columns — and
+// boot LATE when Lustre hasn't mounted them yet.
 // Why late boots happen: the Lustre runtime runs init effects before its
 // first render (runtime/client/runtime.ffi.mjs: #handleEffects precedes
 // #render), and hashchange syncs run before the RAF-deferred render — so a
-// sync can arrive while no canvas is in the DOM. Callers stash their
-// payload unconditionally; this only binds + fits + pumps, so a late boot
-// simply starts painting the stashed payload (sibling pattern — the
-// proven fourier_sketch_ffi flow).
+// sync can arrive while no canvas is in the DOM. Callers stash their payload
+// unconditionally; this only binds + fits + pumps, so a late boot simply
+// starts painting the stashed payload (sibling pattern — the proven
+// fourier_sketch_ffi flow). A missing canvas (the headless case, or a DOM that
+// predates the Phase-3 column view) is skipped, never an error; it binds the
+// next time a payload arrives after it mounts.
 function ensure_boot() {
-  const el = document.getElementById("toy-board");
-  if (!el) {
-    // schedule at most one pending retry per frame (self-terminating:
-    // the retry chain stops the moment an element is found)
+  const dpr = Math.min(Math.max(window.devicePixelRatio || 1, 1), MAX_DPR);
+  let found = 0;
+  for (const view of all_views()) {
+    const el = document.getElementById(view.id);
+    if (!el) continue;
+    found++;
+    if (view.el === el && view.ctx) continue; // bound to this live element
+    // fresh or remounted element: reset the tracked dims so fit() rewrites
+    // the backing store even when the CSS size is unchanged (a new canvas
+    // ships 300×150; a same-size rebind must not skip el.width/height)
+    if (view.el !== el) {
+      view.el = el;
+      view.w = 0;
+      view.h = 0;
+      view.dpr = 0;
+    }
+    try {
+      view.ctx = el.getContext("2d");
+    } catch (err) {
+      // headless test environments without 2D contexts: the app stays
+      // upright, the loop stays idle (dials/score/theme run purely in the DOM)
+      view.ctx = null;
+    }
+    if (view.ctx) fit(view, dpr);
+    anim.dirty = true;
+  }
+  if (found === 0) {
+    // nothing mounted yet: schedule at most one pending retry per frame
+    // (self-terminating: the retry chain stops the moment a canvas is found)
     if (boot_retry === null) {
       boot_retry = requestAnimationFrame(() => {
         boot_retry = null;
@@ -190,44 +261,38 @@ function ensure_boot() {
     }
     return;
   }
-  if (anim.canvas === el && anim.ctx) return; // bound to this live element
-  // fresh or remounted element: reset the tracked dims so fit() rewrites
-  // the backing store even when the CSS size is unchanged (a new canvas
-  // ships 300×150; a same-size rebind must not skip el.width/height)
-  if (anim.canvas !== el) {
-    anim.canvas = el;
-    anim.w = 0;
-    anim.h = 0;
-    anim.dpr = 0;
+  if (!anim.started) {
+    anim.started = true;
+    if (document.body) anim.dark = document.body.getAttribute("data-theme") === "dark";
   }
-  try {
-    anim.ctx = el.getContext("2d");
-  } catch (err) {
-    // headless test environments without 2D contexts: the app stays
-    // upright, the loop stays idle (dials/score/theme run purely in the DOM)
-    anim.ctx = null;
-  }
-  if (anim.ctx) {
-    fit(Math.min(Math.max(window.devicePixelRatio || 1, 1), MAX_DPR));
-    if (!anim.started) {
-      anim.started = true;
-      if (document.body) anim.dark = document.body.getAttribute("data-theme") === "dark";
-    }
-    pump();
-  }
+  anim.dirty = true;
+  pump();
 }
 
-export function canvas_shape(centroid, target, extras) {
+export function canvas_shape(centroid, target, extras, dial_max_r) {
   // The payload stashes UNCONDITIONALLY — a pre-mount sync (see
   // ensure_boot) must survive until the canvas exists. Boot is orthogonal.
-  // gleam lists arrive as cons iterables: normalize to arrays
+  // gleam lists arrive as cons iterables: normalize to arrays.
+  // `dial_max_r` is the radius dial's STATIC unit (the biggest dialable radius):
+  // the radius column scales by r / (2·dial_max_r), and deriving that unit from
+  // the live dial rows would move the ceiling with the dial.
   const centroidArr = [centroid[0], centroid[1]];
   const targetArr = Array.from(target, (p) => [p[0], p[1]]);
   const extrasArr = Array.from(extras, (t) => [t[0], t[1], t[2]]);
-  const key = JSON.stringify(centroidArr) + JSON.stringify(targetArr) + JSON.stringify(extrasArr);
+  const maxR = Number(dial_max_r);
+  const key =
+    JSON.stringify(centroidArr) +
+    JSON.stringify(targetArr) +
+    JSON.stringify(extrasArr) +
+    JSON.stringify(maxR);
   if (anim.shapeKey !== key) {
     anim.shapeKey = key;
-    anim.shape = { centroid: centroidArr, target: targetArr, extras: extrasArr };
+    anim.shape = {
+      centroid: centroidArr,
+      target: targetArr,
+      extras: extrasArr,
+      dialMaxR: maxR,
+    };
     rebuild();
   }
   anim.dirty = true;
@@ -236,9 +301,10 @@ export function canvas_shape(centroid, target, extras) {
 
 export function canvas_terms(dial, kinds) {
   // dial rows arrive as tuples #(k, r, phase_deg) — index, don't record-access —
-  // and the arrangement arrives as its kind codes (puzzle.kind_code) so the ink
-  // can follow the KIND. Same unconditional-stash rule as canvas_shape:
-  // payload first, boot after.
+  // and the arrangement arrives as its KIND codes (ffi.gleam's local mapping):
+  // behavior (marker / ring size / arm speed) reads the KIND, colour reads the
+  // slot ORDINAL. Same unconditional-stash rule as canvas_shape: payload
+  // first, boot after.
   const flat = Array.from(dial, (t) => [t[0], t[1], t[2]]);
   const kindArr =
     kinds === undefined || kinds === null ? [] : Array.from(kinds, (k) => k | 0);
@@ -255,24 +321,22 @@ export function canvas_theme(dark) {
   if (anim.dark === dark) return;
   anim.dark = dark;
   anim.dirty = true;
-  pump();
+  ensure_boot();
 }
 
 // rebuild_cache: one lap of the FULL metric synthesis — the dial terms plus
 // the fixed extras, every term rotating at its own k (exactly the score's
 // shapes.synth_trace — the extras are NOT a constant offset). Also caches
-// the draw-order chain: [k, radius, deg, slot, movable] — the four dial rows
-// carry their slot index and wear their kind's ink when the arrangement
-// leaves them movable; the extras are scaffold (slot −1, neutral wash).
-// O(STEPS × terms) — the dedupe pays for itself on every no-op sync,
-// exactly like the sibling.
+// the draw-order chain: [k, radius, deg, ordinal, movable] — the three dial
+// rows carry their slot ordinal (their ink) and are movable; the extras are
+// scaffold (ordinal −1, neutral wash). O(STEPS × terms) — the dedupe pays for
+// itself on every no-op sync, exactly like the sibling.
 function rebuild() {
   if (!anim.shape) return;
   anim.chain = [];
   for (let i = 0; i < anim.dial.length; i++) {
     const t = anim.dial[i];
-    const kind = anim.kinds[i];
-    anim.chain.push([t[0], t[1], t[2], i, kind !== undefined && kind !== KIND_FIXED]);
+    anim.chain.push([t[0], t[1], t[2], i, true]);
   }
   for (const t of anim.shape.extras) {
     anim.chain.push([t[0], t[1], t[2], -1, false]);
@@ -299,20 +363,27 @@ function rebuild() {
 
 // ---- drawing ----
 
-function draw() {
-  const ctx = anim.ctx;
+function draw_all() {
+  draw_board();
+  for (let i = 0; i < views.cols.length; i++) draw_column(i);
+}
+
+function draw_board() {
+  const view = views.board;
+  const ctx = view.ctx;
+  if (!ctx) return;
   const pal = palette();
   // the backing store is w·dpr — without this mapping everything paints into
   // its top-left quarter on retina screens (sibling's first-draw step)
-  ctx.setTransform(anim.dpr, 0, 0, anim.dpr, 0, 0);
-  ctx.clearRect(0, 0, anim.w, anim.h);
+  ctx.setTransform(view.dpr, 0, 0, view.dpr, 0, 0);
+  ctx.clearRect(0, 0, view.w, view.h);
   if (!anim.shape || !anim.trace) return;
 
   // sketch space 0..100 letterboxed into the canvas (same mapping as the
   // sibling's panel: square content centered, never stretched)
-  const scale = Math.min(anim.w, anim.h) / 100;
-  const ox = (anim.w - scale * 100) / 2;
-  const oy = (anim.h - scale * 100) / 2;
+  const scale = Math.min(view.w, view.h) / 100;
+  const ox = (view.w - scale * 100) / 2;
+  const oy = (view.h - scale * 100) / 2;
   const sx = (x) => ox + scale * x;
   const sy = (y) => oy + scale * y;
 
@@ -350,18 +421,18 @@ function draw() {
     c[2 * (i + 1) + 1] = c[2 * i + 1] + term[1] * Math.sin(a);
   }
 
-  // circles: one beginPath+stroke PER ROW, in the row's own ink — a movable
-  // dial term wears its kind's colour, everything else (the fixed slot, the
-  // rotating extras) is the neutral wash. Per-row strokes cost nothing
-  // measurable (≤ 30 rows) and are what makes the colour legible as data.
-  // Sub-pixel radii are skipped: most extras vanish, the visible few are
+  // circles: one beginPath+stroke PER ROW, in the row's own ink — a dial term
+  // wears its ORDINAL colour (the chain position, not the kind), everything
+  // else (the rotating extras) is the neutral wash. Per-row strokes cost
+  // nothing measurable (≤ 30 rows) and are what makes the colour legible as
+  // data. Sub-pixel radii are skipped: most extras vanish, the visible few are
   // honest epicycles.
   ctx.lineWidth = 1;
   for (let i = 0; i < n; i++) {
     const r = chain[i][1] * scale;
     if (r <= 1.2) continue;
     const row = chain[i];
-    ctx.strokeStyle = row[4] ? term_color(anim.kinds[row[3]], pal) : pal.neutral;
+    ctx.strokeStyle = row[4] ? ordinal_ink(row[3], pal) : pal.neutral;
     ctx.beginPath();
     const X = sx(c[2 * i]);
     const Y = sy(c[2 * i + 1]);
@@ -374,7 +445,7 @@ function draw() {
   for (let i = 0; i < n; i++) {
     const row = chain[i];
     if (row[1] * scale <= 1.2) continue;
-    ctx.strokeStyle = row[4] ? term_color(anim.kinds[row[3]], pal) : pal.neutral;
+    ctx.strokeStyle = row[4] ? ordinal_ink(row[3], pal) : pal.neutral;
     ctx.beginPath();
     ctx.moveTo(sx(c[2 * i]), sy(c[2 * i + 1]));
     ctx.lineTo(sx(c[2 * i + 2]), sy(c[2 * i + 3]));
@@ -416,6 +487,92 @@ function draw() {
   ctx.arc(sx(c[2 * n]), sy(c[2 * n + 1]), 2.2, 0, 2 * Math.PI);
   ctx.stroke();
 }
+
+// One dial column = the term's epicycle in miniature, on the board's clock:
+// the ring, an arm from the centre to the tip at the exact `position_at` angle
+// (2π·k·t + φ), and a pen dot at the tip. The controlled indicator carries the
+// DIAL KIND (PLAN-dial-columns §2/§4):
+//   - phase (kind 0): fixed ring at 0.5 × space + a lone static start-marker
+//     dot ON the ring at the dialed phase (the pen's t=0 position; no arm — the
+//     pen carries the arm, so the two stay distinguishable when they coincide);
+//   - radius (kind 1): ring radius = r / (2·dial_max_r) × space — linear, empty
+//     at 0% (nothing drawn at all: no ring, no arm, no pen), the phase ring's
+//     size at 100%, the full space at the 200% ceiling;
+//   - k (kind 2): fixed ring at 0.5 × space, the arm's speed is the feedback
+//     (direction by sign, frozen at k = 0 — the term honestly stops).
+// Space is the column's circle space measured from the canvas box: the box's
+// smaller side is the diameter of a full-space ring, so `space` is its radius
+// unit (phase ring radius = 0.5·space ⇒ diameter = half the box; the radius
+// ceiling ⇒ diameter = the box). Nothing can overflow.
+function draw_column(i) {
+  const view = views.cols[i];
+  const ctx = view.ctx;
+  if (!ctx) return;
+  ctx.setTransform(view.dpr, 0, 0, view.dpr, 0, 0);
+  ctx.clearRect(0, 0, view.w, view.h);
+  if (!anim.shape) return;
+  const kind = anim.kinds[i];
+  const term = anim.dial[i];
+  if (kind === undefined || term === undefined) return;
+
+  const pal = palette();
+  const ink = ordinal_ink(i, pal);
+  const space = Math.min(view.w, view.h) / 2;
+  const cx = view.w / 2;
+  const cy = view.h / 2;
+  const k = term[0];
+  const deg = term[2];
+  let ring;
+  if (kind === KIND_RADIUS) {
+    const maxR = anim.shape.dialMaxR;
+    if (!(maxR > 0)) return; // no static unit → nothing honest to scale by
+    ring = (term[1] / (2 * maxR)) * space;
+  } else {
+    ring = 0.5 * space;
+  }
+  if (!(ring > 0)) return; // r = 0 on the radius column: draw nothing
+
+  ctx.strokeStyle = ink;
+  ctx.lineWidth = 1.5;
+  // the ring — same moveTo+arc spelling as the board's circles, so a ring
+  // stroke is distinguishable from a dot in the op trace
+  ctx.beginPath();
+  ctx.moveTo(cx + ring, cy);
+  ctx.arc(cx, cy, ring, 0, 2 * Math.PI);
+  ctx.stroke();
+
+  // phase column: the lone start-marker dot, ON the ring at the dialed phase.
+  // Static (it reads φ, never t); no arm, so it can never be mistaken for the
+  // pen even when they coincide.
+  if (kind === KIND_PHASE) {
+    const marker = (deg * Math.PI) / 180;
+    ctx.beginPath();
+    ctx.arc(
+      cx + ring * Math.cos(marker),
+      cy + ring * Math.sin(marker),
+      2.2,
+      0,
+      2 * Math.PI,
+    );
+    ctx.stroke();
+  }
+
+  // the arm: the exact position_at convention — angle = 2π·k·t + φ, so the
+  // column's angle, speed and phase are the canvas circle's own numbers
+  const a = 2 * Math.PI * k * anim.t + (deg * Math.PI) / 180;
+  const tx = cx + ring * Math.cos(a);
+  const ty = cy + ring * Math.sin(a);
+  ctx.beginPath();
+  ctx.moveTo(cx, cy);
+  ctx.lineTo(tx, ty);
+  ctx.stroke();
+
+  // pen: the dot at the arm's tip, in the column's ordinal ink
+  ctx.beginPath();
+  ctx.arc(tx, ty, 2.2, 0, 2 * Math.PI);
+  ctx.stroke();
+}
+
 export function set_dark(dark) {
   if (document.body) {
     document.body.setAttribute("data-theme", dark ? "dark" : "light");

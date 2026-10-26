@@ -9,13 +9,19 @@ import gleam/dynamic/decode
 import gleam/list
 import gleam/result
 
-/// Push a shape's static data to the canvas: centroid, target trace, extras.
-/// Runs once per puzzle switch (cache-deduped on the JS side).
+/// Push a shape's static data to the canvas: centroid, target trace, extras,
+/// and `dial_max_r`. Runs once per puzzle switch (cache-deduped on the JS
+/// side).
+///
+/// `dial_max_r` is the radius dial's STATIC unit — the biggest dialable radius.
+/// The radius column scales its ring by `r / (2 · dial_max_r)` of its space,
+/// and recomputing that unit from the live dial rows on the JS side would move
+/// the ceiling with the dial.
 pub fn canvas_shape(shape: shapes.Shape) -> Nil {
   let extras = list.map(shape.extras, row)
   let target = shape.target
   // the centroid crosses as a tuple (JS array); the lists normalize inside
-  js_canvas_shape(shape.centroid, target, extras)
+  js_canvas_shape(shape.centroid, target, extras, shape.dial_max_r)
 }
 
 @external(javascript, "../fourier_toy_ffi.mjs", "canvas_shape")
@@ -23,21 +29,31 @@ fn js_canvas_shape(
   centroid: #(Float, Float),
   target: List(#(Float, Float)),
   extras: List(#(Int, Float, Float)),
+  dial_max_r: Float,
 ) -> Nil
 
-/// Push the current three dial terms and their color codes — the canvas inks a
-/// term by its KIND, not its slot, switching on the standard arrangement's slot
-/// ORDINAL (phase 0, radius 1, k 2). The shipped board is always in that
-/// arrangement, so the ordinal IS the kind code and `fourier_toy_ffi.mjs` needs
-/// no change. Cache-deduped on the JS side, terms and kinds alike.
+/// Push the current three dial terms and their KINDS. The canvas reads the
+/// kinds for BEHAVIOR (which symbology a column draws: start marker / ring
+/// size / arm speed) and the slot ORDINAL (the array index) for COLOUR — the
+/// ordinal-ink contract of PLAN-dial-columns §3. The kind codes are a local
+/// wire detail of this module; the retired `puzzle.kind_code` is not part of
+/// the core vocabulary. Cache-deduped on the JS side, terms and kinds alike.
 pub fn canvas_terms(
   dial: List(TermState),
   kinds: List(puzzle.DialKind),
 ) -> Nil {
-  js_canvas_terms(
-    list.map(dial, row),
-    list.index_map(kinds, fn(_, index) { index }),
-  )
+  js_canvas_terms(list.map(dial, row), list.map(kinds, kind_code))
+}
+
+/// The behavior code the canvas dispatches on — not an ink lookup. The numbers
+/// are private to this boundary (behaviour on the JS side reads them), so a
+/// future kind can be added without touching the palette.
+fn kind_code(kind: puzzle.DialKind) -> Int {
+  case kind {
+    puzzle.DialP -> 0
+    puzzle.DialR -> 1
+    puzzle.DialK -> 2
+  }
 }
 
 @external(javascript, "../fourier_toy_ffi.mjs", "canvas_terms")
