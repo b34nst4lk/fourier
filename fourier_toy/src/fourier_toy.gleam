@@ -526,25 +526,23 @@ fn when_tag(source: Source) -> Element(Msg) {
   ])
 }
 
-/// The game's name — Doodle with the custom `e`: an incomplete circle whose
-/// aperture opens at the lower right, crossed by a HALF stroke that connects
-/// to the bowl at the left and stops at the centre. The mark the daily is
-/// named for; the screen draws one every day.
+/// The game's name — Doodle with the custom `e`: a vertically flipped
+/// capital G read as a lowercase e — the bowl incomplete on the RIGHT (the
+/// cross stroke sits where the gap is), the bar a chord from the edge to the
+/// centre, the chin hanging UP from the bar's outer end with a free tip; the
+/// whole mark tilted 45° up. Raster-verified before insertion.
 fn wordmark() -> Element(Msg) {
   html.div([attribute.class("brand")], [
     html.span([attribute.class("wm")], [
       html.text("Doodl"),
       svg.svg(
-        [attribute.class("e"), attribute.attribute("viewBox", "7 13 84 86")],
+        [attribute.class("e"), attribute.attribute("viewBox", "11 7 77 87")],
         [
-          svg.line([
-            attribute.attribute("x1", "16"),
-            attribute.attribute("y1", "57"),
-            attribute.attribute("x2", "50"),
-            attribute.attribute("y2", "57"),
+          svg.path([
+            attribute.attribute("d", "M 81.5 60.6 A 32 32 0 1 1 44.4 23.5"),
           ]),
           svg.path([
-            attribute.attribute("d", "M 61.6 88.9 A 34 34 0 1 1 81.9 68.6"),
+            attribute.attribute("d", "M 54.1 13.8 L 72.6 32.4 L 50 55"),
           ]),
         ],
       ),
