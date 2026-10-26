@@ -8,7 +8,7 @@ arc-length resampler, amplitude-sorted term tables) and one design language
 | toy | what it is | live |
 |-----|------------|------|
 | `fourier_sketch` | draw dots → Fourier epicycles redraw your shape, term table explains it | https://jacks.im/toys/fourier-sketch |
-| `fourier_toy` | the quaver puzzle: tune phase/radius/k steppers until the comet closes on the dashed eighth note | https://jacks.im/toys/fourier-toy |
+| `fourier_toy` | **Doodle** (displayed name): the daily puzzle — turn dials until the comet closes on the day's dashed shape | https://jacks.im/toys/doodle (the old /toys/fourier-toy/ address redirects) |
 | `toy_admin/` (planned) | daily-puzzle backend + Access-gated admin — plan: `toy_admin/docs/PLAN-daily-puzzles.md` | — |
 
 ## Layout & history

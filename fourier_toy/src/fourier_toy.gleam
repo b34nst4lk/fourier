@@ -495,6 +495,7 @@ fn view(model: Model) -> Element(Msg) {
 
 fn board_view(model: Model) -> Element(Msg) {
   html.div([], [
+    wordmark(),
     bar(model.match, model.moves, model.dark),
     html.h2([attribute.class("pt")], [
       html.text(model.setup.title),
@@ -522,6 +523,32 @@ fn when_tag(source: Source) -> Element(Msg) {
       Daily(show_date) -> " · " <> show_date
       Quaver -> ""
     }),
+  ])
+}
+
+/// The game's name — Doodle with the custom `e`: an incomplete circle whose
+/// aperture opens at the lower right, crossed by a HALF stroke that connects
+/// to the bowl at the left and stops at the centre. The mark the daily is
+/// named for; the screen draws one every day.
+fn wordmark() -> Element(Msg) {
+  html.div([attribute.class("brand")], [
+    html.span([attribute.class("wm")], [
+      html.text("Doodl"),
+      svg.svg(
+        [attribute.class("e"), attribute.attribute("viewBox", "7 13 84 86")],
+        [
+          svg.line([
+            attribute.attribute("x1", "16"),
+            attribute.attribute("y1", "57"),
+            attribute.attribute("x2", "50"),
+            attribute.attribute("y2", "57"),
+          ]),
+          svg.path([
+            attribute.attribute("d", "M 61.6 88.9 A 34 34 0 1 1 81.9 68.6"),
+          ]),
+        ],
+      ),
+    ]),
   ])
 }
 

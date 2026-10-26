@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>fourier toy — the quaver</title>
+<title>Doodle — the daily doodle</title>
 <style>
 :root {
   color-scheme: light;
@@ -46,6 +46,25 @@ body {
   background: var(--paper);
 }
 .bar { display: flex; justify-content: space-between; align-items: center; margin: 0 0 6px; }
+/* the wordmark: Doodle with the custom e — the svg strokes currentColor and
+   follows the theme for free */
+.brand { margin: 2px 0 4px; }
+.brand .wm {
+  font-weight: 700;
+  font-size: 1.12rem;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+}
+.brand svg.e {
+  display: inline-block;
+  height: 0.64em;
+  margin-left: 1px;
+  vertical-align: -0.06em;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 13;
+  stroke-linecap: round;
+}
 .tools { display: flex; gap: 6px; align-items: center; }
 /* icon chips: compact square buttons, inline stroke SVGs inked via currentColor */
 .chip {

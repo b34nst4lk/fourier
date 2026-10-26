@@ -1,8 +1,9 @@
-# fourier toy — the quaver puzzle
+# Doodle — the daily doodle (source name: fourier_toy)
 
 Tune four Fourier terms — a phase, a radius, and a frequency — until the
-solid comet closes onto the dashed eighth-note target. One puzzle, no
-menus: the app boots straight into the board.
+solid comet closes onto the dashed target. A new puzzle every day
+(wordle-style), approved by the human editor from the admin's drafts; the
+built-in quaver is the fallback the app boots into.
 
 - **Dials**: term 1 phase (±5°, wraps), term 2 radius (±2% of the biggest
   dialable, 0–200%), term 3 k (±1, −16…+16); term 4 is fixed and correct.
