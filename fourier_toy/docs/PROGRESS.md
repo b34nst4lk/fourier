@@ -425,3 +425,19 @@ The v2 plan (single quaver puzzle) archived to
 application record. The daily-puzzle system's plan of record is the first
 per-feature plan: `../toy_admin/docs/PLAN-daily-puzzles.md`. No code
 changed.
+
+- **The rename: Doodle (2026-10-25)** — the feedback line said "fourier-toy
+  doesn't catch"; the user picked Doodle from a wordle-flavor shortlist and
+  specified the mark's `e`: an incomplete circle (the aperture at the lower
+  right) crossed by a HALF stroke that connects to the bowl's left edge and
+  stops at the centre. The board now opens with a slim wordmark row (Doodl +
+  the svg-e: raster-verified before insertion; the strokes ride currentColor
+  so the theme switch paints it); <title>Doodle — the daily doodle</title>;
+  the admin's title "Doodle admin". The BLOG side: content/toys/doodle.md
+  (the card + the blurb, the slug /toys/doodle/), the old address served
+  from static/toys/fourier-toy/index.html as a meta-refresh stub (goldmark
+  strips raw html — a content-page redirect rendered nothing; static/
+  copies verbatim). Commit 02d6f88 + the blog's 4e68b37/3c3a7f6. LIVE
+  verified: the new page 200 with the glyph in the bundle + the B/W palette
+  (the theme revamp's PUBLISH gap closed by the same deploy), the stub
+  refreshes, the cards list Doodle.
