@@ -452,3 +452,8 @@ changed.
   deleted (the blog's 98a8c4b), the server-side toys/fourier-toy/ removed by
   hand (the rsync keeps no --delete), the old URL now answers the site's 404;
   doodle.md's moot aliases line dropped with it.
+  Third pass (user's plan for the chin): REMOVED — the bar now docks INTO
+  the bowl (the arc's end is the bar's outer end): the arc = 305 degrees,
+  the aperture = the gap's lower 55° opening up-right after the tilt, the
+  bar = the straight chord to the centre, the crop = the bowl's own box
+  (11.5 16.5 77 77). Commit 0a82cd7, deployed, live bundle verified.
