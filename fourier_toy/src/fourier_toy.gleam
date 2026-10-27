@@ -1,16 +1,19 @@
 //// fourier toy — the daily puzzle board: tune the three dialed Fourier terms
 //// (phase, radius, k) until the solid comet closes onto the dashed target.
 ////
-//// One screen, no routing. Two sources feed it (PLAN-daily-puzzles.md §1):
+//// One screen, no routing. Three states feed it (PLAN-fetch-first-boot.md §1):
 ////
-////   * `Daily(date)` — today's published puzzle, fetched from
-////     `/api/puzzle/today` and decoded by `wire`; its attempt is stored and its
-////     solve is reported.
-////   * `Quaver` — the built-in quaver, which is what the board paints FIRST
-////     (deterministically, before any network answer) and what it falls back to
-////     when there is no puzzle today, the fetch fails, or the document is
-////     unusable. The fallback tells no telemetry and stores nothing: it has no
-////     date and no identity to report against.
+////   * `Loading` — a cold start's first moment: `GET /api/puzzle/today` is
+////     already out, nothing is cached, so the board shows a minimal loading
+////     state (bar + empty canvas + disabled columns, no title, no score). It
+////     lasts only for the fetch's duration.
+////   * `Daily(date)` — a published puzzle, either from the fetch or from the
+////     last-loaded cache (`j-last`), which paints OPTIMISTICALLY at boot so a
+////     returning player never sees a wrong-puzzle flash. Decoded by `wire`,
+////     entered by ONE code path; its attempt is stored and its solve reported.
+////   * `Quaver` — the built-in quaver, reached only by a cold start that finds
+////     nothing and cannot fetch. It tells no telemetry and stores nothing: it
+////     has no date and no identity to report against.
 ////
 //// The tested pure core owns the math (shapes + puzzle), the stored attempt's
 //// codec and transitions (attempt), and the served document's decoder (wire).
@@ -47,7 +50,10 @@ type Msg {
 }
 
 type Source {
-  /// The built-in quaver (the first paint, and the fallback).
+  /// The fetch is out and nothing is cached: a minimal loading state — no
+  /// title, no score, all glyphs disabled (nothing on screen claims a puzzle).
+  Loading
+  /// The built-in quaver — the cold-start fallback.
   Quaver
   /// Today's published puzzle, by show date.
   Daily(show_date: String)
@@ -74,7 +80,8 @@ type Model {
     attempt: Option(attempt.Attempt),
     /// An attempt read from storage at boot, HELD until the fetch says which
     /// puzzle today is. Applying it early would paint yesterday's dials under
-    /// today's name — and the board must paint the quaver first anyway.
+    /// today's name. (A cached boot consumes it immediately: the cache already
+    /// says which day is on the board.)
     stored: Option(attempt.Attempt),
   )
 }
@@ -94,7 +101,8 @@ fn init(_: Nil) -> #(Model, Effect(Msg)) {
   let setup = puzzle.quaver_setup()
   let shape = puzzle.shape_of(setup.shape)
   let state = puzzle.initial(shape, setup.patches)
-  #(
+  // the board's placeholder until the fetch (or the cache) says what today is
+  let base =
     Model(
       setup: setup,
       shape: shape,
@@ -109,21 +117,42 @@ fn init(_: Nil) -> #(Model, Effect(Msg)) {
       stored: ffi.ls_get(attempt.storage_key)
         |> result.try(attempt.decode)
         |> option.from_result,
-    ),
+    )
+  // The last document that loaded, through the same live `wire.decode` the
+  // fetch answer takes: if it still decodes, its day is on the board at once
+  // (no wrong-puzzle flash) and the fetch can only confirm it, swap it, or
+  // fail and leave it standing. No version field — the decoder IS the gate, so
+  // a document that no longer decodes is simply a cold boot.
+  let cached =
+    ffi.ls_get(last_doc_key)
+    |> result.try(wire.decode)
+    |> option.from_result
+  let #(model, entered) = case cached {
+    Some(daily) -> enter_daily(base, daily, None)
+    None -> #(Model(..base, source: Loading), effect.none())
+  }
+  #(
+    model,
     batch([
-      hold_driver(),
-      sync_effect(shape, state, setup.dials),
-      theme_apply(dark),
+      // the fetch goes FIRST: nothing syncs a canvas before it (§1.1)
       fetch_effect(),
+      hold_driver(),
+      theme_apply(dark),
+      entered,
     ]),
   )
 }
 
-/// Run effects in order; an empty list is no effect at all.
+/// Run effects in the order given; an empty list is no effect at all.
+///
+/// `effect.batch` folds its list with a prepend, so handing it a list reverses
+/// the running order — which silently breaks ordering contracts (the fetch must
+/// go out before any canvas sync, the theme before the first draw). Reversing
+/// here keeps "the order you read is the order they run".
 fn batch(effects: List(Effect(Msg))) -> Effect(Msg) {
   case effects {
     [] -> effect.none()
-    _ -> effect.batch(effects)
+    _ -> effect.batch(list.reverse(effects))
   }
 }
 
@@ -184,6 +213,18 @@ fn persist_effect(a: attempt.Attempt) -> Effect(Msg) {
   })
 }
 
+/// The raw document of the last successful load, kept for the next boot
+/// (PLAN-fetch-first-boot.md §1.2). Best-effort, like every storage write, and
+/// versionless on purpose: `wire.decode` IS the gate.
+const last_doc_key = "j-last"
+
+fn cache_effect(raw: String) -> Effect(Msg) {
+  effect.from(fn(_dispatch) {
+    let _ = ffi.ls_set(last_doc_key, raw)
+    Nil
+  })
+}
+
 fn saved(attempt_state: Option(attempt.Attempt)) -> List(Effect(Msg)) {
   case attempt_state {
     Some(a) -> [persist_effect(a)]
@@ -214,8 +255,19 @@ fn abandon_effect(uuid: String, a: attempt.Attempt) -> Effect(Msg) {
 
 fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
   case msg {
-    SlotStep(slot, dir) -> slot_step(model, slot, dir)
-    Reset -> reset(model)
+    // the loading state has no board: its glyphs are disabled, and a step that
+    // arrived anyway could only sync a canvas of placeholder nothing (or book
+    // an attempt against a puzzle that does not exist yet)
+    SlotStep(slot, dir) ->
+      case model.source {
+        Loading -> #(model, effect.none())
+        _ -> slot_step(model, slot, dir)
+      }
+    Reset ->
+      case model.source {
+        Loading -> #(model, effect.none())
+        _ -> reset(model)
+      }
     ToggleTheme -> {
       let dark = case model.dark {
         True -> False
@@ -345,8 +397,9 @@ fn reset(model: Model) -> #(Model, Effect(Msg)) {
             ),
           )
         }
-        // the built-in fallback has no attempt to end
-        Quaver -> #(
+        // the built-in fallback has no attempt to end (and the loading state
+        // cannot be reset: its chip is disabled and `update` guards the message)
+        _ -> #(
           Model(..model, attempt: None),
           batch(list.flatten([[push_terms(state, model.setup.dials)], retire])),
         )
@@ -359,20 +412,71 @@ fn puzzle_fetched(
   model: Model,
   result: Result(String, Nil),
 ) -> #(Model, Effect(Msg)) {
-  // A failure or a "none" envelope leaves the board exactly as it is — the
-  // player may already be playing the quaver, and there is nothing to report.
-  let decoded =
-    result
-    |> result.try(wire.decode)
-  case decoded {
-    Error(Nil) -> #(model, effect.none())
-    Ok(daily) -> enter_daily(model, daily)
+  case result {
+    Error(Nil) -> fetch_failed(model)
+    Ok(text) ->
+      case wire.decode(text) {
+        // a 2xx this decoder cannot use (a tunnel's HTML page, a newer format)
+        Error(Nil) -> fetch_failed(model)
+        // the body is worth keeping for the next boot BEFORE it is taken
+        Ok(daily) -> enter_daily(model, daily, Some(text))
+      }
   }
 }
 
-fn enter_daily(model: Model, daily: wire.DailyPuzzle) -> #(Model, Effect(Msg)) {
+/// The fetch settled without a puzzle: "none", a failed request, or a document
+/// this decoder cannot use. Whatever is on screen stays — a cached daily is
+/// fully playable for its own date — and only a cold start (the loading state,
+/// which has painted nothing) falls through to the built-in quaver.
+fn fetch_failed(model: Model) -> #(Model, Effect(Msg)) {
+  case model.source {
+    Loading -> {
+      let model = Model(..model, source: Quaver)
+      #(model, sync_effect(model.shape, model.state, model.setup.dials))
+    }
+    _ -> #(model, effect.none())
+  }
+}
+
+/// Take a decoded document as the board's puzzle — the ONE path the cached boot
+/// and the fetch answer share, so an offline board is a real daily by
+/// construction (its own date, its own attempt, its own telemetry).
+///
+/// `cache_raw` is the raw body when the document came from the network (worth
+/// keeping for the next boot). The boot's own read passes `None`: it IS the
+/// cache, so rewriting it would be churn.
+fn enter_daily(
+  model: Model,
+  daily: wire.DailyPuzzle,
+  cache_raw: Option(String),
+) -> #(Model, Effect(Msg)) {
+  case model.source {
+    // the answer confirms the day already on the board: the boot's resume (or
+    // the swap that opened it) has already run, so this is a no-op — nothing
+    // to repaint, nothing to store, nothing to re-post
+    Daily(show_date) if show_date == daily.show_date -> #(model, effect.none())
+    _ -> {
+      let #(model, entered) = switch_daily(model, daily)
+      let keep = case cache_raw {
+        Some(raw) -> [cache_effect(raw)]
+        None -> []
+      }
+      #(model, batch(list.flatten([keep, [entered]])))
+    }
+  }
+}
+
+fn switch_daily(
+  model: Model,
+  daily: wire.DailyPuzzle,
+) -> #(Model, Effect(Msg)) {
   let start = puzzle.initial(daily.shape, daily.setup.patches)
-  let held = model.stored
+  // the attempt this board is responsible for: the one read from storage at
+  // boot (the cold path), or the live one (a cached board a newer day retires)
+  let held = case model.stored {
+    Some(a) -> Some(a)
+    None -> model.attempt
+  }
   let model =
     Model(
       ..model,
@@ -382,7 +486,7 @@ fn enter_daily(model: Model, daily: wire.DailyPuzzle) -> #(Model, Effect(Msg)) {
       stored: None,
     )
   case held {
-    // today's attempt: resume exactly where it was left
+    // this day's attempt: resume exactly where it was left
     Some(stored) if stored.date == daily.show_date -> resume(model, stored)
     // an earlier day's attempt: retire it, then open today clean
     Some(old_attempt) -> retire_then_open(model, old_attempt, daily, start)
@@ -496,31 +600,68 @@ fn view(model: Model) -> Element(Msg) {
 }
 
 fn board_view(model: Model) -> Element(Msg) {
-  html.div([], [
-    wordmark(),
-    bar(model.match, model.moves, model.dark),
-    html.h2([attribute.class("pt")], [
-      html.text(model.setup.title),
-      when_tag(model.source),
-    ]),
-    html.canvas([attribute.class("board"), attribute.id("toy-board")]),
-    html.div(
-      [attribute.class("cols")],
-      list.index_map(model.setup.dials, fn(kind, i) {
-        let assert [s, ..] = list.drop(model.state, i)
-        dial_col(kind, i, s, model.shape.dial_max_r)
-      }),
-    ),
+  case model.source {
+    // a cold start's fetch is still out: the bar and an empty board, the three
+    // columns present with every glyph disabled — and no title and no score,
+    // because nothing on this screen has a puzzle to name yet
+    Loading -> {
+      html.div([], [
+        wordmark(),
+        loading_bar(model.dark),
+        // The title's slot stays OCCUPIED (an empty div, no text and no height)
+        // so that the board canvas and the columns below keep their DOM
+        // identity across the loading → puzzle transition: the FFI binds a
+        // canvas by element, and a re-created one would stay blank until the
+        // next sync.
+        html.div([], []),
+        html.canvas([attribute.class("board"), attribute.id("toy-board")]),
+        html.div(
+          [attribute.class("cols")],
+          list.index_map(model.setup.dials, fn(kind, i) {
+            dial_col_disabled(kind, i)
+          }),
+        ),
+      ])
+    }
+    _ -> {
+      html.div([], [
+        wordmark(),
+        bar(model.match, model.moves, model.dark),
+        html.h2([attribute.class("pt")], [
+          html.text(model.setup.title),
+          when_tag(model.source),
+        ]),
+        html.canvas([attribute.class("board"), attribute.id("toy-board")]),
+        html.div(
+          [attribute.class("cols")],
+          list.index_map(model.setup.dials, fn(kind, i) {
+            let assert [s, ..] = list.drop(model.state, i)
+            dial_col(kind, i, s, model.shape.dial_max_r)
+          }),
+        ),
+      ])
+    }
+  }
+}
+
+/// The loading state's bar: the same chrome, an EMPTY score slot (no number, no
+/// change count) and a disabled reset — there is nothing on the board to reset.
+/// The theme chip stays live: the page's scheme never waits on the network.
+fn loading_bar(dark: Bool) -> Element(Msg) {
+  html.div([attribute.class("bar")], [
+    html.span([attribute.class("score")], []),
+    tools(dark, True),
   ])
 }
 
 /// The daily puzzle wears its date faintly beside its name, so a player can
-/// tell one day's board from the next (the built-in fallback has no date).
+/// tell one day's board from the next (neither the fallback nor the loading
+/// state has a date).
 fn when_tag(source: Source) -> Element(Msg) {
   html.span([attribute.class("when")], [
     html.text(case source {
       Daily(show_date) -> " · " <> show_date
-      Quaver -> ""
+      _ -> ""
     }),
   ])
 }
@@ -570,37 +711,44 @@ fn bar(m: Float, moves: Int, dark: Bool) -> Element(Msg) {
         html.span([attribute.class("ok")], [html.text("solved ✓")]),
       ],
     ),
-    html.div([attribute.class("tools")], [
-      // reset chip: skip-back-to-start, icon-only (the aria-label keeps its
-      // meaning for screen readers)
-      html.button(
-        [
-          attribute.classes([#("chip", True), #("reset", True)]),
-          attribute.aria_label("reset to start"),
-          event.on("click", decode.success(Reset)),
-        ],
-        [reset_icon()],
-      ),
-      // corner-chip toggle, icon-only: moon when light, sun when dark
-      // (ink-colored inline SVG — no glyph that a platform can emoji-ize);
-      // aria-label keeps the button's meaning for screen readers
-      html.button(
-        [
-          attribute.classes([#("chip", True), #("theme", True)]),
-          attribute.aria_label(case dark {
-            True -> "light mode"
-            False -> "dark mode"
-          }),
-          event.on("click", decode.success(ToggleTheme)),
-        ],
-        [
-          case dark {
-            True -> sun_icon()
-            False -> moon_icon()
-          },
-        ],
-      ),
-    ]),
+    tools(dark, False),
+  ])
+}
+
+/// The two icon chips. `reset_disabled` is the loading state's version: the
+/// board has no start to skip back to.
+fn tools(dark: Bool, reset_disabled: Bool) -> Element(Msg) {
+  html.div([attribute.class("tools")], [
+    // reset chip: skip-back-to-start, icon-only (the aria-label keeps its
+    // meaning for screen readers)
+    html.button(
+      [
+        attribute.classes([#("chip", True), #("reset", True)]),
+        attribute.aria_label("reset to start"),
+        attribute.disabled(reset_disabled),
+        event.on("click", decode.success(Reset)),
+      ],
+      [reset_icon()],
+    ),
+    // corner-chip toggle, icon-only: moon when light, sun when dark
+    // (ink-colored inline SVG — no glyph that a platform can emoji-ize);
+    // aria-label keeps the button's meaning for screen readers
+    html.button(
+      [
+        attribute.classes([#("chip", True), #("theme", True)]),
+        attribute.aria_label(case dark {
+          True -> "light mode"
+          False -> "dark mode"
+        }),
+        event.on("click", decode.success(ToggleTheme)),
+      ],
+      [
+        case dark {
+          True -> sun_icon()
+          False -> moon_icon()
+        },
+      ],
+    ),
   ])
 }
 
@@ -613,13 +761,28 @@ fn dial_col(
   s: TermState,
   max_r: Float,
 ) -> Element(Msg) {
+  col(kind, slot, at_max(kind, s, max_r), at_min(kind, s))
+}
+
+/// The loading state's column: both glyphs disabled, because there is no puzzle
+/// to step yet.
+fn dial_col_disabled(kind: puzzle.DialKind, slot: Int) -> Element(Msg) {
+  col(kind, slot, True, True)
+}
+
+fn col(
+  kind: puzzle.DialKind,
+  slot: Int,
+  top_edge: Bool,
+  bottom_edge: Bool,
+) -> Element(Msg) {
   html.div([attribute.class("col")], [
-    glyph_button(kind, slot, 1, at_max(kind, s, max_r)),
+    glyph_button(kind, slot, 1, top_edge),
     html.canvas([
       attribute.class("dial"),
       attribute.id("col-" <> int.to_string(slot)),
     ]),
-    glyph_button(kind, slot, -1, at_min(kind, s)),
+    glyph_button(kind, slot, -1, bottom_edge),
   ])
 }
 

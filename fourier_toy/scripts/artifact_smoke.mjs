@@ -150,15 +150,44 @@ function make_ctx() {
 // GET /api/puzzle/today ("none" is the default — the empty calendar every
 // pre-daily scenario boots into), and every call is logged so the scenarios can
 // count and read the POSTs. POSTs answer 200 unless `postFails`.
+//
+// PLAN-fetch-first-boot §4: `fetchMode: "pending"` leaves the GET in flight
+// until the scenario settles it by hand (`__resolve_fetch(body)` /
+// `__reject_fetch()`), so the boot's in-flight states (the loading state, the
+// optimistic cached board) can be inspected. Every GET also records how many
+// animation frames had been requested when it went out (`raf_at`), which is how
+// the smoke pins "the fetch fires before any canvas sync".
 function install_fetch(window, { fetchMode = "none", fetchBody = null, postFails = false }) {
   const calls = [];
   window.__calls = calls;
+  let inflight = null;
+  window.__fetch_state = () => (inflight === null ? "settled" : "pending");
+  window.__resolve_fetch = (body) => {
+    const p = inflight;
+    inflight = null;
+    if (p) p.resolve({ ok: true, status: 200, text: () => Promise.resolve(body) });
+  };
+  window.__reject_fetch = () => {
+    const p = inflight;
+    inflight = null;
+    if (p) p.reject(new Error("offline"));
+  };
   window.fetch = (url, init = {}) => {
     const method = (init.method || "GET").toUpperCase();
-    calls.push({ url: String(url), method, body: init.body === undefined ? null : init.body });
+    calls.push({
+      url: String(url),
+      method,
+      body: init.body === undefined ? null : init.body,
+      raf_at: raf_handle,
+    });
     if (method !== "GET") {
       if (postFails) return Promise.reject(new Error("offline"));
       return Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve("{}") });
+    }
+    if (fetchMode === "pending") {
+      return new Promise((resolve, reject) => {
+        inflight = { resolve, reject };
+      });
     }
     if (fetchMode === "reject") return Promise.reject(new Error("offline"));
     if (fetchMode === "http500") {
@@ -178,6 +207,7 @@ function boot_dom({
   postFails = false,
 } = {}) {
   raf_q = [];
+  raf_handle = 0; // per-boot: a GET's `raf_at` counts this boot's frames only
   NOW = 1000.0;
   const dom = new JSDOM(html, {
     url: "https://toy.test/", // no hash — the app boots straight into the board
@@ -482,9 +512,14 @@ console.log("S0 · artifact CSS — dial columns, ordinal ink, input guards kept
 }
 
 // ==== S1 · boot straight into the quaver board + the column DOM contract =====
+// PLAN-fetch-first-boot §1: a COLD boot (no cache) paints the loading state
+// while the fetch is out and falls through to the quaver when the answer names
+// no puzzle. S1's contract is the fallback board, so it starts once the answer
+// has landed — the fallback itself is unchanged.
 console.log("S1 · cold load — quaver board, three text-free dial columns, icon glyphs");
 const dom = boot_dom();
 let state = initial_state();
+await sleep(0); // the "none" answer lands; the board falls through to the quaver
 tick(); // boot retry binds the canvases (init effects ran pre-render)
 tick(34, 5); // draw frames
 {
@@ -1273,9 +1308,9 @@ const uuid_now = (d) => d.window.localStorage.getItem("j-uid");
 {
   const d = boot_dom(); // default fetchMode: {"status":"none"}
   check(
-    "first paint is the quaver (before the fetch settles)",
-    h2_text(d) === "quaver",
-    h2_text(d),
+    "a cold boot waits in the loading state (no title, no score) until the answer",
+    h2_text(d) === null && text(d.window.document.querySelector(".score")) === "",
+    "title " + JSON.stringify(h2_text(d)) + " / score " + JSON.stringify(text(d.window.document.querySelector(".score"))),
   );
   await sleep(0); // let the fetch settle
   tick();
@@ -1287,7 +1322,7 @@ const uuid_now = (d) => d.window.localStorage.getItem("j-uid");
     "cols " + cols(d).length,
   );
   check(
-    "the fallback's score is the core's from the first paint",
+    "the fallback's score is the core's from its first board paint",
     score_val(d) === core_score(initial_state()),
     "dom " + score_val(d) + " vs core " + core_score(initial_state()),
   );
@@ -1321,9 +1356,9 @@ let daily_dom = null;
 {
   const d = boot_dom({ fetchMode: "ok", fetchBody: daily_json() });
   check(
-    "the quaver paints first even with a puzzle waiting",
-    h2_text(d) === "quaver",
-    h2_text(d),
+    "a cold boot shows the loading state, not the quaver, while the puzzle is waiting",
+    h2_text(d) === null && d.window.document.querySelector("h2.pt") === null,
+    JSON.stringify(h2_text(d)),
   );
   await sleep(0);
   tick(34, 2);
@@ -1717,6 +1752,543 @@ let daily_dom = null;
   check(
     "the badge still shows (the player solved it, whatever the network did)",
     d.window.document.querySelector(".score.solved") !== null,
+  );
+}
+
+// ==== S9 · fetch-first boot — the cold loading state =======================
+// PLAN-fetch-first-boot.md §1 (user-ruled 2026-10-27) / §4. The old order — the
+// quaver painted first, the answer second — is gone. A COLD start (nothing
+// cached) shows a MINIMAL loading state for the fetch's duration: the GET is
+// already out, the board is empty, the columns are disabled, there is no title
+// and no score. Only a cold failure falls through to the quaver, and the
+// quaver's no-storage/no-telemetry rule is unchanged when reached.
+console.log("S9 · fetch-first boot — the loading state, and the cold quaver fallback");
+{
+  const d = boot_dom({ fetchMode: "pending" });
+  const doc = d.window.document;
+  check(
+    "the fetch is issued at boot, before any canvas sync (no frame requested yet)",
+    gets(d).length === 1 && gets(d)[0].raf_at === 0,
+    "gets " + gets(d).length + ", raf_at " + (gets(d)[0] && gets(d)[0].raf_at),
+  );
+  check("the answer is still in flight", d.window.__fetch_state() === "pending");
+  check(
+    "the loading state has no title",
+    doc.querySelector("h2.pt") === null,
+    String(doc.querySelector("h2.pt")),
+  );
+  check(
+    "the loading state has no score text (an empty slot, no <b>)",
+    text(doc.querySelector(".score")) === "" && doc.querySelector(".score b") === null,
+    JSON.stringify(text(doc.querySelector(".score"))),
+  );
+  check(
+    "the loading state keeps the empty board and the three columns",
+    board_canvas(d) !== null && cols(d).length === 3,
+    "board " + (board_canvas(d) !== null) + ", cols " + cols(d).length,
+  );
+  const buttons = [...doc.querySelectorAll(".cols button")];
+  check(
+    "all six glyph buttons are disabled (stepping is impossible)",
+    buttons.length === 6 && buttons.every((b) => b.disabled),
+    buttons.length + " buttons, " + buttons.filter((b) => b.disabled).length + " disabled",
+  );
+  check(
+    "the reset chip is disabled (nothing to reset) and the theme chip stays live",
+    doc.querySelector("button.reset") !== null &&
+      doc.querySelector("button.reset").disabled === true &&
+      doc.querySelector("button.theme") !== null &&
+      doc.querySelector("button.theme").disabled === false,
+    "reset " + (doc.querySelector("button.reset") && doc.querySelector("button.reset").disabled) +
+      " / theme " + (doc.querySelector("button.theme") && doc.querySelector("button.theme").disabled),
+  );
+  check(
+    "the loading board painted nothing (no shape was pushed)",
+    (canvas_ops(d) === null || canvas_ops(d).arc === 0) && last_frame(d, "col-0") === null,
+    "ops " + JSON.stringify(canvas_ops(d) && { arc: canvas_ops(d).arc }),
+  );
+  check(
+    "the loading state posts nothing and stores no attempt and no cache",
+    posts(d).length === 0 &&
+      d.window.localStorage.getItem("j-att") === null &&
+      d.window.localStorage.getItem("j-last") === null,
+    "posts " + posts(d).length + ", j-att " + d.window.localStorage.getItem("j-att"),
+  );
+
+  // a cold failure names no puzzle: the board falls through to the quaver
+  d.window.__reject_fetch();
+  await sleep(0);
+  tick(34, 2);
+  check(
+    "cold offline: the quaver paints (the unchanged fallback)",
+    h2_text(d) === "quaver" && when_text(d) === "",
+    h2_text(d) + " / " + JSON.stringify(when_text(d)),
+  );
+  check(
+    "the quaver's score is the core's from its first board paint",
+    score_val(d) === core_score(initial_state()),
+    "dom " + score_val(d) + " vs core " + core_score(initial_state()),
+  );
+  check(
+    "the quaver's glyphs are live again (three columns, nothing disabled)",
+    cols(d).length === 3 && glyph(d, "increase phase") !== null && !glyph(d, "increase phase").disabled,
+    "cols " + cols(d).length + ", disabled " + (glyph(d, "increase phase") && glyph(d, "increase phase").disabled),
+  );
+  check(
+    "the quaver still posts nothing and stores nothing (no cache, no attempt)",
+    posts(d).length === 0 &&
+      d.window.localStorage.getItem("j-att") === null &&
+      d.window.localStorage.getItem("j-last") === null,
+    "posts " + posts(d).length + ", j-att " + d.window.localStorage.getItem("j-att"),
+  );
+}
+
+// a stored same-day attempt three phase steps from the served start (105°)
+const resumed_state = (steps = 3) => {
+  const st = Array.from(daily_initial());
+  for (let i = 0; i < steps; i++) {
+    st[0] = puzzle.step(DAILY_KINDS[0], st[0], 1, daily_shape.dial_max_r);
+  }
+  return st;
+};
+const resumed_moves = (steps = 3) => Array.from({ length: steps }, () => [0, 1]);
+
+// ==== S10 · optimistic cached boot =========================================
+// The last document that loaded (`j-last`) paints IMMEDIATELY — the same
+// `wire.decode` + `enter_daily` the fetch answer takes, so the board is a real
+// daily for its own date: the matching stored attempt resumes. Zero POSTs while
+// the fetch is still out.
+console.log("S10 · optimistic cached boot — the cached daily paints before the fetch resolves");
+let resumed_dom = null;
+{
+  const seed_state = resumed_state(3);
+  const d = boot_dom({
+    fetchMode: "pending",
+    seed: {
+      "j-last": daily_json(),
+      "j-att": attempt_json({
+        date: DAILY_DATE,
+        state: seed_state,
+        moves: resumed_moves(3),
+        count: 3,
+      }),
+    },
+  });
+  resumed_dom = d;
+  check(
+    "the GET still goes out first (before the cache's canvas sync)",
+    gets(d).length === 1 && gets(d)[0].raf_at === 0,
+    "gets " + gets(d).length + ", raf_at " + (gets(d)[0] && gets(d)[0].raf_at),
+  );
+  check(
+    "a cached boot's FIRST paint is the cached daily (no quaver, no loading state)",
+    h2_text(d) !== null && h2_text(d).startsWith(DAILY_NAME) && when_text(d).includes(DAILY_DATE),
+    h2_text(d) + " / " + JSON.stringify(when_text(d)),
+  );
+  check(
+    "its stored attempt rode along before the fetch answered (· 3 changes)",
+    counter(d) === "· 3 changes" && d.window.__fetch_state() === "pending",
+    JSON.stringify(counter(d)) + " / " + d.window.__fetch_state(),
+  );
+  tick();
+  tick(34, 3);
+  check(
+    "the cached board painted (canvas ops > 0, no NaN)",
+    canvas_ops(d) !== null && canvas_ops(d).arc >= 5 && canvas_ops(d).nan === 0,
+    "arcs " + (canvas_ops(d) && canvas_ops(d).arc) + ", nan " + (canvas_ops(d) && canvas_ops(d).nan),
+  );
+  check(
+    "all three columns painted",
+    [0, 1, 2].every((i) => {
+      const f = last_frame(d, "col-" + i);
+      return f && f.strokes.length > 0;
+    }),
+  );
+  check(
+    "the resumed dials are on the board (105° marker, the served 50% ring)",
+    angle_close(marker_deg(d), 105) &&
+      close(ring_radius(d, 1), (50 / 100) * (1 / 2) * COL_SPACE, 0.6),
+    "marker " + marker_deg(d) + ", ring " + ring_radius(d, 1),
+  );
+  // the served/resumed starts score 0.0%, so the score text cannot tell the
+  // daily from the quaver here — the title, the marker, the ring and the counter
+  // do (the score-vs-core pins live in S2/S4/S8b, where the state moves)
+  check(
+    "no solved badge (the stored attempt is unsolved)",
+    d.window.document.querySelector(".score.solved") === null,
+  );
+  check(
+    "the cached board's glyphs are live (a cached daily is a real daily)",
+    !glyph(d, "increase phase").disabled && !glyph(d, "increase k").disabled,
+  );
+  check(
+    "an optimistic cached boot posts nothing while the fetch is out",
+    posts(d).length === 0,
+    JSON.stringify(posts(d)),
+  );
+}
+
+// ==== S11 · the same-day confirm is a no-op ===============================
+// The answer names the day already on the board: nothing to repaint, nothing to
+// store, nothing to re-post. The ONE exception is a solve whose POST never
+// landed — that replay is the ordinary resume bookkeeping, and it fires exactly
+// once (the backend's solve REPLACES the row, so a duplicate costs nothing).
+console.log("S11 · same-day confirm — a no-op (and one unreported-solve replay)");
+{
+  const d = resumed_dom;
+  const seed_state = resumed_state(3);
+  const jatt_before = d.window.localStorage.getItem("j-att");
+  // the always-on comet needs a clock, so "no repaint" is measured as "no
+  // canvas frame was forced by the confirm itself" — and the state it would
+  // have repainted did not move
+  const ctx = board_canvas(d).__ctx;
+  const frames_before = ctx.frames.length;
+  const arcs_before = ctx.ops.arc;
+  d.window.__resolve_fetch(daily_json());
+  await sleep(0);
+  check(
+    "the confirm forces no canvas frame (no synchronous repaint churn)",
+    ctx.frames.length === frames_before && ctx.ops.arc === arcs_before,
+    "frames " + frames_before + " → " + ctx.frames.length + ", arcs " + arcs_before + " → " + ctx.ops.arc,
+  );
+  tick(34, 2);
+  check(
+    "the confirm keeps the resumed board (105° marker, · 3 changes, same score)",
+    angle_close(marker_deg(d), 105) &&
+      counter(d) === "· 3 changes" &&
+      score_val(d) === core_score(toList(seed_state)),
+    marker_deg(d) + " / " + counter(d) + " / " + score_val(d),
+  );
+  check(
+    "the confirm writes no storage (j-att byte-identical)",
+    d.window.localStorage.getItem("j-att") === jatt_before,
+    JSON.stringify(d.window.localStorage.getItem("j-att")),
+  );
+  check("the confirm posts nothing", posts(d).length === 0, JSON.stringify(posts(d)));
+
+  // an unreported solve on the cached board: replayed at boot, ONCE
+  const solved_count = daily_walk.moves.length;
+  const u = boot_dom({
+    fetchMode: "pending",
+    seed: {
+      "j-last": daily_json(),
+      "j-att": attempt_json({
+        date: DAILY_DATE,
+        state: daily_walk.state,
+        moves: daily_walk.moves,
+        count: solved_count,
+        solved: true,
+        reported: false,
+      }),
+    },
+  });
+  tick(34, 2);
+  check(
+    "the cached solved board shows its badge and its number",
+    u.window.document.querySelector(".score.solved") !== null && counter_n(u) === solved_count,
+    counter_n(u) + " vs " + solved_count,
+  );
+  await sleep(0); // the stubbed POST settles on a microtask
+  const replay = posts(u).filter((c) => c.url === "/api/solve");
+  check(
+    "the unreported solve replays from the cache (exactly one POST)",
+    replay.length === 1,
+    "got " + replay.length,
+  );
+  const body = replay.length ? JSON.parse(replay[0].body) : {};
+  check(
+    "the replay carries the cached date and its stored moves",
+    body.puzzleDate === DAILY_DATE && body.moves && body.moves.length === solved_count,
+    JSON.stringify({ date: body.puzzleDate, moves: body.moves && body.moves.length }),
+  );
+  u.window.__resolve_fetch(daily_json());
+  await sleep(0);
+  tick(34, 2);
+  check(
+    "the same-day confirm does not replay it again (still exactly one)",
+    posts(u).filter((c) => c.url === "/api/solve").length === 1,
+    "got " + posts(u).filter((c) => c.url === "/api/solve").length,
+  );
+  check(
+    "the confirmed attempt is stored reported (nothing left to re-send)",
+    stored_attempt(u) && stored_attempt(u).reported === true && stored_attempt(u).date === DAILY_DATE,
+    JSON.stringify(stored_attempt(u) && stored_attempt(u).reported),
+  );
+}
+
+// ==== S12 · a new day swaps — the cached attempt retires ===================
+// The answer names a NEWER day: the cached board's attempt is retired per
+// today's rules (abandoned, or solve-reported), a fresh attempt opens, and the
+// board repaints the new puzzle. `j-last` follows the new day.
+console.log("S12 · a new day retires the cached attempt and repaints");
+{
+  const NEXT_DATE = "2026-10-27";
+  const next_start = patches_of([120.0, 70.0, 3]);
+  const next_json = () => {
+    const base = daily_doc();
+    return JSON.stringify({
+      ...base,
+      puzzle: {
+        ...base.puzzle,
+        showDate: NEXT_DATE,
+        patches: [
+          { kind: "phase", deg: 120.0 },
+          { kind: "radius", pct: 70.0 },
+          { kind: "k", k: 3 },
+          { kind: "keep" },
+        ],
+      },
+    });
+  };
+  // the same shape (dial/extras/target), a different start
+  const next_initial = () => puzzle.initial(daily_shape, next_start);
+  const seed_state = resumed_state(3);
+  const d = boot_dom({
+    fetchMode: "pending",
+    seed: {
+      "j-last": daily_json(),
+      "j-att": attempt_json({
+        date: DAILY_DATE,
+        state: seed_state,
+        moves: resumed_moves(3),
+        count: 3,
+      }),
+    },
+  });
+  tick(34, 2);
+  check(
+    "the cached day is on screen before the swap",
+    h2_text(d).startsWith(DAILY_NAME) && counter(d) === "· 3 changes",
+    h2_text(d) + " / " + counter(d),
+  );
+  d.window.__resolve_fetch(next_json());
+  await sleep(0);
+  tick(34, 3);
+  const abandons = posts(d).filter((c) => c.url === "/api/attempts/abandon");
+  check(
+    "yesterday's cached attempt is abandoned exactly once when the new day lands",
+    abandons.length === 1,
+    "got " + abandons.length,
+  );
+  const body = abandons.length ? JSON.parse(abandons[0].body) : {};
+  check(
+    "the abandon names the cached date and its 3 moves",
+    body.puzzleDate === DAILY_DATE && body.moves === 3,
+    JSON.stringify({ date: body.puzzleDate, moves: body.moves }),
+  );
+  const stored = stored_attempt(d);
+  check(
+    "a fresh attempt opens for the new date",
+    stored && stored.v === 2 && stored.date === NEXT_DATE && stored.count === 0,
+    JSON.stringify(stored && { date: stored.date, count: stored.count }),
+  );
+  check(
+    "the board shows the new date and its own start (120° marker, · 0 changes)",
+    when_text(d).includes(NEXT_DATE) && angle_close(marker_deg(d), 120) && counter(d) === "· 0 changes",
+    when_text(d) + " / " + marker_deg(d) + " / " + counter(d),
+  );
+  check(
+    "the canvas repaints the new puzzle (the ring carries the 70% start)",
+    close(ring_radius(d, 1), (70 / 100) * (1 / 2) * COL_SPACE, 0.6),
+    String(ring_radius(d, 1)),
+  );
+  check(
+    "the swap posts the retire only — no solve, no second abandon",
+    posts(d).length === 1 && posts(d).filter((c) => c.url === "/api/attempts/abandon").length === 1,
+    JSON.stringify(posts(d).map((c) => c.url)),
+  );
+  check(
+    "j-last now holds the new day's raw document",
+    d.window.localStorage.getItem("j-last") === next_json(),
+    "cache " + String(d.window.localStorage.getItem("j-last")).slice(0, 60),
+  );
+}
+
+// ==== S13 · offline with a cache is a FULL daily ==========================
+// The cache's date, the cache's attempt, the cache's steps — and a solve on it
+// posts once (the same-day idempotent path). Nothing about the board is a
+// second-class fallback: it has a date and an identity.
+console.log("S13 · offline with a cache — a full daily for its own date");
+{
+  const d = boot_dom({ fetchMode: "pending", seed: { "j-last": daily_json() } });
+  tick(34, 2);
+  check(
+    "the cache alone opens the daily (fresh attempt, served start)",
+    h2_text(d).startsWith(DAILY_NAME) &&
+      when_text(d).includes(DAILY_DATE) &&
+      counter(d) === "· 0 changes" &&
+      angle_close(marker_deg(d), 90),
+    h2_text(d) + " / " + counter(d) + " / " + marker_deg(d),
+  );
+  const opened = stored_attempt(d);
+  check(
+    "the cached daily stores a fresh attempt under its OWN date",
+    opened && opened.v === 2 && opened.date === DAILY_DATE && opened.count === 0,
+    JSON.stringify(opened && { date: opened.date, count: opened.count }),
+  );
+  check(
+    "the cached board's glyphs are live",
+    !glyph(d, "increase phase").disabled && !glyph(d, "decrease radius").disabled,
+  );
+  d.window.__reject_fetch();
+  await sleep(0);
+  tick(34, 2);
+  check(
+    "offline: the cached board stands (still the daily, not the quaver)",
+    h2_text(d).startsWith(DAILY_NAME) && when_text(d).includes(DAILY_DATE),
+    h2_text(d) + " / " + when_text(d),
+  );
+  let steps = 0;
+  let mid_ok = false;
+  for (const [slot, dir] of daily_walk.moves) {
+    if (!click_move(d, slot, dir)) break;
+    steps++;
+    tick();
+    if (steps === 2) {
+      const mid = stored_attempt(d);
+      mid_ok = !!mid && mid.date === DAILY_DATE && mid.count === 2 && mid.moves.length === 2;
+    }
+  }
+  tick(34, 2);
+  check(
+    "the cached board accepts steps — they persist to j-att under the cached date",
+    mid_ok,
+    JSON.stringify(stored_attempt(d)),
+  );
+  check(
+    "the walk solves the cached board",
+    steps === daily_walk.moves.length && d.window.document.querySelector(".score.solved") !== null,
+    "steps " + steps + "/" + daily_walk.moves.length,
+  );
+  const solves = posts(d).filter((c) => c.url === "/api/solve");
+  check(
+    "a solve on the cached board POSTs once (the same-day idempotent path)",
+    solves.length === 1,
+    "got " + solves.length,
+  );
+  const body = solves.length ? JSON.parse(solves[0].body) : {};
+  check(
+    "the solve names the cached date and its played moves",
+    body.puzzleDate === DAILY_DATE && body.moves && body.moves.length === steps,
+    JSON.stringify({ date: body.puzzleDate, moves: body.moves && body.moves.length }),
+  );
+  const stored = stored_attempt(d);
+  check(
+    "the cached date's attempt is stored solved",
+    stored && stored.date === DAILY_DATE && stored.solved === true,
+    JSON.stringify(stored && { date: stored.date, solved: stored.solved }),
+  );
+  check(
+    "the cached board abandons nothing",
+    posts(d).filter((c) => c.url === "/api/attempts/abandon").length === 0,
+  );
+}
+
+// ==== S14 · a cold success paints the daily ================================
+console.log("S14 · cold success — the daily paints when the answer lands");
+{
+  const d = boot_dom({ fetchMode: "pending" });
+  check("no title while the fetch is out (the loading state)", h2_text(d) === null, String(h2_text(d)));
+  d.window.__resolve_fetch(daily_json());
+  await sleep(0);
+  tick(34, 3);
+  check(
+    "the daily paints (title, date tag, three columns)",
+    h2_text(d).startsWith(DAILY_NAME) && when_text(d).includes(DAILY_DATE) && cols(d).length === 3,
+    h2_text(d) + " / " + when_text(d) + " / cols " + cols(d).length,
+  );
+  check(
+    "the served start is on the dials (90° marker, 50% ring)",
+    angle_close(marker_deg(d), 90) && close(ring_radius(d, 1), (50 / 100) * (1 / 2) * COL_SPACE, 0.6),
+    marker_deg(d) + " / " + ring_radius(d, 1),
+  );
+  const stored = stored_attempt(d);
+  check(
+    "a fresh attempt is stored under today's date",
+    stored && stored.v === 2 && stored.date === DAILY_DATE && stored.count === 0,
+    JSON.stringify(stored && { date: stored.date, count: stored.count }),
+  );
+  check("nothing is posted at a cold boot", posts(d).length === 0, JSON.stringify(posts(d)));
+  check(
+    "j-last holds the raw fetched body",
+    d.window.localStorage.getItem("j-last") === daily_json(),
+    String(d.window.localStorage.getItem("j-last")).slice(0, 60),
+  );
+}
+
+// ==== S15 · a cache that no longer decodes is ignored =====================
+console.log("S15 · a stale cache — the decoder is the only version gate");
+{
+  const contradicting = () => {
+    const p = daily_doc().puzzle;
+    return JSON.stringify({
+      status: "ok",
+      puzzle: {
+        ...p,
+        dials: p.dials.slice(0, 2),
+        dial: p.dial.slice(0, 2),
+        patches: p.patches.slice(0, 2),
+      },
+    });
+  };
+  for (const [label, body] of [
+    ["garbage (a tunnel's HTML page)", "<html>tunnel</html>"],
+    ["an old envelope (status none)", JSON.stringify({ status: "none", fallback: true })],
+    ["an ok envelope whose dial counts contradict", contradicting()],
+  ]) {
+    const d = boot_dom({ fetchMode: "pending", seed: { "j-last": body } });
+    tick(34, 2);
+    check(
+      label + ": ignored — the loading state, no crash (cold-boot behavior)",
+      h2_text(d) === null &&
+        d.window.document.getElementById("app").children.length > 0 &&
+        d.window.__fetch_state() === "pending",
+      h2_text(d) + " / " + d.window.document.getElementById("app").children.length + " roots",
+    );
+    check(
+      label + ": no attempt and no POST came out of the ignored cache",
+      stored_attempt(d) === null && posts(d).length === 0,
+      JSON.stringify(posts(d)),
+    );
+    d.window.__resolve_fetch(daily_json());
+    await sleep(0);
+    tick(34, 3);
+    check(
+      label + ": the fetch's daily still lands (fresh attempt, served start)",
+      h2_text(d).startsWith(DAILY_NAME) && counter(d) === "· 0 changes" && angle_close(marker_deg(d), 90),
+      h2_text(d) + " / " + counter(d) + " / " + marker_deg(d),
+    );
+  }
+}
+
+// ==== S16 · j-last is written on every successful load ====================
+console.log("S16 · j-last — the raw document is cached on every successful load");
+{
+  const d = boot_dom({ fetchMode: "ok", fetchBody: daily_json() });
+  await sleep(0);
+  tick(34, 2);
+  check(
+    "a successful load writes the RAW document to j-last",
+    d.window.localStorage.getItem("j-last") === daily_json(),
+    String(d.window.localStorage.getItem("j-last")).slice(0, 60),
+  );
+  const none = boot_dom(); // {"status":"none"} — nothing was loaded
+  await sleep(0);
+  tick(34, 2);
+  check(
+    "a 'none' answer writes no cache (no document was loaded)",
+    none.window.localStorage.getItem("j-last") === null,
+    String(none.window.localStorage.getItem("j-last")).slice(0, 60),
+  );
+  // the cached boot reads the cache, never rewrites it
+  const cached_text = JSON.stringify(daily_doc(), null, 1); // same doc, other bytes
+  const cached = boot_dom({ fetchMode: "pending", seed: { "j-last": cached_text } });
+  tick(34, 2);
+  check(
+    "an optimistic cached boot leaves the cache untouched (it is what we just read)",
+    h2_text(cached).startsWith(DAILY_NAME) &&
+      cached.window.localStorage.getItem("j-last") === cached_text,
+    String(cached.window.localStorage.getItem("j-last")).slice(0, 40),
   );
 }
 

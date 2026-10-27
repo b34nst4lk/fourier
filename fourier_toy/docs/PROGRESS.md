@@ -562,3 +562,32 @@ fetch-first boot with a last-loaded cache (user-approved direction), and the
 legibility pass (press-highlight, blue arm trail, comet loop closure, larger
 corner chips, solve reveal; extras-dash deferred pending the dark-mode
 visibility question).
+
+## Fetch-first boot (2026-10-27, PLAN-fetch-first-boot.md)
+
+The boot rework by the coder subagent under review, in a worktree, in
+parallel with the backend's varied-starts draw (smoke RED 195/224 — 29
+failures, each the old quaver-first behaviour; GREEN 224/224, boot contract
+123/123, gleam 42/42, format, bench, dist 96K byte-reproducible 4df4125b…):
+the fetch fires before any canvas sync; a `j-last` localStorage key holds
+the RAW last-loaded document, decoded through the live wire decoder at
+boot (versionless — the decoder IS the gate), and a decodable cache enters
+the day through the SAME enter_daily the fetch answer takes — so the
+optimistic paint is a full daily for its own date (matching attempt
+resumes, steps persist, unreported-solve replay fires), the fetch can only
+confirm (same date: an explicit no-op), swap (newer date: retire-then-open
+as before), or fail (the cached board stands); the quaver is now a cold-
+start-only fallback (Loading → Quaver on fetch failure, the loading state
+renders bar + empty canvas + disabled glyphs, no title, no score). One REAL
+bug caught en route: `effect.batch` folds with a prepend, so the local
+`batch` helper's "run in order" claim was false — the boot had been running
+its effects reversed since the dial-columns round (harmlessly there; fatal
+here, where the fetch must precede any sync). Fixed at the helper
+(list.reverse); boot contract + smoke confirm nothing depended on the old
+reversal. Second subtlety, chased to ground: the loading state keeps an
+invisible empty div in the title slot so the board canvas and the column
+canvases keep DOM identity across the Loading → puzzle transition (Lustre's
+unkeyed diff replaces by index; a re-created canvas would stay blank until
+the next sync). Plan divergences, all strengthening: score pins that
+cannot distinguish 0% starts were replaced with stronger retire/POST pins;
+the cached boot passes no raw doc (reading the cache never rewrites it).
