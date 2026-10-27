@@ -1,4 +1,4 @@
-//// Visit-date logic (PLAN-daily-puzzles.md §2 Q11): visitor-local midnight
+//// Visit-date logic: visitor-local midnight
 //// with a clamped ±14h offset, and the never-past serving rule.
 
 import gleam/option.{None, Some}
@@ -69,7 +69,7 @@ pub fn clamp_offset_bounds_test() {
   should.equal(-330, dates.clamp_offset(-330))
 }
 
-// ---------- never-past serving rule (Q11) ----------
+// ---------- never-past serving rule  ----------
 
 pub fn serve_date_clamps_to_newest_published_test() {
   // A visitor whose local date is ahead of the newest published puzzle gets

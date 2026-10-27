@@ -1,5 +1,4 @@
-//// The SQLite store (PLAN-daily-puzzles.md §3 Q14): puzzles and attempt
-//// telemetry, one file in a volume.
+//// The SQLite store: puzzles and attempt telemetry, one file in a volume.
 ////
 //// Shape of the API
 //// ----------------
@@ -15,8 +14,8 @@
 //// save, a solve), so the default rollback journal keeps it to ONE file — no
 //// -wal/-shm siblings to mount and no checkpointing to reason about.
 ////
-//// Schema (plan §3; attempts' exact shape chosen here)
-//// ---------------------------------------------------
+//// Schema
+//// ------
 ////   puzzles(
 ////     id         INTEGER PRIMARY KEY,
 ////     name       TEXT NOT NULL,
@@ -25,7 +24,7 @@
 ////                                        -- order == calendar order
 ////                                        -- (dates.gleam's convention)
 ////     dots       TEXT NOT NULL,          -- JSON: the drawing, source of truth
-////     fixture    TEXT NOT NULL,          -- JSON: the derived fixture (Q2/Q19)
+////     fixture    TEXT NOT NULL,          -- JSON: the derived fixture
 ////     created_at INTEGER NOT NULL,       -- epoch seconds
 ////     updated_at INTEGER NOT NULL,
 ////     status     TEXT NOT NULL DEFAULT 'published',  -- 'published' | 'draft'
@@ -34,8 +33,8 @@
 ////   CREATE UNIQUE INDEX puzzles_published_date
 ////     ON puzzles (show_date) WHERE status = 'published';
 ////
-//// Drafts (agent drafts, 2026-10-25)
-//// --------------------------------
+//// Drafts
+//// ------
 //// A DRAFT is a puzzle with no date: a local agent (Hermes) inserts undated
 //// shapes with `insert_draft`, a human approves one by giving it a date
 //// (`publish`), and `unpublish` takes the date away again. The two facts are
@@ -43,15 +42,14 @@
 //// `status` is what the row is — because every query that must not see a draft
 //// filters on `status`, and every human-facing screen shows both.
 ////
-//// Why the uniqueness had to move: phase 4a declared `show_date TEXT NOT NULL
-//// UNIQUE` inline, which makes every draft collide with every other draft on
-//// ''. SQLite cannot drop an inline constraint, so the migration REBUILDS the
-//// table (see `migrate_puzzles`) and installs the date rule as a PARTIAL index
-//// that only covers published rows. The index stays the authority, exactly as
-//// the table constraint was: a racing publish loses to it and is reported as
-//// DuplicateShowDate.
+//// The date rule is a PARTIAL unique index, not an inline `UNIQUE` on the
+//// column: an inline one would make every draft collide with every other draft
+//// on ''. SQLite cannot drop an inline constraint, so `migrate_puzzles` REBUILDS
+//// the table and `indexes_sql` installs the rule as an index over published rows
+//// only. The index stays the authority, exactly as a table constraint would: a
+//// racing publish loses to it and is reported as DuplicateShowDate.
 ////   attempts(
-////     uuid        TEXT NOT NULL,         -- anonymous v4 identity (Q16)
+////     uuid        TEXT NOT NULL,         -- anonymous v4 identity
 ////     puzzle_date TEXT NOT NULL,         -- ISO date; the puzzle's show_date
 ////     puzzle_id   INTEGER NOT NULL,      -- denormalised for per-puzzle stats
 ////                                        -- (no FK: this is telemetry, deleting
@@ -66,10 +64,8 @@
 ////     PRIMARY KEY (uuid, puzzle_date)    -- ONE attempt row per player per day
 ////   )
 ////
-//// The plan sketched attempts with a single nullable `moves` column ("solve
-//// rows carry the move list, abandon rows only the count"). Splitting it into
-//// `moves` (JSON or NULL) + `move_count` (always an integer) keeps every row's
-//// count as a number — the plan's uniform-stats treatment — without parsing
+//// Splitting `moves` (JSON or NULL) from `move_count` (always an integer) keeps
+//// every row's count as a number — the uniform-stats treatment — without parsing
 //// JSON inside SQL for the abandon half. `updated_at` exists because a re-sent
 //// solve REPLACES its row; `created_at` keeps the attempt's first sighting.
 ////
@@ -79,8 +75,8 @@
 ////   free-form date would poison ordering and every per-date aggregate). The
 ////   date-format rule is the ROUTE's for the schedule actions (publish takes
 ////   whatever date the route validated — see its own note);
-//// - a DUPLICATE show_date among PUBLISHED puzzles (Q17) — the partial unique
-////   index is the authority, so a race cannot slip a second puzzle onto a day;
+//// - a DUPLICATE show_date among PUBLISHED puzzles — the partial unique index is
+////   the authority, so a race cannot slip a second puzzle onto a day;
 //// - a solve/abandon for a date with no puzzle (`UnknownPuzzle`): telemetry for
 ////   an unpublished day would corrupt the aggregates;
 //// - an abandon that would overwrite a solved row: solved stays solved.
@@ -132,10 +128,10 @@ pub const status_draft = "draft"
 /// agent's id (AGENT_ID) instead.
 pub const creator_human = "human"
 
-/// A partial update from the admin editor (phase 4a). `None` means "leave this
-/// column as it is". A drawing change always arrives paired with its
-/// re-derived fixture — the route layer owns derivation, so the store never
-/// stores dots without the fixture that belongs to them.
+/// A partial update from the admin editor. `None` means "leave this column as
+/// it is". A drawing change always arrives paired with its re-derived fixture —
+/// the route layer owns derivation, so the store never stores dots without the
+/// fixture that belongs to them.
 ///
 /// `show_date` carries the whole schedule: `Some("")` means DRAFT (no date, and
 /// the same write may still change the name, the dots and the fixture), `Some`
@@ -169,7 +165,7 @@ pub type Attempt {
 pub type Error {
   /// The database refused the work (open/close, or a statement).
   Database(message: String)
-  /// A puzzle for that show_date already exists (Q17).
+  /// A puzzle for that show_date already exists.
   DuplicateShowDate(show_date: String)
   /// `dates.is_valid_date` rejected the date before it reached SQLite.
   InvalidShowDate(show_date: String)
@@ -253,23 +249,24 @@ fn tables_sql() -> String {
 fn indexes_sql() -> String {
   [
     "CREATE INDEX IF NOT EXISTS attempts_by_puzzle ON attempts (puzzle_id);",
-    // Q17, as a PARTIAL index: two published puzzles may not share a day, but
-    // every draft shares '' — which is why the old table-level UNIQUE had to
-    // go (see the header).
+    // The date rule as a PARTIAL index: two published puzzles may not share a
+    // day, but every draft shares '' — an inline table-level UNIQUE cannot
+    // express that (see the header).
     "CREATE UNIQUE INDEX IF NOT EXISTS puzzles_published_date
        ON puzzles (show_date) WHERE status = 'published';",
   ]
   |> string.concat
 }
 
-/// The phase-4a -> drafts migration. A database created before drafts has no
-/// `status` column; adding the two columns would be enough for the data, but the
-/// inline `UNIQUE(show_date)` would keep every draft colliding with every other
-/// draft, and SQLite cannot drop an inline constraint. So this is the documented
-/// rebuild: rename, create the current shape, copy the rows across (the new
-/// columns take their defaults in the INSERT), drop the old table. The old
-/// table's indexes go with it when it is dropped, and `indexes_sql` — which runs
-/// after this — installs the current set.
+/// Bring a pre-drafts database up to the current shape. A database created
+/// before drafts has no `status` column; adding the two columns would be enough
+/// for the data, but the inline `UNIQUE(show_date)` would keep every draft
+/// colliding with every other draft, and SQLite cannot drop an inline
+/// constraint. So this is the documented rebuild: rename, create the current
+/// shape, copy the rows across (the new columns take their defaults in the
+/// INSERT), drop the old table. The old table's indexes go with it when it is
+/// dropped, and `indexes_sql` — which runs after this — installs the current
+/// set.
 ///
 /// The `status` column's presence IS the version marker: the schema is
 /// otherwise declarative (CREATE ... IF NOT EXISTS), and this is the one
@@ -320,8 +317,7 @@ fn puzzle_columns_of(
 // ---------- puzzles ----------
 
 /// Save a PUBLISHED, human-authored puzzle. Refuses an invalid date
-/// (`InvalidShowDate`) and a date that is already taken (`DuplicateShowDate`,
-/// Q17).
+/// (`InvalidShowDate`) and a date that is already taken (`DuplicateShowDate`).
 pub fn insert_puzzle(
   path: String,
   name name: String,
@@ -351,9 +347,9 @@ pub fn insert_puzzle(
   }
 }
 
-/// Save an UNDATED draft (agent drafts, 2026-10-25): no show_date at all, so it
-/// cannot be served and cannot collide with a published day. `creator` is the
-/// agent id that drew it (`AGENT_ID`); a human's puzzle is `creator_human`.
+/// Save an UNDATED draft: no show_date at all, so it cannot be served and cannot
+/// collide with a published day. `creator` is the agent id that drew it
+/// (`AGENT_ID`); a human's puzzle is `creator_human`.
 ///
 /// No date rule applies here — there is no date. Everything else the route
 /// layer validated (a non-empty name, a drawing that derives a usable fixture)
@@ -439,7 +435,7 @@ fn row_by_rowid(connection: sqlight.Connection) -> Result(Puzzle, Error) {
   }
 }
 
-/// Every puzzle, newest show_date first (the admin menu's order, phase 4).
+/// Every puzzle, newest show_date first (the admin menu's order).
 pub fn list_puzzles(path: String) -> Result(List(Puzzle), Error) {
   with_connection(path, fn(connection) {
     query(
@@ -467,8 +463,8 @@ pub fn puzzle_by_id(
   with_connection(path, fn(connection) { find_puzzle_by_id(connection, id) })
 }
 
-/// Update the PROVIDED columns of one puzzle (phase 4a): `None` leaves a column
-/// alone. `updated_at` moves, `created_at` never does.
+/// Update the PROVIDED columns of one puzzle: `None` leaves a column alone.
+/// `updated_at` moves, `created_at` never does.
 ///
 /// The schedule half is `show_date` (see PuzzleUpdate): `Some("")` drafts the
 /// puzzle (no date, status 'draft'), `Some(date)` publishes it on that date,
@@ -477,8 +473,8 @@ pub fn puzzle_by_id(
 /// Refusals: an unknown id (`UnknownPuzzleId`), an invalid date
 /// (`InvalidShowDate` — the empty date is not an invalid date, it is the draft
 /// marker), and a show_date another PUBLISHED puzzle already holds
-/// (`DuplicateShowDate`, Q17, from the partial unique index). A puzzle holding
-/// its own date is NOT a collision — the index only sees other rows, so a no-op
+/// (`DuplicateShowDate`, from the partial unique index). A puzzle holding its
+/// own date is NOT a collision — the index only sees other rows, so a no-op
 /// date change succeeds. The index is still the authority: a racing update
 /// loses to it and is reported the same way.
 pub fn update_puzzle(
@@ -645,10 +641,10 @@ pub fn count_puzzles(path: String) -> Result(Int, Error) {
   })
 }
 
-/// The newest PUBLISHED show_date — the never-past ceiling of the serving rule
-/// (Q11). Drafts are invisible to it: a dateless draft has no date to be the
-/// ceiling, and an approved one enters the ceiling the moment it is published.
-/// `None` when nothing is published yet.
+/// The newest PUBLISHED show_date — the never-past ceiling of the serving rule.
+/// Drafts are invisible to it: a dateless draft has no date to be the ceiling,
+/// and an approved one enters the ceiling the moment it is published. `None`
+/// when nothing is published yet.
 ///
 /// The "never newer than today" half of the rule is `dates.serve_date`'s (it
 /// clamps the visitor's local date), so this query is only the maximum.
@@ -710,7 +706,7 @@ pub fn attempt_record_solve(
 /// Record an abandon: an unsolved attempt carrying the client's move count.
 /// Refuses a date with no puzzle. NEVER overwrites a solved row — a solved
 /// attempt stays solved with its move list, and a late abandon is a non-event
-/// (`Ok`), per the plan's "the toy cannot abandon after solving" reasoning.
+/// (`Ok`): the toy cannot abandon after solving.
 pub fn attempt_record_abandon(
   path: String,
   uuid: String,
@@ -762,9 +758,8 @@ pub fn attempt_for(
   })
 }
 
-/// (attempts, solves) for one puzzle. The plan's minimal stats (Q23) are
-/// attempts / solves / solve %; median moves is deferred with the rest of the
-/// aggregate endpoint.
+/// (attempts, solves) for one puzzle — the attempts / solves / solve % stats.
+/// Median moves comes from `move_counts` (computed in `stats.gleam`), not SQL.
 pub fn stats(path: String, puzzle_id: Int) -> Result(#(Int, Int), Error) {
   with_connection(path, fn(connection) {
     use rows <- result.try(query(

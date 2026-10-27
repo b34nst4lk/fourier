@@ -1,4 +1,4 @@
-//// The wire module's tests (PLAN-daily-puzzles.md §8): the envelope, the row
+//// The wire module's tests: the envelope, the row
 //// shape the backend emits, the fixture document, and the words the editor shows
 //// for each error name.
 ////

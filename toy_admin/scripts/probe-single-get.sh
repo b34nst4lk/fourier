@@ -2,7 +2,7 @@
 # Live probe: the single-puzzle GET the admin menu's TEST button drives.
 # Runs on the host; reaches the app INSIDE the running toy_admin container
 # (busybox wget, no curl in the runtime image). The fence (aud + exp;
-# signature verification is a parked shelf item) accepts any RS256-shaped
+# signature verification is deliberately not done) accepts any RS256-shaped
 # token whose aud matches the configured one.
 set -euo pipefail
 cd "$(dirname "$0")/.."

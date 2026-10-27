@@ -1,4 +1,4 @@
-//// The agent API (agent drafts, 2026-10-25) — the local agent's narrow door.
+//// The agent API — the local agent's narrow door.
 ////
 ////   GET  /api/agent/schedule   the calendar, read-only (published AND drafts)
 ////   POST /api/agent/puzzle     leave an UNDATED draft for a human to approve
@@ -49,8 +49,8 @@
 //// three dots) is 400 BadDrawing before the store hears about it.
 ////
 //// Stats on the schedule rows: rows.gleam's calendar row, the same document
-//// /api/admin/puzzles emits (Q23 numbers included). The agent needs to know how
-//// a day is doing, not just that it exists.
+//// /api/admin/puzzles emits. The agent needs to know how a day is doing, not
+//// just that it exists.
 
 import gleam/dynamic
 import gleam/dynamic/decode

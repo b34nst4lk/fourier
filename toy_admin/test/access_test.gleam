@@ -1,4 +1,4 @@
-//// The admin access fence (PLAN-daily-puzzles.md §2 Q12, phase 4a).
+//// The admin access fence.
 ////
 //// Cloudflare Access is the wall; this fence is the door-latch the backend can
 //// check for itself. Every /api/admin/* request passes through `access.check`

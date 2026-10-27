@@ -1,5 +1,4 @@
-//// The app's update function, tested where it is pure (PLAN-daily-puzzles.md §3
-//// Q18/Q20).
+//// The app's update function, tested where it is pure.
 ////
 //// Lustre effects are values, not side effects: `effect.from` builds one and
 //// runs nothing, so `update` can be driven from a test exactly as the runtime
@@ -219,7 +218,7 @@ pub fn the_patched_start_clamps_its_score_at_zero_test() {
 }
 
 pub fn the_derived_readout_lists_one_entry_per_movable_slot_test() {
-  // Before a save the derivation's own numbers are shown (Q2/Q3). One bullet per
+  // Before a save the derivation's own numbers are shown . One bullet per
   // MOVABLE slot, in the dial row's vocabulary: which dial it is and what it is
   // set to.
   let model = started(star())
@@ -233,7 +232,7 @@ pub fn the_derived_readout_lists_one_entry_per_movable_slot_test() {
 }
 
 pub fn a_fixed_slot_never_appears_in_the_derived_readout_test() {
-  // Q19: the arrangement is DATA. The readout filters by KIND, not by position,
+  // The arrangement is DATA. The readout filters by KIND, not by position,
   // so an arrangement that puts the fixed term first still lists exactly the
   // dials — each with its own slot number and its own slot's numbers.
   let fixture =

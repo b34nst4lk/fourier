@@ -1,5 +1,5 @@
-// Drafting the 18 daily-puzzle polygons (everything except whale + octopus,
-// which are already in the store). Each shape is built from arcs/lines and
+// Drafting the 18 daily-puzzle polygons (whale and octopus are already in the
+// store). Each shape is built from arcs/lines and
 // ASCII-rendered so the silhouette is checked HERE, before insertion.
 // Coordinates live in the authoring square's 0..100 space, y grows DOWN
 // (screen space, matching the admin's canvas).

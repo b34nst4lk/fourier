@@ -1,13 +1,12 @@
 //// The drawing under construction: an ordered dot list with undo/clear, plus
-//// the family's node editing (PLAN-daily-puzzles.md §3 authoring, phase 4b).
+//// the family's node editing.
 ////
-//// This is the editor's counterpart to fourier_sketch's sketch panel, and since
-//// the 2026-10-25 bug report ("the canvas for creating a puzzle lacks deletion
-//// and moving of existing nodes") it speaks the SKETCH's gesture vocabulary
-//// verbatim — grab / move / drop, hit-test inside a radius, right-click to
-//// delete — over the same 0..100 dot space:
+//// This is the editor's counterpart to fourier_sketch's sketch panel, and it
+//// speaks the SKETCH's gesture vocabulary verbatim — grab / move / drop,
+//// hit-test inside a radius, right-click to delete — over the same 0..100 dot
+//// space:
 ////
-////   press far from every dot  -> ADD (the original tap-to-append contract)
+////   press far from every dot  -> ADD (the tap-to-append contract)
 ////   press within `hit_radius` -> grab, then `set` freely, then `drop`
 ////   press with the right button within `hit_radius` -> `remove`
 ////

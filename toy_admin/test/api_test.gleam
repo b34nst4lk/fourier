@@ -1,4 +1,4 @@
-//// The public API (PLAN-daily-puzzles.md §2/§3): the three routes the toys call.
+//// The public API: the three routes the toys call.
 ////
 //// Everything here runs through wisp's simulator — no socket, no container — so
 //// the wire contract (status codes, envelope, error names) is pinned by tests.
@@ -8,7 +8,7 @@
 ////
 //// Envelope, in one place:
 ////   200 {"status":"ok", ...}      the work happened
-////   200 {"status":"none","fallback":true}   nothing published (Q5 fallback)
+////   200 {"status":"none","fallback":true}   nothing published 
 ////   4xx/5xx {"status":"error","errors":["<stable name>", ...]}
 //// Error names are the client's vocabulary (the toy maps them to copy); they are
 //// part of the contract, so they are asserted as strings here.
@@ -42,7 +42,7 @@ const fixture =
 // ---------- GET /api/puzzle/today ----------
 
 pub fn today_with_nothing_published_reports_none_test() {
-  // The client's fallback path (Q5): no puzzle at all is not an error.
+  // The client's fallback path : no puzzle at all is not an error.
   fresh_db("today-none")
   let response = get("/api/puzzle/today?tz=120")
   should.equal(200, response.status)
@@ -66,7 +66,7 @@ pub fn today_serves_the_puzzle_for_the_visitors_local_date_test() {
 }
 
 pub fn today_serves_the_starting_patches_test() {
-  // Q1's "renders the puzzle exactly as any fixture today": the served puzzle
+  // "renders the puzzle exactly as any fixture today": the served puzzle
   // carries the deterministic start (one patch per dial slot), so the toy's
   // board opens where the admin's derivation says it opens — no client-side
   // guess, no difference between the built-in quaver and a fetched daily.
@@ -98,7 +98,7 @@ pub fn today_defaults_to_utc_without_a_tz_param_test() {
 }
 
 pub fn today_never_serves_past_the_newest_published_test() {
-  // Q11's never-past rule: the visitor's local date is later than the newest
+  // never-past rule: the visitor's local date is later than the newest
   // published show_date, so the newest published one is served — not a hole.
   let path = fresh_db("today-never-past")
   let assert Ok(_) =
@@ -270,7 +270,7 @@ pub fn abandon_caps_the_count_at_the_server_max_test() {
 }
 
 pub fn abandon_after_a_solve_leaves_the_solve_alone_test() {
-  // The toy cannot abandon after solving (Q22), but a stale tab can still send
+  // The toy cannot abandon after solving , but a stale tab can still send
   // it. The store's guard wins and the route still answers ok: nothing for the
   // client to fix, and no reason to invent an error.
   let path = fresh_db("abandon-after-solve")

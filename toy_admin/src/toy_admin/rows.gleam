@@ -4,7 +4,7 @@
 ////   GET /api/agent/schedule  (agent.gleam)      the agent's view of the same
 ////                                               calendar
 ////
-//// The row is identity + schedule + authorship + the Q23 numbers, and both
+//// The row is identity + schedule + authorship + the stats numbers, and both
 //// readers get the SAME fields on purpose: a reviewer comparing the two
 //// endpoints should not have to diff two hand-built objects, and a new field
 //// (like `status`) must not appear in one and not the other. What differs

@@ -1,9 +1,8 @@
-//// The admin API (PLAN-daily-puzzles.md §2 Q12/Q17/Q23, phase 4a) — the
-//// editor's backend: fence, CRUD, per-puzzle stats.
+//// The admin API — the editor's backend: fence, CRUD, per-puzzle stats.
 ////
-////   GET    /api/admin                 the admin UI itself (phase 4b, Q18)
+////   GET    /api/admin                 the admin UI itself
 ////   GET    /api/admin/                the same page (a browser's trailing slash)
-////   POST   /api/admin/preview         derive a fixture, save nothing (4b, Q4)
+////   POST   /api/admin/preview         derive a fixture, save nothing
 ////   GET    /api/admin/puzzles        list, newest show_date first, with stats
 ////   POST   /api/admin/puzzles        create {name, showDate, dots}
 ////   GET    /api/admin/puzzles/<id>   one puzzle, full row (dots + fixture)
@@ -26,8 +25,7 @@
 ////   6. derivation (create, and dots-changing updates);
 ////   7. the store.
 ////
-//// The schedule is the `showDate` field, in all three of its states (agent
-//// drafts, 2026-10-25):
+//// The schedule is the `showDate` field, in all three of its states:
 ////
 ////   - a date  -> the row is PUBLISHED on it (uniqueness checked by the store's
 ////     partial index: 409 DuplicateShowDate);
@@ -44,11 +42,11 @@
 ////
 //// Derivation is the route layer's job, not the store's (store.update_puzzle's
 //// header): a puzzle's fixture is ALWAYS the derivation of its dots, name and
-//// show_date. So a dots change re-derives (Q2/Q3), and a name/show_date change
+//// show_date. So a dots change re-derives, and a name/show_date change
 //// rewrites the fixture's embedded copy — without re-running the DFT, since the
 //// numbers do not depend on the labels.
 ////
-//// Stats policy (Q23), in stats.gleam's words: attempts = every attempt row
+//// Stats policy, in stats.gleam's words: attempts = every attempt row
 //// (solves + abandons), solves = solved rows, solvePct = one decimal or null,
 //// medianMoves = the median of ALL attempts' move_count (an abandon counts with
 //// its own reported count) or null.
@@ -135,7 +133,7 @@ fn parse_id(text: String) -> Result(Int, Nil) {
 
 // ---------- GET /api/admin — the embedded UI ----------
 
-/// The admin page (Q18). Behind the same fence as the API it drives, and
+/// The admin page. Behind the same fence as the API it drives, and
 /// method-gated the same way: the fence first, so an unfenced caller learns
 /// nothing, then the method, then the bytes the boot read cached.
 pub fn ui(request: wisp.Request, bundle: Option(String)) -> wisp.Response {
@@ -149,10 +147,10 @@ pub fn ui(request: wisp.Request, bundle: Option(String)) -> wisp.Response {
 
 // ---------- POST /api/admin/preview ----------
 
-/// Derive a fixture from an UNSAVED drawing (Q4: "test the current drawing
-/// before saving"). The editor's whole point is that the fixture arrives in one
-/// round trip: the client does no maths, so what the admin previews and what the
-/// toy later serves are the same numbers from the same derivation.
+/// Derive a fixture from an UNSAVED drawing, so the editor can test the current
+/// drawing before saving. The editor's whole point is that the fixture arrives
+/// in one round trip: the client does no maths, so what the admin previews and
+/// what the toy later serves are the same numbers from the same derivation.
 ///
 /// This route WRITES NOTHING, and that is the contract, not an accident: no
 /// store call, no duplicate-date check, no id. It is therefore also the only
@@ -401,8 +399,8 @@ fn changed(new: a, old: a) -> Option(a) {
 /// The fixture (if it must be rewritten) and the dots JSON (if they changed).
 ///
 /// Three cases, each with a reason:
-///   - the drawing changed  -> re-derive from it (Q2/Q3: the fixture is the
-///     derivation of the drawing);
+///   - the drawing changed  -> re-derive from it (the fixture is the derivation
+///     of the drawing);
 ///   - only name/show_date changed -> keep the numbers, rewrite the labels in
 ///     the fixture's embedded copy (the served document takes identity from the
 ///     row, so this is coherence, not correctness — but a stored fixture that

@@ -1,15 +1,15 @@
-//// toy_admin — the daily-puzzle backend (toy_admin/docs/PLAN-daily-puzzles.md).
+//// toy_admin — the daily-puzzle backend.
 ////
-//// Phase 2/3: the public API the toys call, on top of the SQLite store.
+//// The public API the toys call, on top of the SQLite store.
 ////
-////   GET  /api/health            liveness, unchanged since Phase 1
+////   GET  /api/health            liveness
 ////   GET  /api/puzzle/today      which puzzle to serve this visitor
 ////   POST /api/solve             record a solve
 ////   POST /api/attempts/abandon  record an abandoned attempt
-////   GET  /api/agent/schedule    the calendar, read-only (agent drafts, 2026-10-25)
+////   GET  /api/agent/schedule    the calendar, read-only
 ////   POST /api/agent/puzzle      leave an UNDATED draft for a human to approve
 ////
-//// Auth is Cloudflare Access at the tunnel (Q12). The PUBLIC routes above
+//// Auth is Cloudflare Access at the tunnel. The PUBLIC routes above
 //// authenticate nothing and must not start doing so — they serve a puzzle and
 //// record an anonymous attempt. The /api/admin/* routes are fenced by
 //// toy_admin/access.gleam before any work happens there: a Cf-Access-Jwt-
@@ -27,19 +27,19 @@
 //// the door, why the comparison is not constant-time, and why an agent may not
 //// set a show date.
 ////
-//// This is the umbrella's one Erlang-native piece (Q15): it runs inside the
-//// Docker image on the Erlang target, listening on $PORT (default 8080) bound
-//// to 0.0.0.0 so the tunnel ingress can resolve http://toy_admin:8080 across
-//// home_server-network. No host ports are published (Q13).
+//// This is the umbrella's one Erlang-native piece: it runs inside the Docker
+//// image on the Erlang target, listening on $PORT (default 8080) bound to
+//// 0.0.0.0 so the tunnel ingress can resolve http://toy_admin:8080 across
+//// home_server-network. No host ports are published.
 ////
 //// Wire contract
 //// --------------
 //// The envelope itself lives in toy_admin/envelope.gleam (one module for both
 //// the public and the admin routes). In brief: `{"status":"ok", ...}` on
-//// success, `{"status":"none","fallback":true}` when nothing is published (Q5),
+//// success, `{"status":"none","fallback":true}` when nothing is published,
 //// `{"status":"error","errors":[<stable names>]}` otherwise, and 204 with no
 //// body for a delete. The error names are the client's vocabulary and part of
-//// the contract; the list, with phase 4a's additions, is in envelope.gleam.
+//// the contract; the list is in envelope.gleam.
 ////
 //// The timezone offset travels as `?tz=<minutes>` (the offset to ADD to UTC,
 //// i.e. the NEGATION of JavaScript's `getTimezoneOffset()`), as an explicit
@@ -87,8 +87,8 @@ import wisp/wisp_mist
 
 const default_port = 8080
 
-/// Placeholder until a later phase needs signed cookies/sessions. Nothing in the
-/// current routes touches it; compose may override it with SECRET_KEY_BASE.
+/// Placeholder: nothing in the current routes touches it; compose may override
+/// it with SECRET_KEY_BASE.
 const dev_secret_key_base = "toy_admin-dev-key-base-no-sessions-yet"
 
 /// The client's `moves` array on a solve: `[{"slot":0,"dir":1}, ...]`.
@@ -175,10 +175,8 @@ pub fn load(admin_ui_path: String, agent_config: agent.Config) -> App {
 /// through wisp's simulator (test/api_test.gleam, test/health_test.gleam) as well
 /// as over HTTP.
 pub fn handle_request(request: wisp.Request, app: App) -> wisp.Response {
-  // Request logging (the wisp-documented middleware): every request leaves a
-  // "<status> <METHOD> <path>" line in the container logs. This existed in our
-  // docs as an expectation before it existed in the app: the operator's
-  // "check the docker logs" had only the boot line to read.
+  // Request logging: every request leaves a "<status> <METHOD> <path>" line in
+  // the container logs, so "check the docker logs" has something to read.
   use <- wisp.log_request(request)
   case wisp.path_segments(request) {
     ["api", "health"] ->
@@ -189,19 +187,19 @@ pub fn handle_request(request: wisp.Request, app: App) -> wisp.Response {
       wisp.require_method(request, http.Post, fn() { solve(request) })
     ["api", "attempts", "abandon"] ->
       wisp.require_method(request, http.Post, fn() { abandon(request) })
-    // Admin (phase 4a). Both handlers run the access fence FIRST — before the
-    // method check, so an unfenced caller learns nothing, not even which
-    // methods exist.
+    // Both admin handlers run the access fence FIRST — before the method
+    // check, so an unfenced caller learns nothing, not even which methods
+    // exist.
     ["api", "admin", "puzzles"] -> admin.puzzles(request)
     ["api", "admin", "puzzles", id] -> admin.puzzle(request, id)
-    // Phase 4b: the admin UI itself and the derive-without-saving route. Same
-    // fence, same order (the bundle is handed in, never read here).
+    // The admin UI itself and the derive-without-saving route. Same fence,
+    // same order (the bundle is handed in, never read here).
     ["api", "admin"] -> admin.ui(request, app.admin_ui)
     ["api", "admin", ""] -> admin.ui(request, app.admin_ui)
     ["api", "admin", "preview"] -> admin.preview(request)
-    // Agent drafts (2026-10-25): the local agent's two routes, behind its own
-    // bearer fence rather than the Access one (agent.gleam). The app state's
-    // configuration, not the environment, decides whether they are open.
+    // The local agent's two routes, behind its own bearer fence rather than
+    // the Access one (agent.gleam). The app state's configuration, not the
+    // environment, decides whether they are open.
     ["api", "agent", "schedule"] -> agent.schedule(request, app.agent)
     ["api", "agent", "puzzle"] -> agent.puzzle(request, app.agent)
     _ -> wisp.not_found()
@@ -308,9 +306,8 @@ fn record_solve(
   puzzle_date: String,
   moves: List(ingest.Move),
 ) -> wisp.Response {
-  // The move list is stored verbatim (the plan's "solve rows carry the move
-  // list"): the toy's replay/debug story depends on it, and it is already parsed
-  // and validated by here.
+  // The move list is stored verbatim: the toy's replay/debug story depends on
+  // it, and it is already parsed and validated by here.
   let moves_json = json.array(moves, of: move_to_json) |> json.to_string
   case
     store.attempt_record_solve(

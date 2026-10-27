@@ -1,5 +1,5 @@
-//// The admin API (PLAN-daily-puzzles.md §2/§3/§4/§8, phase 4a): the fence, the
-//// CRUD routes, and the Q23 stats numbers.
+//// The admin API: the fence, the
+//// CRUD routes; the menu stats.
 ////
 //// Same shape as api_test.gleam: everything goes through wisp's simulator
 //// against the real route table and a real SQLite file — no mocks, because the
@@ -150,7 +150,7 @@ pub fn create_derives_stores_and_returns_the_row_test() {
   should.equal(star_points(), puzzle.dots)
   should.equal(puzzle.created_at, puzzle.updated_at)
 
-  // The fixture in the response IS the derivation of the drawing (Q2/Q3): no
+  // The fixture in the response IS the derivation of the drawing : no
   // second, hand-maintained copy, and the browser's int coordinates read as
   // floats.
   let expected = derivation.derive_fixture(star_points(), "Star", show_date)
@@ -712,7 +712,7 @@ pub fn the_list_is_newest_first_with_the_q23_numbers_test() {
 
   // Newest: two solves (7 and 14 moves) and two abandons (6 and 10 moves):
   //   attempts 4, solves 2, 50.0%, median of [6,7,10,14] = 8.5 (even -> mean).
-  // An abandon counts with its own reported count (Q23), so the median is not
+  // An abandon counts with its own reported count , so the median is not
   // "the winners' median".
   seed_solve(path, uuid(11), newest.show_date, 7)
   seed_solve(path, uuid(12), newest.show_date, 14)
@@ -809,7 +809,7 @@ pub fn the_collection_answers_405_with_an_accurate_allow_header_test() {
   should.equal("DELETE, GET, PUT", header(item, "allow"))
 }
 
-// ---------- phase 4b: the embedded admin UI + the preview route ----------
+// ----------: the embedded admin UI + the preview route ----------
 
 /// A stand-in for the bundled single file (scripts/build-admin-ui.sh's output).
 /// Deliberately NOT read from `priv/`: the suite must not depend on the UI build
@@ -1084,7 +1084,7 @@ fn call(
   call_with(ui_state(), presented_token, method, path, body)
 }
 
-/// The same request against an explicit app state, so the phase 4b tests can
+/// The same request against an explicit app state, so the tests can
 /// drive "the boot read found nothing" without touching the filesystem.
 fn call_with(
   app: toy_admin.App,

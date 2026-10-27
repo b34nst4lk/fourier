@@ -1,4 +1,4 @@
-//// Fixture derivation (PLAN-daily-puzzles.md §3 Q2): dots -> 512-pt
+//// Fixture derivation: dots -> 512-pt
 //// arc-length resample -> DFT -> dial truth (top-4 by amplitude) + fixed
 //// extras + the 512-point target trace.
 ////
@@ -10,7 +10,7 @@
 //// There was a SECOND gold here, for the starting patches: the quaver's own
 //// drawing had to produce EXACTLY the patches the shipped toy boots with
 //// (fourier_toy/puzzle.gleam p9: PhaseDeg(355.0), RPct(73.0), KSet(-5),
-//// Keep). PLAN-varied-starts retired that: a served daily draws its own start
+//// Keep). A served daily draws its own start
 //// per puzzle (no cross-day recipe is learnable), so the backend no longer
 //// reproduces the quaver's fixed start — the toy's quaver FALLBACK still
 //// boots with it, because it is not part of the daily sequence. The quaver's
@@ -149,7 +149,7 @@ pub fn fixture_carries_name_and_show_date_test() {
 }
 
 pub fn standard_dial_arrangement_test() {
-  // Q19: the fixture carries its own dial list. v1 always emits the standard
+  // the fixture carries its own dial list. v1 always emits the standard
   // pattern (phase / radius / k / fixed, in amplitude order).
   let fixture = derivation.derive_fixture(sketch.star(), "star", "2026-10-25")
   should.equal(
@@ -200,7 +200,7 @@ pub fn is_degenerate_detects_the_gated_fixture_test() {
   should.equal(False, derivation.is_degenerate(real))
 }
 
-// ---------- the varied draw (PLAN-varied-starts §1/§2) ----------------------
+// ---------- the varied draw ----------------------
 //
 // The start is drawn per puzzle at save time: a pure hash over the dial truth
 // picks a phase turn (45°..315°, on the 5° grid) and a nonzero k shift

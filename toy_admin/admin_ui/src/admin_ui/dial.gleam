@@ -1,5 +1,4 @@
-//// The dial state machine, client-side (PLAN-daily-puzzles.md §3 Q19/Q20,
-//// phase 4b).
+//// The dial state machine, client-side.
 ////
 //// PORTED from fourier_toy/puzzle.gleam — the same four dial kinds, the same
 //// step sizes, the same clamps:
@@ -10,11 +9,10 @@
 //// The numbers are the toy's player experience; the editor must test-play the
 //// same controls the player gets, so they are ported rather than re-invented.
 ////
-//// What is NOT ported: the roster of setups (P6..P10). The admin has no roster
-//// — a puzzle's dial arrangement arrives with its fixture (`dials`), and the
-//// ONE thing this module keeps from the roster is the shipped puzzle's starting
-//// perturbation (`standard_patches`: the toy's p6 row), which is where the
-//// editor's test play begins. `initial` applies patches by SLOT, so a fixture
+//// What is NOT ported: the roster of setups. The admin has no roster — a
+//// puzzle's dial arrangement arrives with its fixture (`dials`), and the one
+//// start kept here is `standard_patches`, the fallback for a fixture with no
+//// patches of its own. `initial` applies patches by SLOT, so a fixture
 //// whose arrangement differs still gets phase/radius/k perturbations in the
 //// right places, and a `fixed` slot stays at truth.
 
@@ -98,14 +96,14 @@ pub fn step(kind: Kind, term: Term, dir: Int, max_r: Float) -> Term {
   }
 }
 
-/// The editor's FALLBACK start (fourier_toy's P6 row: phase 0°, radius 72% of
-/// the biggest dialable radius, k 8, fourth slot untouched).
+/// The editor's FALLBACK start: phase 0°, radius 72% of the biggest dialable
+/// radius, k 8, fourth slot untouched.
 ///
-/// A puzzle saved since the patches field exists carries its own start with its
-/// fixture (`wire.Fixture.patches`) and this is not consulted — the derived start
-/// is the one the toy boots with, and the editor test-plays that. Kept for rows
-/// stored before the field: they have no start to read, and an old row that
-/// cannot test-play would be worse than one that test-plays the old way.
+/// A puzzle carries its own start with its fixture (`wire.Fixture.patches`), so
+/// this is not consulted for it — the derived start is the one the toy boots
+/// with, and the editor test-plays that. A row without the field falls back
+/// here: a row that cannot test-play would be worse than one that test-plays the
+/// old way.
 pub fn standard_patches() -> List(Patch) {
   [PhaseDeg(0.0), RPct(72.0), KSet(8), Keep]
 }
@@ -113,9 +111,9 @@ pub fn standard_patches() -> List(Patch) {
 /// Apply starting patches to a fixture's dial truth, slot by slot.
 ///
 /// `fixed` slots consume no patch and stay at truth (nothing may move them),
-/// so the p6 row's trailing `Keep` is redundant by design — the arrangement and
-/// the roster row agree, and a future arrangement that reorders slots still
-/// gets its phase/radius/k perturbations in the right places.
+/// so the trailing `Keep` in `standard_patches` is redundant by design; a
+/// future arrangement that reorders slots still gets its phase/radius/k
+/// perturbations in the right places.
 pub fn initial(
   dial: List(Term),
   kinds: List(Kind),
@@ -170,7 +168,7 @@ pub fn mod360(x: Float) -> Float {
   }
 }
 
-// ---------- display formatting (ported from fourier_toy/puzzle.gleam) ----------
+// ---------- display formatting ----------
 
 pub fn fmt_k(k: Int) -> String {
   case k < 0 {
@@ -201,7 +199,7 @@ pub fn slot_value(kind: Kind, term: Term, max_r: Float) -> String {
 }
 
 /// What this slot IS, in the dial row's words: the dial a player turns, or the
-/// term nobody turns. The derived readout (plan Q2/Q3) names its slots with
+/// term nobody turns. The derived readout names its slots with
 /// this, so a bullet and the stepper it describes cannot drift apart.
 pub fn slot_label(kind: Kind) -> String {
   case kind {

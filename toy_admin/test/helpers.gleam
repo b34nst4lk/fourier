@@ -59,7 +59,7 @@ pub fn temp_path(label: String) -> String {
 
 /// The app state the route tests run against: NO embedded admin UI bundle.
 ///
-/// The UI is phase 4b's own section of admin_api_test (which injects a stand-in
+/// The UI is's own section of admin_api_test (which injects a stand-in
 /// bundle, so the suite never depends on the UI build); every other route is
 /// blind to the bundle, and saying so here keeps those tests honest about what
 /// they exercise.

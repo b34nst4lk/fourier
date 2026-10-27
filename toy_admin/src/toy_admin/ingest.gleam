@@ -1,4 +1,4 @@
-//// Ingest validation (PLAN-daily-puzzles.md §2 Q22). Pure: the route layer
+//// Ingest validation. Pure: the route layer
 //// parses the JSON payload into these moves and asks this module whether the
 //// record is trustworthy. Every problem is reported in one answer — the
 //// client gets a complete diagnosis rather than a game of whack-a-mole.

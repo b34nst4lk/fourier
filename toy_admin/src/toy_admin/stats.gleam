@@ -1,4 +1,4 @@
-//// Per-puzzle stats (PLAN-daily-puzzles.md §4 Q23, phase 4a).
+//// Per-puzzle stats.
 ////
 //// The store hands over raw numbers — `stats` gives (attempts, solves), and
 //// `move_counts` gives every attempt's move_count — and this module turns them
@@ -10,7 +10,7 @@
 ////   solvePct     solves / attempts, ONE decimal, null when attempts = 0
 ////   medianMoves  the arithmetic median of ALL attempts' move_count.
 ////                An abandon brings its own client-reported count and a solve
-////                brings its move list's length (store §8: `move_count` is
+////                brings its move list's length (store.gleam: `move_count` is
 ////                always an integer, for exactly this reason). The median of an
 ////                even-sized set can be fractional (mean of the two middle
 ////                values), so it is a Float on the wire; null when attempts = 0.

@@ -5,12 +5,13 @@
 // drives the real Lustre runtime end to end — menu → authoring → test play →
 // back → save.
 //
-// Why this exists (PLAN-daily-puzzles.md §13): the drawing panel stopped
-// painting when a view swap returned to it (the paint effect ran before the
-// canvas it was about to mount existed, and nothing retriggered it), and test
-// play scored only the dial terms while the comet drew the dial terms PLUS the
-// fixture's extras. Both are DOM-observable and neither the pure gleam suites
-// nor a type check can see them, so the artifact gets its own contract.
+// Why this exists: two behaviors are visible only in the running artifact —
+// the drawing panel's paint after a view swap (the paint effect runs before the
+// canvas it is about to mount exists, and nothing retriggers it), and test
+// play's score (the comet draws the dial terms PLUS the fixture's extras, so
+// scoring the dials alone disagrees with the picture). Both are DOM-observable
+// and neither the pure gleam suites nor a type check can see them, so the
+// artifact gets its own contract.
 //
 // Determinism: window.requestAnimationFrame is replaced with a manual queue
 // (drained by tick()); canvas 2D contexts are op-counting stubs (element
@@ -163,7 +164,7 @@ const ROWS = [
   },
 ];
 
-// Agent drafts (2026-10-25): a local agent files undated rows, a human dates them.
+// Agent drafts: a local agent files undated rows, a human dates them.
 // The same list as ROWS plus one agent draft and one human draft, so every
 // segment and every badge has something to discriminate on.
 const DRAFT_ROWS = [
@@ -539,7 +540,7 @@ console.log("S1 · boot — the menu reads the calendar");
   const rows = [...doc(dom).querySelectorAll(".rows tbody tr")];
   check("menu renders one row per puzzle", rows.length === 2, "rows: " + rows.length);
   check(
-    "a row carries the puzzle's own numbers (Q23)",
+    "a row carries the puzzle's own numbers",
     text(rows[0].querySelector(".name")) === "the quaver" &&
       text(rows[0].querySelectorAll("td")[2]) === "12" &&
       text(rows[0].querySelectorAll("td")[4]) === "41.7",
@@ -663,7 +664,7 @@ console.log("S3 · test play — one terms list for the picture and the number")
     shown === dial.fmt1(synthesis(start)) + "%",
     "shown " + shown + " vs synthesis " + dial.fmt1(synthesis(start)) + "%",
   );
-  // ...and it is NOT the dial-only number: that is the bug this pins
+  // ...and it is NOT the dial-only number: that is what this pins
   check(
     "the score is not the dial-only number",
     dial.fmt1(dial_only(start)) + "%" !== shown,
@@ -722,7 +723,7 @@ console.log("S3 · test play — one terms list for the picture and the number")
   dom.window.close();
 }
 
-// ==== S4 · back to authoring repaints without a tap (the regression) =======
+// ==== S4 · back to authoring repaints without a tap =========================
 console.log("S4 · back to authoring — the drawing is still there");
 {
   const dom = boot_dom();
@@ -978,10 +979,9 @@ console.log("S6 · live panel — the drawing previews itself");
 }
 
 // ==== S7 · the edit vocabulary: drag, click, right-click delete =============
-// The bug: "the canvas for creating a puzzle lacks deletion and moving of
-// existing nodes". A press that grabs no longer APPENDS a dot on top of the one
-// meant to be moved, a drop is one undo step and one preview, a click without a
-// move is nothing at all, and the right button deletes the dot in reach.
+// The edit vocabulary: a press that grabs must not APPEND a dot on top of the
+// one meant to be moved; a drop is one undo step and one preview; a click
+// without a move is nothing at all; the right button deletes the dot in reach.
 console.log("S7 · authoring — moving and deleting existing nodes");
 {
   const dom = boot_dom({ previewFixture: PANEL_FIXTURE });
@@ -1158,11 +1158,10 @@ console.log("S7 · authoring — moving and deleting existing nodes");
 }
 
 // ==== S8 · the menu's test button reads the row's OWN document ==============
-// The bug: the test button on the menu (the admin's home) answered a bad
-// response — the client decoded a TOP-LEVEL fixture while GET
-// /api/admin/puzzles/<id> nests the fixture inside "puzzle"
-// (live-probed with probe-single-get.sh). The canned shape below IS the
-// server's, so this regression cannot come back silently.
+// GET /api/admin/puzzles/<id> nests the fixture inside "puzzle"; a client that
+// decodes a TOP-LEVEL fixture answers a bad response. The canned shape below IS
+// the server's (live-probed with probe-single-get.sh), so that mismatch cannot
+// come back silently.
 console.log("S8 · the menu's test button — the saved document's nested fixture");
 {
   const dom = boot_dom({
@@ -1195,18 +1194,18 @@ console.log("S8 · the menu's test button — the saved document's nested fixtur
   const failure_class = doc(dom).querySelector(".error")?.className ?? "(none)";
   check("no failure banner over the play view", /(^| )hidden( |$)/.test(failure_class), failure_class);
   // the play view shows ALL FOUR slots: three dials + the fixed slot's
-  // "not a dial" readout (the 4b per-slot design; only the AUTHORING panel's
-  // preview rows skip the fixed slot)
+  // "not a dial" readout (only the AUTHORING panel's preview rows skip the
+  // fixed slot)
   const play_rows_count = [...doc(dom).querySelectorAll(".panel.dials .row")].length;
   check("the play rows render from the nested fixture", play_rows_count === 4, "rows: " + play_rows_count);
   dom.window.close();
 }
 
 // ==== S9 · the calendar's two segments ======================================
-// The menu grew a second axis when drafts arrived: WHAT a row is (published or a
-// draft) and WHO filed it (the human, or an agent whose row carries its id). Both
-// filters are client-side (the whole calendar is in hand), so a stale filter must
-// never survive as "the list looks right but is wrong".
+// The menu has a second axis: WHAT a row is (published or a draft) and WHO
+// filed it (the human, or an agent whose row carries its id). Both filters are
+// client-side (the whole calendar is in hand), so a stale filter must never
+// survive as "the list looks right but is wrong".
 console.log("S9 · the calendar — status and author segments, badges, draft verbs");
 {
   const dom = boot_dom({ rows: DRAFT_ROWS });

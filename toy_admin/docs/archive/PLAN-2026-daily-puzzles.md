@@ -1,3 +1,9 @@
+> **Archived (2026-10-27)** — shipped: the daily-puzzle system this plan
+> governed is deployed and serving (backend + admin UI + agent door + the
+> published calendar); its §1 vocabulary and rulings live on in the code
+> and its contracts. Retired and kept for history; live plan work continues
+> in new per-feature documents.
+
 # PLAN — daily puzzle system (toy_admin + fourier_toy + jacks.im)
 
 > Per-feature plan document (first of the new convention — one plan per

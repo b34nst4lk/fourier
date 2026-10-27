@@ -1,4 +1,4 @@
-//// base64url contract (RFC 4648 §5, RFC 7515 §2), phase 4a.
+//// base64url contract (RFC 4648 §5, RFC 7515 §2).
 ////
 //// NO HAND-WRITTEN ENCODER: gleam_stdlib 1.x already ships
 //// `bit_array.base64_encode` / `base64_url_encode` (and their decoders) on

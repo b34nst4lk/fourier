@@ -1,12 +1,16 @@
 #!/usr/bin/env bash
-# Re-derive every NOT-YET-SERVED puzzle's start (PLAN-varied-starts §3, phase 2).
+# Re-derive every NOT-YET-SERVED puzzle's start.
 #
-# The starting patches are DRAWN per puzzle at save time (§1 decision 1), so a
-# row stored before the varied draw keeps the retired +90°/−2 signature until
-# its own dots are saved again. This script re-saves each row whose `showDate`
-# is AFTER today by PUTting the row's own drawing back through the admin API:
-# `admin.apply_patch` re-derives the fixture whenever the body carries `dots`,
-# so the save path does the work (no direct SQL, no second derivation).
+# The starting patches are DRAWN per puzzle at save time, so a row saved under
+# an older draw keeps that signature until its own dots are saved again. This
+# script re-saves each row whose `showDate` is AFTER today by PUTting the row's
+# own drawing back through the admin API: `admin.apply_patch` re-derives the
+# fixture whenever the body carries `dots`, so the save path does the work (no
+# direct SQL, no second derivation).
+#
+# Because the draw happens SERVER-side, re-saving through a backend that predates
+# the current draw redraws with the OLD formula: rebuild (or confirm the running
+# image) before running this for real.
 #
 # Already-served days are never touched — a player may still be playing one.
 #
@@ -15,7 +19,7 @@
 #
 # The fence is the same forged-assertion pattern insert-drafts.sh and
 # probe-single-get.sh use: access.gleam verifies aud + exp only (signature
-# verification is a parked shelf item), so a token shaped like a Cloudflare
+# verification is deliberately not done), so a token shaped like a Cloudflare
 # Access JWT carrying the configured audience passes. ADMIN_ACCESS_AUD comes
 # from the environment, falling back to the gitignored `.env` beside
 # compose.yml — the value never lives in the repo.
@@ -149,7 +153,7 @@ NODEEOF
     exit 1
   fi
   # What the save actually drew: four patches, in slot order. A row that still
-  # shows the retired pair (phase 0°/90°, k truth − 2) did not re-derive.
+  # shows a fixed start (phase 0°/90°, k truth − 2) did not re-derive.
   node - "$WORK/resp-$id.json" << 'NODEEOF'
 const fs = require("fs");
 const doc = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
