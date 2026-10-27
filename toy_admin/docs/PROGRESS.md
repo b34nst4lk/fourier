@@ -243,3 +243,16 @@ DB mtime); the real run executes after this branch merges and the backend
 image rebuilds — re-saving through the OLD backend would re-derive with
 the OLD formula. Script transport note: host curl against the container's
 bridge IP (busybox wget cannot PUT; documented in the header).
+
+## Varied starts — Phase 2: the calendar re-derived (2026-10-27)
+
+Merged varied-starts to main (0e4c984), rebuilt the backend image (the
+Dockerfile's gate stage re-ran format + the 260-test suite in-image), and ran
+`scripts/rederive-starts.sh` for real: all 21 not-yet-served puzzles
+(2026-10-28 fish .. 2026-11-17 kettle) re-saved through the admin API with
+freshly drawn patches — phase 15°..355°, k −4..+7 (the absolute patch: truth
+plus a drawn ±1..3 shift), radius anchored at 73% everywhere, no two days
+alike, every re-save HTTP 200. The live seam verified after: /api/puzzle/today
+still serves today (jellyfish, 2026-10-27) through the tunnel from the
+rebuilt container. The recipe era is over — every future day opens at its own
+drawn start, identical for every player that day.
