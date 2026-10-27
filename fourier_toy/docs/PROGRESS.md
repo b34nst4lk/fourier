@@ -545,3 +545,20 @@ currentColor, and the .btn hold-driver hook. The chrome-less look was never
 pinned, so the smoke gained two S0 pins asserting the INHERITED chrome
 (RED 155/157 → GREEN 157/157); boot contract 123/123, gleam 42/42, format,
 dist byte-reproducible (6cac6647…).
+
+## Dial columns — Phase 5: shipped (2026-10-27)
+
+The dial-columns line is merged to main (fast-forward to 33ba774) and the
+production doodle serves it (hermetic build at 33ba774, live-verified: ordinal
+ink, col canvases, skip-back chip, glyph button chrome, fresh fetch; the old
+/toys/fourier-toy/ address still 404; /toys/doodle-dev/ retained as the
+unlisted spike, byte-identical to prod). The real-device check of §4 Phase 5
+is satisfied by the spike playtest (two respondents, 2026-10-27 — the
+umbrella-root docs/playtest-2026-10-27.md carries the verbatim notes), which
+ruled the follow-ups now pending as new plans: varied daily starts (per-PUZZLE
+offsets drawn at save time — same start for every player that day; the toy
+changes nothing, the backend's standard_patches is the only surface), the
+fetch-first boot with a last-loaded cache (user-approved direction), and the
+legibility pass (press-highlight, blue arm trail, comet loop closure, larger
+corner chips, solve reveal; extras-dash deferred pending the dark-mode
+visibility question).

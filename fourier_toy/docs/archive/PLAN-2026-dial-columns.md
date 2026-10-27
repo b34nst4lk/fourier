@@ -1,3 +1,12 @@
+> **Archived (2026-10-27)** — shipped: the dial-column rework is merged to
+> main (33ba774) and serving production (https://jacks.im/toys/doodle/), with
+> the unlisted spike kept at /toys/doodle-dev/ for continued testing. All
+> phases' acceptance criteria held; the device check was satisfied by the
+> 2026-10-27 spike playtest. Follow-up work ruled by the user out of that
+> playtest (varied daily starts, fetch-first boot + last-loaded cache, the
+> legibility pass) proceeds under new per-feature plan documents; this plan is
+> retired and kept for history.
+
 # PLAN — Dial columns (the purely-visual dial rework)
 
 > Per-feature plan of record (2026-10-26 convention). Product decisions in
