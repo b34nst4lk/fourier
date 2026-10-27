@@ -1,4 +1,4 @@
-//// Per-puzzle stats arithmetic (PLAN-daily-puzzles.md §4 Q23, phase 4a).
+//// Per-puzzle stats arithmetic.
 ////
 //// The store hands over the raw attempt numbers: (attempts, solves) from one
 //// aggregate and the ascending list of every attempt's move_count from

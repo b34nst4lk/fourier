@@ -1,5 +1,5 @@
-//// The fixture's wire format (PLAN-daily-puzzles.md §3 Q2/Q19) — the JSON a
-//// puzzle is stored as, and the JSON `/api/puzzle/today` serves.
+//// The fixture's wire format — the JSON a puzzle is stored as, and the JSON
+//// `/api/puzzle/today` serves.
 ////
 //// Two documents, one vocabulary:
 ////
@@ -10,7 +10,7 @@
 ////                   derived at save time so serving never runs the DFT
 ////   served puzzle   the stored fixture's fields plus "dots"
 ////
-//// Why "dots" rides along (Q19): the toy can draw the puzzle AND show the
+//// Why "dots" rides along: the toy can draw the puzzle AND show the
 //// player's own drawing without a second request, and the fixture it rendered
 //// is one document, not a join of two.
 ////
@@ -19,8 +19,8 @@
 //// It is the standard pattern in v1 — one source of truth for it lives in
 //// `derivation.standard_dial_arrangement`, and the client reads the array.
 ////
-//// "patches" is the puzzle's deterministic start (PLAN-daily-puzzles.md §1;
-//// the vocabulary and the formula live in derivation's header). One object per
+//// "patches" is the puzzle's deterministic start (the vocabulary and the
+//// formula live in derivation's header). One object per
 //// dial slot, in slot order, each naming its kind so nothing depends on
 //// position and a future patch kind needs no index bookkeeping:
 ////

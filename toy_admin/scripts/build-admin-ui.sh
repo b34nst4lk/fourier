@@ -3,7 +3,7 @@
 # inlines the whole Lustre app (gleam runtime + admin_ui + ffi) as one module
 # script, bundled by esbuild — the same single-file pattern as the toys
 # (fourier_toy/scripts/build-dist.sh), with the backend's priv/ as its target
-# instead of dist/ (PLAN-daily-puzzles.md §3 Q18, phase 4b).
+# instead of dist/.
 #
 # Runs on the HOST (no Erlang needed: everything here is --target javascript).
 # The Dockerfile's `ui` stage runs the same steps against a pinned node image;

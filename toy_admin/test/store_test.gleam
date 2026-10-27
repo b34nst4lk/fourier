@@ -1,4 +1,4 @@
-//// The SQLite store (PLAN-daily-puzzles.md §3 Q14/Q17): puzzles and attempts.
+//// The SQLite store: puzzles and attempts.
 ////
 //// Every test drives its own scratch database file (helpers.temp_db_path), so
 //// the store's "path in, result out" shape is what is under test — no hidden
@@ -102,7 +102,7 @@ pub fn inserted_puzzle_reads_back_whole_test() {
 }
 
 pub fn duplicate_show_date_is_refused_test() {
-  // Q17: one puzzle per day. The database refuses it (UNIQUE) and the store
+  // One puzzle per day. The database refuses it (UNIQUE) and the store
   // answers with a domain error rather than a driver message.
   let path = setup("duplicate")
   let assert Ok(_) = store.insert_puzzle(path, "Star", day, dots, fixture)
@@ -317,7 +317,7 @@ pub fn stats_count_attempts_and_solves_per_puzzle_test() {
   should.equal(Ok(#(0, 0)), store.stats(path, first.id + 100))
 }
 
-// ---------- phase 4a: admin CRUD primitives ----------
+// ----------: admin CRUD primitives ----------
 
 pub fn puzzle_by_id_reads_the_row_test() {
   let #(path, puzzle) = with_puzzle("by-id", day)
@@ -416,7 +416,7 @@ pub fn update_may_keep_its_own_show_date_test() {
 }
 
 pub fn update_refuses_another_puzzles_show_date_test() {
-  // Q17 applies to edits too: two puzzles on one day would make "the day's
+  // The one-per-day rule applies to edits too: two puzzles on one day would make "the day's
   // puzzle" ambiguous.
   let path = setup("update-duplicate")
   let assert Ok(first) =
@@ -691,7 +691,7 @@ pub fn unpublish_of_an_unknown_id_is_refused_test() {
 }
 
 pub fn newest_published_ignores_drafts_test() {
-  // The never-past ceiling (Q11) is about PUBLISHED days: a dateless draft must
+  // The never-past ceiling  is about PUBLISHED days: a dateless draft must
   // not become the ceiling, and a draft dated later than every published puzzle
   // must not either.
   let path = setup("newest-drafts")

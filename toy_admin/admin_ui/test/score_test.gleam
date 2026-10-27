@@ -1,4 +1,4 @@
-//// The score port's tests (PLAN-daily-puzzles.md §3 Q20, phase 4b).
+//// The score port's tests.
 ////
 //// Three layers of ground truth, strongest first:
 ////   1. star_fixture.gleam — the REAL star fixture from the backend's

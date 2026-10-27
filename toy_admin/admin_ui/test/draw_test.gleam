@@ -1,4 +1,4 @@
-//// The drawing model's tests (PLAN-daily-puzzles.md §3 authoring).
+//// The drawing model's tests.
 ////
 //// The interesting cases are the ones the pointer layer will actually produce:
 //// a tap that fires twice, undo at the bottom of the history, clear after a

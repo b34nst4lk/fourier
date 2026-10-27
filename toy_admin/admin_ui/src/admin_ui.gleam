@@ -1,8 +1,8 @@
-//// The admin browser UI (PLAN-daily-puzzles.md §3 Q18, phase 4b).
+//// The admin browser UI.
 ////
 //// Three views over one API, one page:
 ////
-////   MENU       the calendar: every puzzle with its Q23 numbers, its place in
+////   MENU       the calendar: every puzzle with its stats, its place in
 ////              the schedule (a draft badge until it has a date, the author's
 ////              chip when an agent filed it), two filters that segment the list,
 ////              and the verbs that act on a row (test / edit / approve / delete)
@@ -36,8 +36,8 @@
 ////     dot in reach, and up/leave close the drag. Only a CHANGE reaches
 ////     `schedule_preview` — a grab, a move mid-drag and a click-without-move do
 ////     not, so the panel debounces per gesture and not per pointer sample.
-////     Desktop only (product ruling, 2026-10-25): the right button is the
-////     delete, so there is no touch equivalent and none is wanted.
+////     Desktop only: the right button is the delete, so there is no touch
+////     equivalent and none is wanted.
 ////   - The fence is the SERVER's (Cloudflare Access); this UI is served behind
 ////     it, and an expired session shows up as the 401 banner.
 
@@ -1012,9 +1012,8 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
 }
 
 /// Start a test play from a fixture: the fixture's OWN starting perturbation
-/// (derived with it, §1), applied to whatever arrangement it declares. A fixture
-/// stored before the patches field has none — it falls back to the editor's old
-/// standard row, so an old row still test-plays.
+/// (derived with it), applied to whatever arrangement it declares. A fixture
+/// with no patches field falls back to the standard row, so it still test-plays.
 pub fn play_from(fixture: wire.Fixture) -> Play {
   let kinds = fixture.dials
   let terms = fixture_start(fixture)
@@ -1757,11 +1756,11 @@ fn play_bar(play: Play) -> Element(Msg) {
   ])
 }
 
-/// The derived truths, before anything is saved (plan Q2/Q3): the numbers the
+/// The derived truths, before anything is saved: the numbers the
 /// derivation decided, one bullet per MOVABLE slot, in the same words as the
 /// steppers that can undo them (dial.slot_label / dial.truth_value).
 ///
-/// The list is filtered by KIND, not position (Q19: the arrangement is data):
+/// The list is filtered by KIND, not position (the arrangement is data):
 /// a slot whose kind is `fixed` is correct by construction and has no dial, so
 /// listing it would be telling the player about a term they cannot touch. Slot
 /// numbers stay the arrangement's, so a reordered fixture still names the right

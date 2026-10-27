@@ -1,4 +1,4 @@
-//// The fixture's wire format (PLAN-daily-puzzles.md §3 Q2/Q19): the JSON a
+//// The fixture's wire format: the JSON a
 //// puzzle is stored as and the JSON `/api/puzzle/today` serves.
 ////
 //// Two documents, one vocabulary:
@@ -11,8 +11,7 @@
 ////                    the toy renders (it can draw the puzzle and show the
 ////                    player's own drawing without a second request)
 ////
-//// `dials` carries the dial ARRANGEMENT (Q19: per-puzzle data, always the
-//// standard pattern in v1), so the client never hard-codes which slot is
+//// `dials` carries the dial ARRANGEMENT , so the client never hard-codes which slot is
 //// phase/radius/k/fixed.
 
 import gleam/dynamic
@@ -54,8 +53,7 @@ fn fixture() -> derivation.Fixture {
 }
 
 pub fn encoded_fixture_pins_the_field_names_test() {
-  // The toy is written against this exact document (Q1: it renders the fetch
-  // exactly as any built-in fixture). Field names and the dial-kind spelling
+  // The toy is written against this exact document . Field names and the dial-kind spelling
   // are the contract; changing them is a client break.
   should.equal(
     "{\"name\":\"Star\",\"showDate\":\"2026-10-25\",\"centroid\":[1.5,-2.25],\"dials\":[\"phase\",\"radius\",\"k\",\"fixed\"],\"dial\":[{\"k\":2,\"radius\":27.57,\"phase\":90.0}],\"extras\":[{\"k\":-1,\"radius\":0.5,\"phase\":180.0}],\"patches\":[{\"kind\":\"phase\",\"deg\":0.0},{\"kind\":\"radius\",\"pct\":73.0},{\"kind\":\"k\",\"k\":-3},{\"kind\":\"keep\"}],\"target\":[[0.0,0.0],[1.5,-2.25]]}",

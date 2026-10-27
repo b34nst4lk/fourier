@@ -1,6 +1,6 @@
-//// Fixture derivation (PLAN-daily-puzzles.md §3 Q2). Runs once, at save time:
-//// dots are the source of truth and both the dots and this derived fixture are
-//// stored, so a re-derive is always possible.
+//// Fixture derivation. Runs once, at save time: dots are the source of truth
+//// and both the dots and this derived fixture are stored, so a re-derive is
+//// always possible.
 ////
 //// Pipeline (shared with the toys — the core is fourier_sketch's, never a
 //// fork): dots -> 512-point arc-length resample -> forward DFT with signed k.
@@ -20,21 +20,20 @@
 //// derive_test pins that claim by rebuilding the trace from centroid + dial +
 //// extras.
 ////
-//// Starting patches (PLAN-varied-starts §1/§2: the per-puzzle draw)
-//// -----------------------------------------------------------------
+//// Starting patches: the per-puzzle draw
+//// --------------------------------------
 //// A daily puzzle never opens at truth — the player's job is to walk four
 //// perturbed dials back onto it. The vocabulary is four constructors, one per
-//// dial slot (unchanged):
+//// dial slot:
 ////
 ////   Patch = PhaseDeg(Float) | RPct(Float) | KSet(Int) | Keep
 ////
-//// Since 2026-10-27 the perturbation is DRAWN per puzzle at save time, so no
-//// two days open the same way (the retired fixed start — +90°, k −2 — was the
-//// shipped quaver's own, and a returning player learned the recipe instead of
-//// solving: rotate −90, add 2). The draw is a pure function of the puzzle: a
-//// hash over the dial truth, which derives deterministically from the drawing.
-//// No RNG state, no OTP entropy, no per-player anything — and the result is
-//// stored in the fixture, so every player of that day starts identically.
+//// The perturbation is DRAWN per puzzle at save time, so no two days open the
+//// same way: a fixed start would teach a returning player the recipe instead of
+//// the puzzle. The draw is a pure function of the puzzle: a hash over the dial
+//// truth, which derives deterministically from the drawing. No RNG state, no OTP
+//// entropy, no per-player anything — and the result is stored in the fixture, so
+//// every player of that day starts identically.
 ////
 ////   seed = fnv1a(dial rows flattened as ints)
 ////          per row [k, round(radius × 1e6), round(phase_deg × 100)]
@@ -44,8 +43,7 @@
 ////                    at least a 45° turn from truth either direction (315° is
 ////                    −45°), never a whole circle, always step-able. NB: the snap
 ////                    runs AFTER the offset is added, and the truth phase itself
-////                    is off-grid, so the OBSERVED turn can land at 42.5° — the
-////                    plan's amended floor (PLAN-varied-starts §1 decision 2)
+////                    is off-grid, so the OBSERVED turn can land at 42.5°
 ////   slot 2 (radius)  RPct(73.0) — 73% of dial_max_r: THE anchor the ring's
 ////                    meaning is built on. Not flagged by the playtest, not
 ////                    varied.
@@ -62,9 +60,8 @@
 //// meaning is fixed by the ring, and the playtest's complaint was the recipe,
 //// not the difficulty.
 ////
-//// The toy's quaver FALLBACK keeps its own fixed start (it is not part of the
-//// daily sequence, fourier_toy/puzzle.gleam p9); served dailies no longer
-//// reproduce it, by design.
+//// The toy's built-in quaver fallback keeps its own fixed start — it is not part
+//// of the daily sequence, so a served daily does not reproduce it.
 ////
 //// Patches are resolved against the SHAPE, not baked here: RPct is a percentage
 //// of the shape's biggest dialable radius and KSet is an absolute kind. The toy
@@ -87,9 +84,9 @@ pub const sample_count = 512
 /// Four dials, the toy's standard board.
 pub const dial_slots = 4
 
-/// The dial arrangement (Q19): the fixture carries its own list so a future
-/// experiment needs no format migration. v1 always emits the standard pattern
-/// (phase / radius / k / fixed, in amplitude order).
+/// The dial arrangement: the fixture carries its own list so a future experiment
+/// needs no format migration. v1 always emits the standard pattern (phase /
+/// radius / k / fixed, in amplitude order).
 pub type DialKind {
   DialPhase
   DialRadius
@@ -139,11 +136,11 @@ pub const k_min = -16
 /// anchor (never drawn) and the pool the k shift is drawn from (never zero).
 pub const start_radius_pct = 73.0
 
-/// §1 decision 3: the k shifts the draw may pick from — nonzero on purpose.
+/// The k shifts the draw may pick from — nonzero on purpose.
 pub const k_shifts = [-3, -2, -1, 1, 2, 3]
 
-/// §1 decision 2: the phase offset's draw space — 45° + 5·idx for
-/// idx in 0..54, i.e. 45°..315° in 5° steps (315° ≡ −45°).
+/// The phase offset's draw space — 45° + 5·idx for idx in 0..54, i.e.
+/// 45°..315° in 5° steps (315° ≡ −45°).
 pub const phase_offset_min_deg = 45
 
 pub const phase_offset_steps = 55
@@ -198,12 +195,12 @@ fn unsigned_bytes(value: Int) -> List(Int) {
   ]
 }
 
-/// §1 decision 2: the phase turn the seed draws, in degrees (45..315, 5° steps).
+/// The phase turn the seed draws, in degrees (45..315, 5° steps).
 pub fn phase_offset_deg(seed: Int) -> Int {
   phase_offset_min_deg + { 5 * { seed % phase_offset_steps } }
 }
 
-/// §1 decision 3: the k shift the seed draws — one of `k_shifts`, never zero.
+/// The k shift the seed draws — one of `k_shifts`, never zero.
 /// The draw is `(seed / 55) mod 6`, i.e. the seed's next base-55 digit, so the
 /// phase and the k draws are independent slices of the same hash.
 pub fn drawn_k_shift(seed: Int) -> Int {

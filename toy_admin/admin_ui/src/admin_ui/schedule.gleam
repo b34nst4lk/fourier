@@ -1,5 +1,4 @@
-//// The calendar's one piece of arithmetic: WHICH DAY may the next puzzle take
-//// (agent drafts, 2026-10-25).
+//// The calendar's one piece of arithmetic: WHICH DAY may the next puzzle take.
 ////
 //// Both places that offer a date field — a new puzzle and an approve — prefill
 //// it with this answer, and the browser computes it: the server has no opinion

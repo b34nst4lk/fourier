@@ -1,5 +1,4 @@
-//// The live preview panel's state machine (PLAN-daily-puzzles.md §10, the
-//// 2026-10-25 grill): a debounced preview POST per drawing change, a monotone
+//// The live preview panel's state machine: a debounced preview POST per drawing change, a monotone
 //// generation that discards answers to superseded requests, a toggle between
 //// the dial truth and the fixture's patched start, and a panel that keeps its
 //// last fixture rather than blanking on a failed call.

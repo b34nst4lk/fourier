@@ -1,4 +1,4 @@
-//// Visit-date logic for the daily schedule (PLAN-daily-puzzles.md §2 Q11).
+//// Visit-date logic for the daily schedule.
 //// Pure — no clock reads, no timezone database: the visitor's offset, already
 //// clamped, is the whole input.
 ////
@@ -23,7 +23,7 @@ import gleam/option.{type Option, None, Some}
 import gleam/order
 import gleam/string
 
-/// ±14h, in minutes (Q11 clamp).
+/// ±14h, in minutes (the clamp).
 pub const max_offset_minutes = 840
 
 const minutes_per_hour = 60
@@ -56,9 +56,9 @@ pub fn visitor_local_date(
   pad(year, 4) <> "-" <> pad(month, 2) <> "-" <> pad(day, 2)
 }
 
-/// Never-past rule (Q11): serve the visitor's local date, but never one newer
-/// than the newest published show-date. `None` means nothing is published yet
-/// — the client falls back to the built-in quaver (Q5).
+/// Never-past rule: serve the visitor's local date, but never one newer than the
+/// newest published show-date. `None` means nothing is published yet — the
+/// client falls back to the built-in quaver.
 pub fn serve_date(
   proposed_local: String,
   newest_published: Option(String),

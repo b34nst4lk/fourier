@@ -1,7 +1,7 @@
 //// The one wall-clock read in the backend.
 ////
 //// Everything else in toy_admin takes time as an argument (dates.gleam does;
-//// the throttle's `admit` does) so its logic stays pure and testable. Two call
+//// the throttle's `evaluate` does) so its logic stays pure and testable. Two call
 //// sites need "now" for real: the store's created_at/updated_at stamps and the
 //// `/api/puzzle/today` route (which must know the visitor's local date). Both
 //// go through here.

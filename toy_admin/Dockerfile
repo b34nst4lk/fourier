@@ -1,7 +1,7 @@
-# toy_admin — the daily-puzzle backend (toy_admin/docs/PLAN-daily-puzzles.md §3).
+# toy_admin — the daily-puzzle backend (toy_admin/docs/).
 #
 # Build context is the UMBRELLA ROOT (fourier/), not toy_admin/, because the
-# math core arrives as a path dependency on ../fourier_sketch (plan Q15):
+# math core arrives as a path dependency on ../fourier_sketch:
 #
 #   docker build -f toy_admin/Dockerfile -t toy_admin <fourier-root>
 #
@@ -10,13 +10,13 @@
 #
 # Stages:
 #   base    — pinned toolchain (gleam 1.19.2 / OTP 29.1.2 on alpine) plus the
-#             C toolchain the esqlite NIF (sqlight, plan Q14) needs, with
+#             C toolchain the esqlite NIF (sqlight) needs, with
 #             dependencies pre-fetched so source edits do not re-resolve.
 #   test    — the gate stage: `gleam format --check` then `gleam test` on the
 #             ERLANG target (this server is the umbrella's one Erlang-native
 #             piece; the house --target javascript rule governs the toys' UI).
 #             A failing gate fails the image build — the line stops here.
-#   ui      — the admin browser UI (PLAN-daily-puzzles.md §3 Q18, phase 4b):
+#   ui      — the admin browser UI:
 #             admin_ui/ is a separate --target javascript package, bundled by
 #             esbuild into ONE self-contained priv/admin.html. Its own stage,
 #             because the backend's test stage must never need node, and its

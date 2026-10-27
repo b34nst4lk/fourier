@@ -1,4 +1,4 @@
-//// The dial state machine's tests (PLAN-daily-puzzles.md §3 Q19).
+//// The dial state machine's tests.
 ////
 //// These assert the PLAYER experience the editor must reproduce, so the
 //// expectations are the toy's numbers: ±1 k clamped at ±16, ±5° phase that

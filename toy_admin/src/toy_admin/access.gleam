@@ -1,4 +1,4 @@
-//// The admin access fence (PLAN-daily-puzzles.md §2 Q12/§3, phase 4a).
+//// The admin access fence.
 ////
 //// ============================================================================
 //// THIS MODULE DOES NOT VERIFY THE JWT SIGNATURE. READ THIS BEFORE CHANGING IT.
@@ -9,12 +9,11 @@
 //// Cloudflare with a key set published at
 //// `https://<team>.cloudflareaccess.com/cdn-cgi/access/certs`. Verifying that
 //// signature means fetching and rotating a JWKS, pinning the issuer, and
-//// carrying a crypto dependency — and the plan parks it on the shelf (Q12,
-//// §7: "Access JWT full signature verification — if the ingress surface ever
-//// grows beyond the tunnel").
+//// carrying a crypto dependency — a shelf item, deliberately not taken up
+//// unless the ingress surface ever grows beyond the tunnel.
 ////
 //// The reasoning is the ingress, not this code: the container publishes no host
-//// ports (Q13), the tunnel's rule routes /api here, and the Access policy sits
+//// ports, the tunnel's rule routes /api here, and the Access policy sits
 //// in front of /api/admin*. Cloudflare strips or ignores a client-supplied
 //// `Cf-Access-Jwt-Assertion` that did not come from Access, so "there is a
 //// token" means "Access minted a token for a request it admitted". This fence
@@ -106,7 +105,7 @@ pub fn status_of(failure: Failure) -> Int {
   }
 }
 
-/// The stable error name in the JSON envelope (plan §8). Two names, not four:
+/// The stable error name in the JSON envelope. Two names, not four:
 /// the admin UI's reaction to any refused certificate is "log in again".
 pub fn error_name(failure: Failure) -> String {
   case failure {

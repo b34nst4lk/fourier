@@ -1,8 +1,8 @@
-//// The request throttle (PLAN-daily-puzzles.md §3, "throttle"): per-uuid
+//// The request throttle: per-uuid
 //// ~20/5min and per-IP 60/5min, both configurable, in memory only.
 ////
 //// WHY: the solve endpoint is the only write surface a stranger can reach. No
-//// accounts exist (Q16), so a uuid is a self-chosen identity — cheap to forge —
+//// accounts exist , so a uuid is a self-chosen identity — cheap to forge —
 //// which is exactly why the IP limit exists as the outer fence and the uuid
 //// limit as the inner one. Neither is a security control; both keep a stray
 //// script from filling the attempts table.

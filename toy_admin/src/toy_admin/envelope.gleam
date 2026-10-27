@@ -1,23 +1,22 @@
-//// The wire envelope, in one place (PLAN-daily-puzzles.md §8).
+//// The wire envelope, in one place.
 ////
 //// Every answer the backend produces is JSON with a `status` field:
 ////
 ////   200 {"status":"ok", ...}                 the work happened
 ////   201 {"status":"ok", ...}                 a resource was created
 ////   200 {"status":"none","fallback":true}   nothing published — the client
-////                                           renders its built-in quaver (Q5)
+////                                           renders its built-in quaver
 ////   204                                     deleted; deliberately NO body
 ////   4xx/5xx {"status":"error","errors":[<stable names>]}
 ////
 //// The error names are the client's vocabulary (`BadUuid`, `BadPuzzleDate`,
 //// `TooManyMoves`, `BadSlot`, `BadDirection`, `UnknownPuzzle`, `BadTimezone`,
-//// `BadRequest`, `RateLimited`, `StoreError`, and phase 4a's `BadName`,
+//// `BadRequest`, `RateLimited`, `StoreError`, and the admin routes' `BadName`,
 //// `BadDrawing`) and are part of the contract: the toy and the admin UI map
 //// them to copy, so they never change silently.
 ////
-//// Phase 4a moved these helpers out of toy_admin.gleam because the admin routes
-//// (admin.gleam) answer in the same vocabulary as the public ones. One module,
-//// not two dialects: a reviewer checking the contract checks this file.
+//// One module, not two dialects: the admin routes answer in the same vocabulary
+//// as the public ones, so a reviewer checking the contract checks this file.
 
 import gleam/int
 import gleam/json
@@ -68,7 +67,7 @@ pub fn rate_limited(retry_after_seconds: Int) -> wisp.Response {
   |> wisp.set_header("retry-after", int.to_string(retry_after_seconds))
 }
 
-/// The plan's "nothing published" answer (Q5).
+/// The "nothing published" answer.
 pub fn none_response() -> wisp.Response {
   json.object([
     #("status", json.string("none")),

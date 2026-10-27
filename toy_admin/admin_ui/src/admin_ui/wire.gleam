@@ -1,8 +1,8 @@
-//// The admin UI's view of the wire (PLAN-daily-puzzles.md §8) — decode what
-//// the backend sends, encode what it accepts.
+//// The admin UI's view of the wire — decode what the backend sends, encode
+//// what it accepts.
 ////
 //// Everything the UI knows about the API lives here, so the view and the update
-//// function stay free of JSON. The envelope is the contract (§8):
+//// function stay free of JSON. The envelope is the contract:
 ////
 ////   {"status":"ok",   ...payload}     -> Ok(payload)
 ////   {"status":"none", "fallback":true} -> an empty payload, not an error
@@ -11,9 +11,9 @@
 //// The names are the contract too — `DuplicateShowDate`, `BadName`,
 //// `BadPuzzleDate`, `BadDrawing`, `BadRequest`, `UnknownPuzzle`, `Unauthorized`,
 //// `StoreError` — and `failure_text` is the ONE place that turns them into
-//// words. A name it
-//// does not know is shown verbatim rather than swallowed: an unmapped error is a
-//// bug in this file, and hiding it would make the bug invisible.
+//// words. A name it does not know is shown verbatim rather than swallowed: an
+//// unmapped error is a bug in this file, and hiding it would make the bug
+//// invisible.
 
 import admin_ui/dial
 import admin_ui/score
@@ -34,7 +34,7 @@ pub const status_draft = "draft"
 /// carries the agent's id instead, which is what the menu badges on.
 pub const creator_human = "human"
 
-/// One row of the menu: identity, schedule, WHO filed it, and the Q23 numbers
+/// One row of the menu: identity, schedule, WHO filed it, and the stats numbers
 /// (nulls while a puzzle has no attempts).
 pub type Row {
   Row(
@@ -58,14 +58,13 @@ pub fn is_draft(row: Row) -> Bool {
 }
 
 /// A puzzle as the editor uses it: the drawing (when the API sent one) plus the
-/// derived fixture. `dials` is data, not a constant (Q19) — the editor renders
+/// derived fixture. `dials` is data, not a constant — the editor renders
 /// the dials the fixture declares.
 ///
 /// `patches` is the puzzle's starting perturbation, one entry per dial slot,
 /// derived by the backend with the fixture (fixture_json.gleam) so the editor's
-/// test play opens exactly where the player's board opens. An empty list means
-/// a fixture stored before the field existed: `play_from` then falls back to the
-/// editor's old standard row.
+/// test play opens exactly where the player's board opens. An empty list falls
+/// back to the standard row in `play_from`.
 pub type Fixture {
   Fixture(
     name: String,

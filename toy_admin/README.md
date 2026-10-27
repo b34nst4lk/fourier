@@ -1,8 +1,11 @@
 # toy_admin
 
 The daily-puzzle backend for the fourier toys — the umbrella's one
-Erlang-native piece (`docs/PLAN-daily-puzzles.md` §3 Q15). The host box has no
-Erlang, so **every** build/test/run here happens inside Docker.
+Erlang-native piece. The host box has no Erlang, so **every** build/test/run
+here happens inside Docker.
+
+Shipped and serving. Design history lives in `docs/archive/`; `docs/PROGRESS.md`
+is the rolling ledger.
 
 ## Gates
 
@@ -36,7 +39,7 @@ cd toy_admin && docker compose up -d --build   # container_name: toy_admin
 The wisp app listens on `$PORT` (default 8080) bound to `0.0.0.0` and joins the
 external `home_server-network`, so the cloudflared tunnel reaches it as
 `http://toy_admin:8080`. No host ports are published — the tunnel is the only
-ingress, and authentication is Cloudflare Access at that edge (Q12), not here.
+ingress, and authentication is Cloudflare Access at that edge, not here.
 
 ```sh
 # state lives in a named volume (toy_admin-data) at DB_PATH; the app creates the
@@ -75,7 +78,7 @@ visible in logs.
 
 Unparsable or non-positive throttle values fall back to the default rather than
 switching a fence off. The counters are in-memory (an ETS table), reset by a
-restart, and not shared between replicas — the plan's "no persistence" call.
+restart, and not shared between replicas — deliberately no persistence.
 
 ## Layout
 

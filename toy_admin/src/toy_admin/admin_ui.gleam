@@ -1,10 +1,10 @@
-//// The embedded admin UI (PLAN-daily-puzzles.md §3 Q18, phase 4b).
+//// The embedded admin UI.
 ////
 //// The admin UI is a Lustre app (toy_admin/admin_ui/) in its own Gleam package,
 //// built to ONE self-contained HTML file by scripts/build-admin-ui.sh and baked
 //// into this image at priv/admin.html (the Dockerfile's `ui` stage). The server
 //// serves those bytes unchanged at /api/admin — no templating, no decoding, no
-//// per-request file read. The single-file rule is the house's (§3 Q18); the blog
+//// per-request file read. The single-file rule is the house's; the blog
 //// route stays the escape hatch if embedding ever chafes.
 ////
 //// Why the file is read ONCE, at boot (main → load): the bundle is a build

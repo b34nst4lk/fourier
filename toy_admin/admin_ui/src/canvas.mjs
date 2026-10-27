@@ -7,15 +7,15 @@
 // extras-chained comet, and the pen that reads the SAME chain-centre pass as the
 // circles so it cannot drift. Deviations, all deliberate:
 //   - the canvas id is a parameter of the boot (one board per view);
-//   - the loop STOPS when its canvas leaves the DOM (the editor swaps views,
-//     the toy never did) — otherwise a stale element keeps the CPU awake;
+//   - the loop STOPS when its canvas leaves the DOM (the editor swaps views) —
+//     otherwise a stale element keeps the CPU awake;
 //   - `event_point` maps a pointer into the drawing panel's 0..100 space
 //     (fourier_sketch's letterbox math, square panel);
 //   - `draw_render` paints the authoring panel: the polygon through the dots
 //     plus the draft's closing edge — no target, no comet, no animation
 //     (nothing is derived in the browser: the fixture comes from the API);
-//   - the test-play board wears the TOY'S ink scheme (index.html /
-//     fourier_toy_ffi.mjs PALETTES): one colour per dial KIND — red phase,
+//   - the test-play board wears the TOY'S ink scheme (fourier_toy_ffi.mjs
+//     PALETTES): one colour per dial KIND — red phase,
 //     yellow radius, blue k, neutral wash for non-dialable terms — keyed on
 //     dial.kind_code, never on the slot index (the arrangement is data).
 //
@@ -123,9 +123,9 @@ const draw_state = { canvas: null, ctx: null, w: 0, h: 0, dpr: 0, path: "", dots
 // never a queue, never a busy loop — paints it as soon as the canvas exists.
 // Why: a view swap (BackToAuthoring / StartNew / StartEdit) fires the paint
 // effect in the same turn the DOM is patched, so getElementById can still miss
-// the canvas it is about to mount; the old code dropped that paint silently and
-// nothing retriggered it (the drawing appeared only after the next dot tap).
-// Bounded so a paint aimed at a view that never mounts (a stale effect) ends.
+// the canvas it is about to mount, and nothing retriggers a dropped paint (the
+// drawing would appear only after the next dot tap). Bounded so a paint aimed
+// at a view that never mounts (a stale effect) ends.
 const DRAW_RETRY_FRAMES = 60; // ~1s at 60fps: plenty for a view swap
 const draw_retry = { pending: false, tries: 0 };
 

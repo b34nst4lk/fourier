@@ -1,4 +1,4 @@
-//// Ingest validation (PLAN-daily-puzzles.md §2 Q22): uuid v4 format, the 500
+//// Ingest validation: uuid v4 format, the 500
 //// move cap, and per-move slot/direction ranges. Every problem is reported,
 //// not just the first — the client gets one complete answer.
 

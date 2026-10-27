@@ -1,4 +1,4 @@
-//// The match metric, client-side (PLAN-daily-puzzles.md §3 Q20, phase 4b).
+//// The match metric, client-side.
 ////
 //// PORTED from fourier_toy/shapes.gleam — `position_at`, `synth_trace`,
 //// `rms_pointwise`, `rms_polar`, `match_pct`. The toy computes the player's

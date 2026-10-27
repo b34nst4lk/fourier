@@ -1,8 +1,8 @@
-//// The request throttle (PLAN-daily-puzzles.md §3): per-uuid ~20/5min and
-//// per-IP 60/5min, both configurable, in memory only.
+//// The request throttle: per-uuid ~20/5min and per-IP 60/5min, both
+//// configurable, in memory only.
 ////
 //// WHY A THROTTLE AT ALL: the solve endpoint is the only write surface a
-//// stranger can reach. There are no accounts (Q16) — a uuid is a self-chosen
+//// stranger can reach. There are no accounts — a uuid is a self-chosen
 //// identity, cheap to forge — which is exactly why the IP limit is the outer
 //// fence and the uuid limit the inner one. Neither is a security control; both
 //// keep a stray script from filling the attempts table.
@@ -35,7 +35,7 @@ pub type Limit {
   Limit(hits: Int, window_seconds: Int)
 }
 
-/// The defaults the plan names: ~20 solves per uuid per 5 minutes, 60 per IP.
+/// The defaults: ~20 solves per uuid per 5 minutes, 60 per IP.
 pub const default_uuid_limit = Limit(hits: 20, window_seconds: 300)
 
 pub const default_ip_limit = Limit(hits: 60, window_seconds: 300)
