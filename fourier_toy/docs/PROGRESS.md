@@ -591,3 +591,27 @@ unkeyed diff replaces by index; a re-created canvas would stay blank until
 the next sync). Plan divergences, all strengthening: score pins that
 cannot distinguish 0% starts were replaced with stronger retire/POST pins;
 the cached boot passes no raw doc (reading the cache never rewrites it).
+
+## Legibility pass (2026-10-27, PLAN-legibility-pass.md)
+
+The five playtest answers, one RED-first cycle by the coder subagent under
+review (boot contract RED 133/148, smoke RED 229/236 — every failure the
+absent feature; GREEN 148/148 + 236/236, gleam 42/42, format, bench, dist
+byte-reproducible c592f4fb…): **press-highlight** — every step pulses its
+slot: an over-stroke emphasis ring on the board's term circle (width 3,
+alpha 0.9, ease-out swell ×1.15) plus the pressed column's ring, 600ms
+window, re-armed per hold tick (the chain circle itself is untouched — the
+geometry contract holds through the pulse); **blue arm trail** — 6
+alpha-stepped segments (0.15→1.0) over the last 45° behind the k column's
+arm tip, phase/radius draw none, a frozen k=0 arm draws none; **comet loop
+closure** — TAIL_FRAC 1.0, the seam gone, the alpha-ramp pins untouched;
+**bigger corner chips** — 20px icons, 41px computed touch target, both
+themes; **solve reveal** — at the ≥95% crossing the comet strokes full-
+alpha at 1.5× width for 2s over the dashed target (a sibling of the solve
+POST, once per crossing). Harness en route: boot-contract tick gained a
+frame count (windows need multiple frames), and a REAL vacuous-pass bug
+was caught — the smoke's daily session rode a dead RAF (boot_dom resets the
+global queue, and the frozen frame passed the old canvas pins vacuously),
+so the reveal sections boot fresh sessions and the dead fixture path was
+deleted. Pulse/reveal are draw-clock state (pending until the next frame
+stamps them) — the 30fps gate, dedupe and payload paths are unchanged.

@@ -103,12 +103,14 @@ function make_ctx() {
       st.x = x;
       st.y = y;
     },
-    arc: (x, y, r) => {
+    arc: (x, y, r, a0, a1) => {
       ops.arc++;
       if (!Number.isFinite(x) || !Number.isFinite(y)) ops.nan++;
       const f = frame();
-      if (f) f.arcs.push([x, y, r]);
-      if (st.path) st.path.arcs.push([x, y, r]);
+      // the start/end angles are recorded too: the legibility pass's arm trail
+      // is arc segments whose sweep is part of the contract
+      if (f) f.arcs.push([x, y, r, a0, a1]);
+      if (st.path) st.path.arcs.push([x, y, r, a0, a1]);
     },
     stroke: () => {
       ops.stroke++;
@@ -508,6 +510,37 @@ console.log("S0 · artifact CSS — dial columns, ordinal ink, input guards kept
       !/\n\.val \{/.test(html) &&
       !/\n\.id \{/.test(html) &&
       !/\.kind-(phase|radius|k|fixed)/.test(html),
+  );
+
+  // PLAN-legibility-pass §2/§4: the corner chips are real touch targets now —
+  // 20px icons (grown from 16px) and a ≥40px hit box = icon + padding + border.
+  // Icon-only + aria labels are unchanged (pinned in S1).
+  const chipRule = html.match(/\n\.chip \{[^}]*\}/);
+  const chipIconRule = html.match(/\.chip \.icon \{[^}]*\}/);
+  const iconPx = chipIconRule ? /width:\s*([\d.]+)px/.exec(chipIconRule[0]) : null;
+  const iconHPx = chipIconRule ? /height:\s*([\d.]+)px/.exec(chipIconRule[0]) : null;
+  const padPx = chipRule ? /padding:\s*([\d.]+)px/.exec(chipRule[0]) : null;
+  const borderPx = chipRule ? /border:\s*([\d.]+)px/.exec(chipRule[0]) : null;
+  const hitTarget =
+    iconPx && padPx && borderPx
+      ? Number(iconPx[1]) + 2 * Number(padPx[1]) + 2 * Number(borderPx[1])
+      : NaN;
+  check(
+    "chip icons are 20px square (grown from 16px)",
+    iconPx !== null && iconHPx !== null && iconPx[1] === "20" && iconHPx[1] === "20",
+    chipIconRule ? chipIconRule[0].replace(/\s+/g, " ") : "missing",
+  );
+  check(
+    "chips are a ≥40px touch target (icon + padding + border)",
+    Number.isFinite(hitTarget) && hitTarget >= 40,
+    Number.isFinite(hitTarget)
+      ? hitTarget + "px = " + iconPx[1] + " icon + 2×" + padPx[1] + " padding + 2×" + borderPx[1] + " border"
+      : "chip rule: " + (chipRule ? chipRule[0].replace(/\s+/g, " ") : "missing"),
+  );
+  check(
+    "the chip rule is theme-independent (both themes share the target)",
+    chipRule !== null && !/body\[data-theme="dark"\][^{]*\{[^}]*\.chip \{/.test(html),
+    "chip rule: " + (chipRule ? chipRule[0].replace(/\s+/g, " ") : "missing"),
   );
 }
 
@@ -1352,7 +1385,6 @@ const uuid_now = (d) => d.window.localStorage.getItem("j-uid");
 }
 
 // ==== S8b · a fetched (old-format) puzzle takes the board over =============
-let daily_dom = null;
 {
   const d = boot_dom({ fetchMode: "ok", fetchBody: daily_json() });
   check(
@@ -1362,7 +1394,6 @@ let daily_dom = null;
   );
   await sleep(0);
   tick(34, 2);
-  daily_dom = d;
   check("the served puzzle's name is the title", h2_text(d).startsWith(DAILY_NAME), h2_text(d));
   check("the show date rides beside the name", when_text(d).includes(DAILY_DATE), when_text(d));
   check(
@@ -1497,8 +1528,15 @@ let daily_dom = null;
 }
 
 // ==== S8d · the solve moment posts ONCE =====================================
+// A FRESH session, not S8b's: the harness resets the global RAF
+// queue at every boot, which strands an earlier session's animation loop —
+// its canvas keeps only the frames drawn before the next boot. The reveal is
+// a live-clock behavior (PLAN-legibility-pass §2), so the solve-moment walk
+// runs where the loop is actually turning.
 {
-  const d = daily_dom;
+  const d = boot_dom({ fetchMode: "ok", fetchBody: daily_json() });
+  await sleep(0);
+  tick(34, 2);
   const uuid = uuid_now(d);
   for (const [slot, dir] of daily_walk.moves) {
     if (!click_move(d, slot, dir)) break;
@@ -1518,6 +1556,29 @@ let daily_dom = null;
   const count = counter_n(d);
   let solve_calls = posts(d).filter((c) => c.url === "/api/solve");
   check("exactly one solve POST", solve_calls.length === 1, "got " + solve_calls.length);
+  // PLAN-legibility-pass §2/§4: the SAME solve-moment effect list that POSTs
+  // also fires canvas_reveal() — for ~2s the comet strokes full alpha at 1.5×
+  // over the dashed target. It rides beside the POST, never gates it: the
+  // solve POST above is still exactly once.
+  const board = last_frame(d, "toy-board");
+  const comet_of = (f) =>
+    f ? f.strokes.filter((s) => s.arcs.length === 0 && s.lines.length >= 2 && s.style === "#111") : [];
+  const reveal = comet_of(board);
+  check(
+    "the solve reveals the trace (comet at full alpha, no ramp)",
+    reveal.length === 12 && reveal.every((s) => s.alpha === 1),
+    reveal.length + " chunks, alphas " + Array.from(new Set(reveal.map((s) => s.alpha))).join(","),
+  );
+  check(
+    "the reveal bolds the comet 1.5× (2.6 → 3.9)",
+    reveal.length > 0 && reveal.every((s) => s.width > 2.6),
+    "widths " + Array.from(new Set(reveal.map((s) => s.width))).join(","),
+  );
+  check(
+    "the reveal leaves the dashed target alone",
+    board !== null && board.strokes[0].style !== "#111" && board.strokes[0].width === 1.6,
+    board ? board.strokes[0].style + " @ " + board.strokes[0].width : "no frame",
+  );
   const body = solve_calls.length ? JSON.parse(solve_calls[0].body) : {};
   check(
     "the solve body carries the identity, the date and the moves played",
@@ -1554,6 +1615,21 @@ let daily_dom = null;
     "and the counter stays frozen",
     counter_n(d) === count,
     count + " → " + counter_n(d),
+  );
+  // the reveal is a window, not a state: after ~2s the ordinary 40→85% ramp
+  // returns untouched
+  tick(34, 65); // +2.21s
+  const laterComet = comet_of(last_frame(d, "toy-board"));
+  const laterA = laterComet.map((s) => s.alpha);
+  check(
+    "after ~2s the ordinary comet ramp returns (40→85% at 2.6)",
+    laterComet.length === 12 &&
+      Math.min(...laterA) >= 0.4 &&
+      Math.max(...laterA) <= 0.85 &&
+      laterComet.every((s) => s.width === 2.6),
+    laterComet.length
+      ? Math.min(...laterA).toFixed(2) + "–" + Math.max(...laterA).toFixed(2) + " @ " + laterComet[0].width
+      : "no comet",
   );
 }
 
@@ -2289,6 +2365,88 @@ console.log("S16 · j-last — the raw document is cached on every successful lo
     h2_text(cached).startsWith(DAILY_NAME) &&
       cached.window.localStorage.getItem("j-last") === cached_text,
     String(cached.window.localStorage.getItem("j-last")).slice(0, 40),
+  );
+}
+
+// ==== S17 · press-highlight — a step pulses its circle and its column ring ====
+// PLAN-legibility-pass §2/§4: the step's canvas push also pulses the slot that
+// moved (canvas_pulse(slot)) — ~600ms of a thicker emphasis ring on the board's
+// term circle and on the pressed column's ring, then back to baseline. Hold-
+// repeat re-arms it: each synthesized repeat is a step of its own.
+console.log("S17 · press-highlight — the pressed slot's circle + column ring pulse");
+{
+  const d = boot_dom();
+  await sleep(0); // the fallback answer lands
+  tick();
+  tick(34, 5);
+  const ring = (s) => s.arcs.length === 1 && s.lines.length === 0;
+  const emphasis = (f) => (f ? f.strokes.filter((s) => ring(s) && s.width === 3) : []);
+  const dial_rings = (f) =>
+    f ? f.strokes.filter((s) => ring(s) && s.arcs[0][2] > 10) : [];
+  const base = last_frame(d, "toy-board");
+  check(
+    "baseline: no emphasis ring before a step (thin circles, full alpha)",
+    base !== null &&
+      emphasis(base).length === 0 &&
+      dial_rings(base).length === 3 &&
+      dial_rings(base).every((s) => s.width === 1 && s.alpha === 1),
+    base
+      ? emphasis(base).length + " emphasis, widths " + dial_rings(base).map((s) => s.width).join(",")
+      : "no frame",
+  );
+
+  const btn = glyph(d, "increase phase");
+  if (btn) btn.click(); // slot 0 steps up
+  tick(34); // the frame that stamps the pulse (elapsed 0 = peak)
+  const peak = last_frame(d, "toy-board");
+  const emph = emphasis(peak);
+  check(
+    "a click pulses the pressed column's term circle (thicker alpha-carrying ring)",
+    emph.length === 1 && emph[0].alpha > 0.5 && emph[0].alpha < 1,
+    emph.length + " emphasis stroke(s), alpha " + (emph[0] ? emph[0].alpha : "-"),
+  );
+  check(
+    "the pulse rides the pressed column's ring too (col-0 brightens, col-1 does not)",
+    emphasis(last_frame(d, "col-0")).length === 1 &&
+      emphasis(last_frame(d, "col-1")).length === 0 &&
+      emphasis(last_frame(d, "col-2")).length === 0,
+    [0, 1, 2].map((i) => emphasis(last_frame(d, "col-" + i)).length).join(","),
+  );
+
+  tick(34, 20); // ~680ms — past the 600ms window
+  check(
+    "after the window the pulse is gone (no emphasis ring left behind)",
+    emphasis(last_frame(d, "toy-board")).length === 0 &&
+      emphasis(last_frame(d, "col-0")).length === 0,
+    emphasis(last_frame(d, "toy-board")).length +
+      " board + " +
+      emphasis(last_frame(d, "col-0")).length +
+      " col emphasis",
+  );
+
+  // hold-to-repeat re-arms the window: every synthesized repeat steps the dial
+  // and pulses it again
+  const ctx = board_canvas(d).__ctx;
+  ctx.frames.length = 0; // this dom is ours; keep the window under the 64-frame cap
+  const fire = (name) => btn.dispatchEvent(new d.window.Event(name, { bubbles: true }));
+  fire("pointerdown");
+  for (let i = 0; i < 6; i++) {
+    await sleep(150);
+    tick(34, 4); // draw the frames each repeat's pulse lands on
+  }
+  fire("pointerup");
+  const alphas = ctx.frames
+    .map((f) => {
+      const e = emphasis(f);
+      return e.length === 1 ? e[0].alpha : null;
+    })
+    .filter((a) => a !== null);
+  let rearms = 0;
+  for (let i = 1; i < alphas.length; i++) if (alphas[i] > alphas[i - 1] + 0.05) rearms++;
+  check(
+    "hold-to-repeat re-arms the pulse per tick (the emphasis peaks again)",
+    btn !== null && rearms >= 2,
+    rearms + " re-arms over " + alphas.length + " emphasised frames",
   );
 }
 

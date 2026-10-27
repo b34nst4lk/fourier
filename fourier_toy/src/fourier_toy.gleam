@@ -191,6 +191,28 @@ fn push_terms(
   effect.from(fn(_dispatch) { ffi.canvas_terms(state, kinds) })
 }
 
+/// The STEP's canvas push: the terms first, then the press-highlight for the
+/// slot that moved (PLAN-legibility-pass §2). The pulse is a sibling of the
+/// terms push, so every step pulses — including hold-repeat ticks, which are
+/// steps of their own.
+fn push_step_terms(
+  state: List(TermState),
+  kinds: List(puzzle.DialKind),
+  slot: Int,
+) -> Effect(Msg) {
+  effect.from(fn(_dispatch) {
+    ffi.canvas_terms(state, kinds)
+    ffi.canvas_pulse(slot)
+  })
+}
+
+/// The solve moment's reveal (PLAN-legibility-pass §2): a sibling of the solve
+/// POST in the same effect list — the POST's timing, retries and dedupe are
+/// untouched.
+fn reveal_effect() -> Effect(Msg) {
+  effect.from(fn(_dispatch) { ffi.canvas_reveal() })
+}
+
 /// Ask for today's puzzle. `tz` is minutes to ADD to UTC (the API's spelling),
 /// so the backend resolves the visitor's own date.
 fn fetch_effect() -> Effect(Msg) {
@@ -332,16 +354,20 @@ fn slot_step(model: Model, slot: Int, dir: Int) -> #(Model, Effect(Msg)) {
       attempt: next_attempt,
     )
   // the solve moment is the one moment that posts — and it marks the attempt
-  // reported only when the server says it landed
+  // reported only when the server says it landed. The reveal rides beside the
+  // POST (once per crossing): the network side is not gated on the canvas.
   let effects = case solved_before, next_attempt {
-    False, Some(a) if solved_now -> [solve_effect(model.uuid, a)]
+    False, Some(a) if solved_now -> [
+      solve_effect(model.uuid, a),
+      reveal_effect(),
+    ]
     _, _ -> []
   }
   #(
     model,
     batch(
       list.flatten([
-        [push_terms(stepped, model.setup.dials)],
+        [push_step_terms(stepped, model.setup.dials, slot)],
         effects,
         saved(next_attempt),
       ]),
