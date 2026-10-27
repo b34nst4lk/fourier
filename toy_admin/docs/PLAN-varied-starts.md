@@ -29,7 +29,7 @@ admin UI and the agent door are all untouched.
 | # | Decision | Ruling |
 |---|----------|--------|
 | 1 | Granularity | **Per-puzzle at save time, never per-player.** The user's pushback ("would prefer everyone start at the same position") is satisfied by construction: the start is part of the published document. |
-| 2 | Phase offset | Drawn on the 5° dial grid with magnitude in **[45°, 315°]** — at least a 45° turn from truth, either direction (315° ≡ −45°). 55 possible values. |
+| 2 | Phase offset | Drawn on the 5° dial grid with magnitude in **[45°, 315°]** — at least a 45° turn from truth, either direction (315° ≡ −45°). 55 possible values. *(Amended 2026-10-27, the whole-repo review's drift finding: the offset itself is ≥45° and on-grid, but `snap5` runs AFTER the offset is added, so the OBSERVED turn — patch minus the off-grid truth phase — can round to as little as 42.5°. The ruling's intent — a clearly perceivable turn, never near-truth — holds, and the derivation test pins the observed floor at 42.5°; adjusting the snap order would re-derive the whole published calendar for an imperceptible 2.5°, so the ruling text takes the honest amendment instead.)* |
 | 3 | k shift | Drawn nonzero from **{−3, −2, −1, +1, +2, +3}**; the `k_min` (−16) wall flip is preserved (a shift that would fall below the wall flips sign). |
 | 4 | Radius | **Constant 73%** — the anchor the ring's meaning is built on; not flagged by the playtest, not varied. |
 | 5 | Determinism | The draw is a **pure function of the puzzle** (a hash over its dial truth): same drawing → same patches (reproducible saves, deterministic tests); different drawings → different offsets. No RNG state, no OTP dependence. |

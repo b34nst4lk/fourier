@@ -11,7 +11,6 @@ Daily-puzzle backend + admin: per-feature plans, this rolling ledger.
 | 4a | Admin API | ✅ done (2026-10-25, coder subagent deepseek-v4.1-flash:cloud, **reviewed 2026-10-25**) | fence (`Cf-Access-Jwt-Assertion`, audience `ADMIN_ACCESS_AUD`, expiry; NO signature check — documented) + CRUD `/api/admin/puzzles[/<id>]` (create re-derives, edit re-derives on dots change, delete keeps telemetry) + Q23 menu stats (solvePct one decimal, medianMoves of all attempts incl. abandons, nulls on no data) + `envelope.gleam`; 192 tests green in the Docker gate; live wire probes with a hand-crafted JWT |
 | 4b | Admin UI | ✅ done + 4 browser fixes (2026-10-25, coder subagent, reviewed) | Lustre bundle (admin_ui/, JS target), draw authoring + preview test-play, menu with Q23 stats, delete confirm; embedded at /api/admin behind the fence; 41 UI tests + 201 backend tests |
 | 5 | Deploy | ⬜ (code done: ui stage in Dockerfile, build-admin-ui.sh, ADMIN_ACCESS_AUD env) | tunnel ingress rule, user's CF dashboard steps (Access, rate limit, bot fight), compose up; set `ADMIN_ACCESS_AUD` |
-| 5 | Deploy | ⬜ (code done: ui stage in Dockerfile, build-admin-ui.sh, ADMIN_ACCESS_AUD env) | tunnel ingress rule, user's CF dashboard steps (Access, rate limit, bot fight), compose up |
 
 ## Notes
 

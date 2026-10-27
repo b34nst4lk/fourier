@@ -42,7 +42,10 @@
 ////   slot 1 (phase)   PhaseDeg(snap5(truth_phase + offset)),
 ////                    offset = 45 + 5·(seed mod 55) — 45°..315° in 5° steps:
 ////                    at least a 45° turn from truth either direction (315° is
-////                    −45°), never a whole circle, always step-able
+////                    −45°), never a whole circle, always step-able. NB: the snap
+////                    runs AFTER the offset is added, and the truth phase itself
+////                    is off-grid, so the OBSERVED turn can land at 42.5° — the
+////                    plan's amended floor (PLAN-varied-starts §1 decision 2)
 ////   slot 2 (radius)  RPct(73.0) — 73% of dial_max_r: THE anchor the ring's
 ////                    meaning is built on. Not flagged by the playtest, not
 ////                    varied.
