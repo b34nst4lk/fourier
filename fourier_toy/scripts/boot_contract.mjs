@@ -1486,6 +1486,43 @@ console.log("S18 · solve reveal — the comet snaps solid over the target for ~
   );
 }
 
+console.log("S19 · identity — only a canonical lowercase v4 uuid is reused");
+{
+  // The backend's `is_uuid_v4` accepts lowercase only. Reusing a hand-edited
+  // UPPERCASE value would make every solve POST fail BadUuid forever, so the
+  // reuse check must require the canonical spelling and regenerate otherwise.
+  const store = new Map();
+  globalThis.window.localStorage = {
+    getItem: (k) => (store.has(k) ? store.get(k) : null),
+    setItem: (k, v) => store.set(k, String(v)),
+    removeItem: (k) => store.delete(k),
+  };
+  const LOWER = "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d";
+  const UPPER = LOWER.toUpperCase();
+  const LOWER_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+
+  store.set("j-uid", LOWER);
+  check(
+    "a stored lowercase v4 uuid is reused unchanged",
+    ffi.uuid_ensure() === LOWER && store.get("j-uid") === LOWER,
+    String(store.get("j-uid")),
+  );
+
+  store.set("j-uid", UPPER);
+  const made = ffi.uuid_ensure();
+  check("an UPPERCASE stored uuid is NOT reused", made !== UPPER, String(made));
+  check(
+    "the replacement is a canonical lowercase v4 uuid",
+    LOWER_V4.test(made),
+    String(made),
+  );
+  check(
+    "the replacement overwrites the malformed stored identity",
+    LOWER_V4.test(made) && store.get("j-uid") === made,
+    String(store.get("j-uid")),
+  );
+}
+
 console.log("");
 console.log(passed + "/" + (passed + failed) + " checks passed");
 if (failed > 0) process.exit(1);

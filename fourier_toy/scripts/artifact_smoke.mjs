@@ -1722,6 +1722,45 @@ const uuid_now = (d) => d.window.localStorage.getItem("j-uid");
   );
 }
 
+// ==== S8f2 · a new day retires only a PLAYED attempt =========================
+// A stored attempt from another day with count 0 was opened and never stepped:
+// abandoning it would post a 0-move record into the difficulty data (dragging
+// medianMoves down). The reset path already skips it (`Some(a) if a.count > 0`);
+// the new-day path has the same rule — an unplayed attempt is replaced silently.
+{
+  const d = boot_dom({
+    fetchMode: "ok",
+    fetchBody: daily_json(),
+    seed: {
+      "j-att": attempt_json({
+        date: OLD_DATE,
+        state: Array.from(daily_initial()),
+        moves: [],
+        count: 0,
+      }),
+    },
+  });
+  await sleep(0);
+  tick(34, 2);
+  const abandons = posts(d).filter((c) => c.url === "/api/attempts/abandon");
+  check(
+    "an untouched 0-move attempt from another day is NOT abandoned",
+    abandons.length === 0,
+    JSON.stringify(posts(d).map((c) => c.url)),
+  );
+  const stored = stored_attempt(d);
+  check(
+    "today's attempt still opens (the unplayed one is replaced silently)",
+    stored && stored.v === 2 && stored.date === DAILY_DATE && stored.count === 0,
+    JSON.stringify(stored && { date: stored.date, count: stored.count }),
+  );
+  check(
+    "the board shows today's start (90° marker, · 0 changes)",
+    angle_close(marker_deg(d), 90) && counter(d) === "· 0 changes",
+    marker_deg(d) + " · " + counter(d),
+  );
+}
+
 // ==== S8g · a solved day reloads solved — and re-reports only if it must ===
 {
   const solved_state = daily_walk.state;
@@ -1796,10 +1835,17 @@ const uuid_now = (d) => d.window.localStorage.getItem("j-uid");
 
 // ==== S8h · network trouble is the fallback, not an error ===================
 {
+  const empty_target_doc = () => {
+    const doc = daily_doc();
+    return JSON.stringify({ ...doc, puzzle: { ...doc.puzzle, target: [] } });
+  };
   for (const [label, opts] of [
     ["a rejected request (offline)", { fetchMode: "reject" }],
     ["a 500 from the API", { fetchMode: "http500" }],
     ["a document this decoder cannot use", { fetchMode: "ok", fetchBody: "<html>tunnel</html>" }],
+    // an empty target trace is a valid array but no metric at all: the
+    // decoder must refuse it at the boundary, never reach the RMS derivation
+    ["a served document with an empty target trace", { fetchMode: "ok", fetchBody: empty_target_doc() }],
   ]) {
     const d = boot_dom(opts);
     await sleep(0);

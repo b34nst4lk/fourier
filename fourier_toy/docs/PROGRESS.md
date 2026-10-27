@@ -615,3 +615,26 @@ global queue, and the frozen frame passed the old canvas pins vacuously),
 so the reveal sections boot fresh sessions and the dead fixture path was
 deleted. Pulse/reveal are draw-clock state (pending until the next frame
 stamps them) — the 30fps gate, dedupe and payload paths are unchanged.
+
+## Review fix round (2026-10-27, the whole-repo review's three warnings)
+
+The repo-reviewer pass (deepseek-v4-pro:cloud) found no criticals; its
+three warnings are fixed on this branch by the coder subagent under review,
+each RED-first (gleam RED 42/1 — the empty-target panic caught live in the
+failing test's own stack; smoke RED 238/240; boot contract RED 149/152):
+(1) a served document with an EMPTY target is refused at the wire boundary
+(the outer arity gate, BEFORE shape construction — the reviewer's crash
+finding; the stranded-in-Loading variant on this branch covered by the same
+check), decoded to the documented fallback; (2) `retire_then_open` abandons
+only PLAYED attempts (`count > 0`, the reset path's rule) — a 0-move attempt
+from an older day is replaced silently, so the difficulty data stops
+collecting spurious 0-move abandons; (3) `uuid_ensure` accepts only the
+CANONICAL LOWERCASE v4 form (the backend's validator is case-sensitive; an
+uppercase hand-edited j-uid would have been reused and every solve POST
+rejected BadUuid forever) — malformed identities regenerate and overwrite.
+Gates: gleam 43/43, smoke 240/240, boot contract 152/152 (its S19 installs
+the contract's first storage stub; a vacuous overwrite-pin was caught and
+strengthened en route), bench green, dist byte-reproducible c5e47d8e….
+The docs side landed on main (3976dab): the varied-starts 45° ruling
+amended honestly to the 42.5° post-snap floor, the duplicated toy_admin
+ledger row deduped.

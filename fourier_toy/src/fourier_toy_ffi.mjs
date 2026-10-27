@@ -854,7 +854,11 @@ export function hold_init() {
 // that must still play.
 
 const UID_KEY = "j-uid";
-const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+// The backend's `is_uuid_v4` accepts the canonical LOWERCASE form only, so this
+// pattern is case-sensitive on purpose: an uppercase value would be reused here
+// and then rejected BadUuid on every solve POST — regenerating is the only
+// working identity (both generators below already emit lowercase).
+const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
 // The API's `tz` is minutes to ADD to UTC (plan Q4) — the opposite sign of
 // Date#getTimezoneOffset, which is minutes to SUBTRACT. UTC+2 ⇒ 120.
@@ -896,8 +900,8 @@ export function ls_del(key) {
 
 // The site-wide anonymous identity (plan Q16): created once, reused forever,
 // so a player's solves across days are recognised as one player. A stored
-// value that is not a v4 uuid (hand-edited, a different app's key) is replaced
-// — the backend refuses anything else.
+// value that is not a CANONICAL LOWERCASE v4 uuid (hand-edited, a different
+// app's key) is replaced — the backend refuses anything else.
 export function uuid_ensure() {
   const stored = ls_get(UID_KEY);
   if (typeof stored === "string" && UUID_V4.test(stored)) return stored;

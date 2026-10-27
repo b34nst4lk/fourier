@@ -557,8 +557,14 @@ fn retire_then_open(
     // a solve from that day that never landed: report it before the day is
     // forgotten (it is worth more than the abandon)
     True, False -> [solve_effect(model.uuid, old_attempt)]
-    // started and dropped: the abandon record (Q21)
-    False, _ -> [abandon_effect(model.uuid, old_attempt)]
+    // started and dropped: the abandon record (Q21) — but only when something
+    // was actually played. A 0-move attempt was never stepped, so it is
+    // replaced silently (the reset path's rule); abandoning it would post a
+    // spurious 0-move record and skew the difficulty data.
+    False, _ if old_attempt.count > 0 -> [
+      abandon_effect(model.uuid, old_attempt),
+    ]
+    False, _ -> []
     True, True -> []
   }
   open_fresh(model, daily.show_date, start, retire)
