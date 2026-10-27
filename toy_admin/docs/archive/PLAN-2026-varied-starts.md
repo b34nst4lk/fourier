@@ -1,3 +1,9 @@
+> **Archived (2026-10-27)** — shipped: this plan's work is merged to main
+> (66abb65, varied-starts via its own Phase 1+2) and serving production
+> (https://jacks.im/toys/doodle/), with every phase's acceptance criteria
+> green and the whole-repo review's findings fixed or recorded. Retired and
+> kept for history; live plan work continues in new per-feature documents.
+
 # PLAN — Varied daily starts (per-puzzle offset draw at save time)
 
 > Plan of record for `toy_admin`. Product decisions are **user-ruled**

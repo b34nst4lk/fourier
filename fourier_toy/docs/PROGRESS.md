@@ -638,3 +638,19 @@ strengthened en route), bench green, dist byte-reproducible c5e47d8e….
 The docs side landed on main (3976dab): the varied-starts 45° ruling
 amended honestly to the 42.5° post-snap floor, the duplicated toy_admin
 ledger row deduped.
+
+## Round 2 shipped (2026-10-27)
+
+playtest-round-2 merged to main (66abb65, a true merge over the diverged doc
+line) and prod deployed from it: the doodle at jacks.im/toys/doodle serves
+the round-2 build (fetch-first boot + legibility pass + the review fixes,
+byte-identical to the /toys/doodle-dev/ spike, live-verified; the old
+fourier-toy address still 404; the API still serving). Gates on merged
+main: gleam 43/43, boot contract 152/152, smoke 240/240, bench green. All
+three round-2 plans completed and archived (PLAN-2026-fetch-first-boot,
+PLAN-2026-legibility-pass, toy_admin's PLAN-2026-varied-starts — the
+backend's varied calendar went live earlier the same day: 21 future puzzles
+re-derived, no two days opening alike). The parked review suggestions
+remain open for a future round: CI gaps (node contracts + backend suite not
+in CI), the request-body cap, the over-broad unique-violation match, and
+the untracked playtest/drafts records.
