@@ -1,11 +1,11 @@
-// Boot/payload + dial-column contract for the v2 canvases (pure Node, no DOM
+// Boot/payload + dial-column contract for the canvases (pure Node, no DOM
 // deps — house bench pattern from fourier_sketch/scripts/bench_render.mjs).
 //
 // Two contracts live here:
 //
-// 1. Boot/payload (PLAN-dial-columns §4, retained from the board contract).
-//    The premise, verified in Lustre's runtime source (runtime/client/
-//    runtime.ffi.mjs, constructor): init effects run BEFORE the first render —
+// 1. Boot/payload. The premise, verified in Lustre's runtime source
+//    (runtime/client/runtime.ffi.mjs, constructor): init effects run BEFORE the
+//    first render —
 //      this.#handleEffects(effects);   // ← sync_effect fires here
 //      this.#render();                 // ← the canvas mounts here
 //    and hashchange dispatches run effects synchronously while renders are
@@ -13,10 +13,10 @@
 //    Contract: the payload pushed by a pre-mount sync must SURVIVE until the
 //    canvas exists; a late boot must paint it. Payloads are stashed
 //    unconditionally and boot (canvas binding) is orthogonal — the sibling
-//    fourier_sketch_ffi pattern proven in production. Phase 2 generalizes it
-//    from ONE canvas to FOUR (board + the three dial columns).
+//    fourier_sketch_ffi pattern proven in production, generalized here from
+//    ONE canvas to FOUR (board + the three dial columns).
 //
-// 2. The dial columns (PLAN-dial-columns §2/§4). Each column canvas is its
+// 2. The dial columns. Each column canvas is its
 //    term's epicycle in miniature, on the board's clock: ring + arm from the
 //    centre at the exact position_at angle (2π·k·t + φ) + a pen dot at the tip.
 //    - phase column: fixed ring at 0.5 × space, plus a lone static start-marker
@@ -29,7 +29,7 @@
 //    side is a full-space ring's diameter, so a phase ring (0.5 × space) has
 //    diameter = half the box and the radius ceiling fills the box exactly.
 //
-// 3. The legibility pass (PLAN-legibility-pass §2/§4) — two draw-state effects
+// 3. The two draw-state effects — two effects
 //    that ride the SAME clock as the comet (no payload, no wire):
 //    - press-highlight (`canvas_pulse(slot)`): for PULSE_MS ≈ 600ms after the
 //      pulse, the board's term-slot circle gains a thicker emphasis ring (width
@@ -61,7 +61,7 @@ const STEPS = 512; // the trace resolution (fourier_toy_ffi.mjs STEPS)
 const COMET_WIDTH = 2.6; // the comet's ordinary stroke width
 const TOL = 1.3; // px — house geometry tolerance
 
-// the legibility pass's own parameters (PLAN-legibility-pass §2)
+// the draw-state effects' own parameters
 const PULSE_MS = 600; // press-highlight window
 const PULSE_WIDTH = 3; // the emphasis ring's width (baseline 1 on the board)
 const PULSE_ALPHA = 0.9; // the emphasis's alpha at the press
@@ -210,7 +210,7 @@ globalThis.requestAnimationFrame = (cb) => {
 };
 globalThis.cancelAnimationFrame = () => {};
 let NOW = 1000.0;
-// `n` frames of `ms` each (the smoke's spelling): the legibility windows are
+// `n` frames of `ms` each (the smoke's spelling): the effect windows are
 // 600ms/2000ms, so several frames per check are needed to cross them
 function tick(ms = 16, n = 1) {
   for (let i = 0; i < n; i++) {
@@ -423,7 +423,7 @@ console.log("S1 · cold load onto a board — sync arrives BEFORE the canvases m
   );
   check("target trace drawn (moveTo on target path)", ops.moveTo >= 13, "moveTo " + ops.moveTo);
 
-  // Phase 2: the SAME retry binds the three column canvases, and the stashed
+  // the SAME retry binds the three column canvases, and the stashed
   // payload paints all of them (no re-push needed).
   for (let i = 0; i < COLS.length; i++) {
     const col = made[COLS[i]];
@@ -615,9 +615,8 @@ console.log("S6 · quaver at truth — DPR transform, pen/comet lockstep, comet 
     maxA <= 0.85 + 1e-9 && cometA[0] < cometA[cometA.length - 1],
     "max " + maxA.toFixed(3) + ", head " + cometA[0] + " tail " + cometA[cometA.length - 1],
   );
-  // the lap closes (PLAN-legibility-pass §2/§4): TAIL_FRAC 0.98 → 1.0, so the
-  // comet walks every sample of the trace — the seam at the start of the lap
-  // is gone, and the tail begins exactly where the head is.
+  // the lap closes: TAIL_FRAC is 1.0, so the comet walks every sample of the
+  // trace — the tail begins exactly where the head is, no seam.
   const covered = last.comet.reduce((n, s) => n + (s.pts.length - 1), 0);
   check(
     "comet covers the full lap (TAIL_FRAC 1: all 512 samples, no seam)",
@@ -636,12 +635,12 @@ console.log("S6 · quaver at truth — DPR transform, pen/comet lockstep, comet 
 
 console.log("S7 · ordinal ink on the board — chain position decides the colour, both modes");
 {
-  // Ordinal ink (PLAN-dial-columns §3): term 0 red, term 1 yellow, term 2 blue
+  // Ordinal ink: term 0 red, term 1 yellow, term 2 blue
   // — always. The standard arrangement makes ordinal ≡ kind visually; the
   // contract is the chain position. Extras stay the neutral wash.
-  // NOTE the light yellow: the brief's print-yellow #c9a411 measures 2.31:1 on
-  // the white card (below the 3:1 non-text floor), so light mode uses #8a6d00
-  // (4.75:1 on paper) — a darkened print-yellow.
+  // NOTE the light yellow: print-yellow #c9a411 measures 2.31:1 on the white
+  // card (below the 3:1 non-text floor), so light mode uses #8a6d00 (4.75:1 on
+  // paper) — a darkened print-yellow.
   const LIGHT = {
     ink: ["#c8321e", "#8a6d00", "#1f5fae"],
     neutral: "rgba(17,17,17,0.18)",
@@ -1204,7 +1203,7 @@ console.log("S15 · one clock — all four canvases repaint from the same 30fps 
   globalThis.window.devicePixelRatio = 2;
 }
 
-// ---- the legibility pass (PLAN-legibility-pass §2/§4) -----------------------
+// ---- the draw-state effects -------------------------------------------------
 // Board-wide effects need the real quaver start on a fresh clock, exactly like
 // column_scene: fresh module instance, t = 0 after the first frame, then one
 // real frame at a non-zero t.

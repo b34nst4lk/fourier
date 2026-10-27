@@ -1,6 +1,5 @@
-//// The stored attempt's codec and transitions (PLAN-daily-puzzles.md §1,
-//// Q21/Q24): one player's progress on one puzzle date, kept client-side so a
-//// reopened tab resumes where it left off.
+//// The stored attempt's codec and transitions: one player's progress on one
+//// puzzle date, kept client-side so a reopened tab resumes where it left off.
 ////
 //// What is pinned here: the exact JSON document (field names, the move pairs,
 //// the freeze boundary and the 500-entry cap) and the two POST bodies the
@@ -8,10 +7,9 @@
 //// with only the count) — the toy cannot import toy_admin, so these literals
 //// are the contract with the routes' decoders.
 ////
-//// Schema v2 (PLAN-dial-columns.md §4.1c): the board has THREE dialed terms
-//// (the 4-slot rows are gone), so `v` bumps 1→2 and `state` is a 3-term array.
-//// A stored v1 document is STALE — the sanctioned version-bump retirement:
-//// it decodes to Error(Nil) and the board starts fresh.
+//// Schema v2: `state` is a 3-term array, one entry per dialed term. A stored
+//// document of any other shape is STALE — the sanctioned version-bump
+//// retirement: it decodes to Error(Nil) and the board starts fresh.
 
 import fourier_toy/attempt
 import fourier_toy/shapes
@@ -64,7 +62,7 @@ pub fn an_attempt_round_trips_test() {
 pub fn a_v1_document_is_stale_test() {
   // Exactly what schema v1 wrote: four dial terms. A version bump is the
   // sanctioned way to retire a stored format — the board starts fresh, never
-  // with a half-restored 4-slot board and never with a crash.
+  // with a half-restored 4-term board and never with a crash.
   should.equal(
     Error(Nil),
     attempt.decode(
@@ -84,7 +82,7 @@ pub fn the_state_must_be_three_terms_test() {
   let term = fn(k: String, r: String, phase: String) {
     "{\"k\":" <> k <> ",\"r\":" <> r <> ",\"phase\":" <> phase <> "}"
   }
-  // four terms: the retired 4-slot board
+  // four terms: a 4-slot board's document
   should.equal(
     Error(Nil),
     attempt.decode(doc(
@@ -133,7 +131,7 @@ pub fn moves_are_recorded_in_play_order_test() {
 }
 
 pub fn the_move_list_caps_at_five_hundred_test() {
-  // Q1: the list is capped at 500 (the backend refuses more). Dropping the
+  // the list is capped at 500 (the backend refuses more). Dropping the
   // overflow keeps the record reproducible from the start state; the count
   // still tells the truth about how many steps were taken.
   let long =

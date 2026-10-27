@@ -6,15 +6,15 @@
 ////   - `dial`: the top-3 terms by amplitude (the puzzle's movable truth — the
 ////     dial-columns board has exactly three dials), with phases snapped to
 ////     the 5° dial grid so the dial lands exactly,
-////   - `extras`: every remaining row from the shape's spectrum (the former
-////     4th dial term included), held FIXED and baked identically into the
+////   - `extras`: every remaining row from the shape's spectrum (the 4th term
+////     included), held FIXED and baked identically into the
 ////     target and the current synthesis (the star/flower carry 1; the
-////     fish/quaver carry 26). The synthesis term set is unchanged: top-4 =
-////     top-3 + extras[0], so no metric value moves with the split.
+////     fish/quaver carry 26). One synthesis term set: top-4 = top-3 +
+////     extras[0], so no metric value depends on the split.
 ////   - `target`: the 512-point trace the comparison runs against,
 ////   - `rms_polar`: the target's RMS polar radius (the metric normalizer).
 ////
-//// Parameterization convention (see docs/PROGRESS.md):
+//// Parameterization convention:
 ////   star:   dot preset -> arc-length resample -> DFT (polygons: no smear)
 ////   flower: parametric rose, THETA-uniform DFT (arc-length smears smooth
 ////           shapes' spectra — measured), phase-snapped, target rebuilt.
@@ -220,7 +220,7 @@ pub fn flower() -> Shape {
       TermState(row.0, round6(row.1), snap5(norm_deg(row.2)))
     })
   let #(dial, extras) = split_dial(dial)
-  // top-3 + the baked 4th term = the same synthesis as before the split
+  // top-3 + the baked 4th term = the top-4 synthesis
   let target = synth_trace(#(50.0, 50.0), list.append(dial, extras))
   Shape(
     name: "flower",

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Build a SINGLE self-contained HTML file: dist/index.html inlines the whole
 # Lustre app (gleam runtime + fixtures + ffi) as one module script, bundled
-# by esbuild — the house pattern from the fourier_sketch post-mortem.
+# by esbuild — the house single-file pattern.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
