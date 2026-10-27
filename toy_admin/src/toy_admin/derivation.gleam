@@ -20,29 +20,48 @@
 //// derive_test pins that claim by rebuilding the trace from centroid + dial +
 //// extras.
 ////
-//// Starting patches (PLAN-daily-puzzles.md §1: the deterministic start)
-//// ----------------------------------------------------------------------
+//// Starting patches (PLAN-varied-starts §1/§2: the per-puzzle draw)
+//// -----------------------------------------------------------------
 //// A daily puzzle never opens at truth — the player's job is to walk four
 //// perturbed dials back onto it. The vocabulary is four constructors, one per
-//// dial slot, and the formula is the shipped quaver's own start generalised:
+//// dial slot (unchanged):
 ////
 ////   Patch = PhaseDeg(Float) | RPct(Float) | KSet(Int) | Keep
 ////
-////   slot 1 (phase)   PhaseDeg(snap5(truth_phase + 90°))   — a quarter turn
-////   slot 2 (radius)  RPct(73.0)                           — 73% of dial_max_r
-////   slot 3 (k)       KSet(truth_k − 2), or truth_k + 2 when that would fall
-////                    below k_min (−16): the shift flips instead of clamping,
-////                    so the player always has room to step back
-////   slot 4 (fixed)   Keep                                 — a fixed term is
-////                    already correct, and the player cannot turn it anyway
+//// Since 2026-10-27 the perturbation is DRAWN per puzzle at save time, so no
+//// two days open the same way (the retired fixed start — +90°, k −2 — was the
+//// shipped quaver's own, and a returning player learned the recipe instead of
+//// solving: rotate −90, add 2). The draw is a pure function of the puzzle: a
+//// hash over the dial truth, which derives deterministically from the drawing.
+//// No RNG state, no OTP entropy, no per-player anything — and the result is
+//// stored in the fixture, so every player of that day starts identically.
 ////
-//// Why exactly these numbers: they are fourier_toy/puzzle.gleam's quaver
-//// Setup — the start the shipped single puzzle has always had. The gold test
-//// (quaver_equivalent_drawing_reproduces_the_toys_start_test) runs the quaver's
-//// own drawing through this pipeline and demands that byte-for-byte patch
-//// list, so a fetched daily starts the way the built-in puzzle starts.
+////   seed = fnv1a(dial rows flattened as ints)
+////          per row [k, round(radius × 1e6), round(phase_deg × 100)]
+////
+////   slot 1 (phase)   PhaseDeg(snap5(truth_phase + offset)),
+////                    offset = 45 + 5·(seed mod 55) — 45°..315° in 5° steps:
+////                    at least a 45° turn from truth either direction (315° is
+////                    −45°), never a whole circle, always step-able
+////   slot 2 (radius)  RPct(73.0) — 73% of dial_max_r: THE anchor the ring's
+////                    meaning is built on. Not flagged by the playtest, not
+////                    varied.
+////   slot 3 (k)       KSet(truth_k + shift), shift = k_shifts((seed / 55) mod 6)
+////                    over {−3,−2,−1,+1,+2,+3}: always moves, never far. A
+////                    shift that would fall below k_min (−16) flips sign
+////                    instead of clamping, so the player always has room to
+////                    step back.
+////   slot 4 (fixed)   Keep — a fixed term is already correct, and the player
+////                    cannot turn it anyway
+////
 //// Why snap to 5°: the phase dial steps in 5°, so an off-grid start could never
-//// be stepped onto.
+//// be stepped onto. Why the radius is NOT drawn: it is the one dial whose
+//// meaning is fixed by the ring, and the playtest's complaint was the recipe,
+//// not the difficulty.
+////
+//// The toy's quaver FALLBACK keeps its own fixed start (it is not part of the
+//// daily sequence, fourier_toy/puzzle.gleam p9); served dailies no longer
+//// reproduce it, by design.
 ////
 //// Patches are resolved against the SHAPE, not baked here: RPct is a percentage
 //// of the shape's biggest dialable radius and KSet is an absolute kind. The toy
@@ -113,12 +132,95 @@ pub type Patch {
 /// flips rather than pushes a slot outside the dial.
 pub const k_min = -16
 
-/// The start's three constants, named so a test can point at them.
-pub const start_phase_turn_deg = 90.0
-
+/// The start's constant parts, named so a test can point at them: the radius
+/// anchor (never drawn) and the pool the k shift is drawn from (never zero).
 pub const start_radius_pct = 73.0
 
-pub const start_k_shift = -2
+/// §1 decision 3: the k shifts the draw may pick from — nonzero on purpose.
+pub const k_shifts = [-3, -2, -1, 1, 2, 3]
+
+/// §1 decision 2: the phase offset's draw space — 45° + 5·idx for
+/// idx in 0..54, i.e. 45°..315° in 5° steps (315° ≡ −45°).
+pub const phase_offset_min_deg = 45
+
+pub const phase_offset_steps = 55
+
+// FNV-1a, 32-bit (the classic parameters). The hash runs over the flattened
+// dial, so its byte representation is part of the contract: the draw for a
+// given drawing must never drift between saves or machines.
+const fnv_offset_basis = 2_166_136_261
+
+const fnv_prime = 16_777_619
+
+const two_32 = 4_294_967_296
+
+/// The puzzle's draw seed: FNV-1a over the dial rows flattened as ints, per
+/// row `[k, round(radius × 1e6), round(phase_deg × 100)]`.
+///
+/// The floats are scaled onto an integer grid because a hash needs bytes, and
+/// the scale is deliberately finer than the numbers are meaningful: the dial
+/// is a derived truth, so two different drawings must not collide on a
+/// rounded-away digit. The dial itself is deterministic (sorted by amplitude,
+/// ties by |k|), so the seed is a pure function of the puzzle — no RNG, no
+/// clock, no OTP.
+pub fn dial_seed(dial: List(Dial)) -> Int {
+  dial
+  |> list.flat_map(fn(row) {
+    [
+      row.k,
+      float.round(row.radius *. 1_000_000.0),
+      float.round(row.phase_deg *. 100.0),
+    ]
+  })
+  |> list.fold(fnv_offset_basis, fn(hash, value) {
+    list.fold(unsigned_bytes(value), hash, fn(hash, byte) {
+      { int.bitwise_exclusive_or(hash, byte) * fnv_prime } % two_32
+    })
+  })
+}
+
+/// The four bytes of an int's unsigned 32-bit two's-complement form, low byte
+/// first (a negative k hashes as itself, never as a clamped zero).
+fn unsigned_bytes(value: Int) -> List(Int) {
+  let remainder = value % two_32
+  let unsigned = case remainder < 0 {
+    True -> remainder + two_32
+    False -> remainder
+  }
+  [
+    unsigned % 256,
+    unsigned / 256 % 256,
+    unsigned / 65_536 % 256,
+    unsigned / 16_777_216 % 256,
+  ]
+}
+
+/// §1 decision 2: the phase turn the seed draws, in degrees (45..315, 5° steps).
+pub fn phase_offset_deg(seed: Int) -> Int {
+  phase_offset_min_deg + { 5 * { seed % phase_offset_steps } }
+}
+
+/// §1 decision 3: the k shift the seed draws — one of `k_shifts`, never zero.
+/// The draw is `(seed / 55) mod 6`, i.e. the seed's next base-55 digit, so the
+/// phase and the k draws are independent slices of the same hash.
+pub fn drawn_k_shift(seed: Int) -> Int {
+  let index = { seed / phase_offset_steps } % list.length(k_shifts)
+  case list.drop(k_shifts, index) {
+    [shift, ..] -> shift
+    [] -> panic as "k_shifts is indexed out of range"
+  }
+}
+
+/// The generalized wall flip: the shift applies, unless it would push the slot
+/// below `k_min` (−16) — then it flips sign instead of clamping, so the player
+/// always has room to step back to truth.
+pub fn shifted_k(truth_k: Int, shift: Int) -> Int {
+  let shifted = truth_k + shift
+  case shifted < k_min {
+    True -> truth_k - shift
+    False -> shifted
+  }
+}
 
 /// v1's dial pattern: slot 1 phase, slot 2 radius, slot 3 k, slot 4 fixed.
 pub fn standard_dial_arrangement() -> List(DialKind) {
@@ -173,26 +275,31 @@ pub fn derive_fixture(
         standard_dial_arrangement(),
         dial,
         extras,
-        standard_patches(dial),
+        varied_patches(dial),
         samples,
       )
     }
   }
 }
 
-/// The starting patches for a derived dial, in slot order (see the header).
+/// The starting patches for a derived dial, in slot order — the per-puzzle
+/// draw (see the header for the formula).
+///
 /// Public so the vocabulary is observable outside the pipeline and so the k
 /// wall at `k_min` can be tested without hunting for a drawing that lands on
 /// it.
-pub fn standard_patches(dial: List(Dial)) -> List(Patch) {
+pub fn varied_patches(dial: List(Dial)) -> List(Patch) {
   case dial {
     [] -> []
     [phase_slot, _radius_slot, k_slot, _fixed_slot, ..rest] -> {
       let _ = rest
+      let seed = dial_seed(dial)
       [
-        PhaseDeg(snap5(phase_slot.phase_deg +. start_phase_turn_deg)),
+        PhaseDeg(snap5(
+          phase_slot.phase_deg +. int.to_float(phase_offset_deg(seed)),
+        )),
         RPct(start_radius_pct),
-        KSet(start_k(k_slot.k)),
+        KSet(shifted_k(k_slot.k, drawn_k_shift(seed))),
         Keep,
       ]
     }
@@ -200,16 +307,6 @@ pub fn standard_patches(dial: List(Dial)) -> List(Patch) {
     // dial) has nothing to perturb per slot: emit what the slots we have can
     // express, and let the toy refuse anything but four.
     short -> list.map(short, fn(_row) { Keep })
-  }
-}
-
-/// The quaver's k perturbation, kept inside the dial: −2 normally, +2 instead
-/// when −2 would fall below `k_min`.
-pub fn start_k(truth_k: Int) -> Int {
-  let shifted = truth_k + start_k_shift
-  case shifted < k_min {
-    True -> truth_k - start_k_shift
-    False -> shifted
   }
 }
 

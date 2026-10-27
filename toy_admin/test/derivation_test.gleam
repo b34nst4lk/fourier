@@ -7,13 +7,17 @@
 //// (fourier_toy/shapes.gleam star fixture), radius tolerance 0.01 in sketch
 //// units (0..100 space).
 ////
-//// There is a SECOND gold here, for the starting patches (§1's deterministic
-//// start): the quaver's own drawing through this pipeline must produce
-//// EXACTLY the patches the shipped toy boots with (fourier_toy/puzzle.gleam
-//// p9: PhaseDeg(355.0), RPct(73.0), KSet(-5), Keep). The quaver's term table
-//// is copied below from fourier_toy/shapes.gleam because toy_admin cannot
-//// depend on the toy (it is a Lustre/JS package; this server is
-//// Erlang-native) — the parity assertion is what keeps the copy honest.
+//// There was a SECOND gold here, for the starting patches: the quaver's own
+//// drawing had to produce EXACTLY the patches the shipped toy boots with
+//// (fourier_toy/puzzle.gleam p9: PhaseDeg(355.0), RPct(73.0), KSet(-5),
+//// Keep). PLAN-varied-starts retired that: a served daily draws its own start
+//// per puzzle (no cross-day recipe is learnable), so the backend no longer
+//// reproduces the quaver's fixed start — the toy's quaver FALLBACK still
+//// boots with it, because it is not part of the daily sequence. The quaver's
+//// term table stays below, now as one of the DRAW probes: it still must run
+//// through the whole pipeline and get the same varied draw as any drawing.
+//// (The copy is from fourier_toy/shapes.gleam because toy_admin cannot depend
+//// on the toy — it is a Lustre/JS package; this server is Erlang-native.)
 
 import gleam/float
 import gleam/int
@@ -22,6 +26,7 @@ import gleeunit/should
 import helpers.{be_close}
 import sketch
 import toy_admin/derivation
+import toy_admin/fixture_json
 import util.{indices}
 
 const pi = 3.141_592_653_589_793
@@ -195,87 +200,203 @@ pub fn is_degenerate_detects_the_gated_fixture_test() {
   should.equal(False, derivation.is_degenerate(real))
 }
 
-// ---------- the starting patches (PLAN §1: the deterministic start) ----------
+// ---------- the varied draw (PLAN-varied-starts §1/§2) ----------------------
+//
+// The start is drawn per puzzle at save time: a pure hash over the dial truth
+// picks a phase turn (45°..315°, on the 5° grid) and a nonzero k shift
+// (±1..3, flipping at the k_min wall). Radius stays anchored at 73%, the fixed
+// slot stays Keep. Expected values below are the plan's acceptance criteria.
 
-pub fn quaver_equivalent_drawing_reproduces_the_toys_start_test() {
-  // GOLD (byte parity): the shipped quaver's own shape, expressed as a drawing
-  // and run through THIS pipeline, must produce exactly the patches the toy
-  // boots with. Any drift in the vocabulary (90°, 73%, k−2, the 5° snap) shows
-  // up here as a mismatch of the whole list — that is the point of the test.
+pub fn quaver_drawing_derives_and_draws_a_varied_start_test() {
+  // The quaver's own shape still runs the whole pipeline: its dial truth is
+  // unchanged (the drawing is), and its start is now the same drawn start as
+  // any other drawing's. This is what replaced the byte-parity gold: the toy's
+  // quaver FALLBACK keeps its fixed p9 start, the served dailies no longer do.
   let fixture = derivation.derive_fixture(quaver_dots(), "eighth", "2026-11-02")
   // sanity: the drawing really is the quaver (dial truth by amplitude order)
   should.equal([-1, 1, -3, 3], list.map(fixture.dial, fn(row) { row.k }))
-  should.equal(
-    [
-      derivation.PhaseDeg(355.0),
-      derivation.RPct(73.0),
-      derivation.KSet(-5),
-      derivation.Keep,
-    ],
-    fixture.patches,
-  )
-}
-
-pub fn standard_start_is_the_documented_vocabulary_test() {
-  // The star's four truth phases all sit at 270°, so the quarter-turn start
-  // lands exactly on 0°; radius is 73% of the biggest dialable radius, k is
-  // the truth shifted by −2, and the fixed slot keeps its (correct) truth.
-  let fixture = derivation.derive_fixture(sketch.star(), "star", "2026-10-25")
-  let assert [_, _, d2, _] = fixture.dial
+  should.equal(derivation.varied_patches(fixture.dial), fixture.patches)
+  let assert [_, _, k_slot, _] = fixture.dial
   let assert [
     derivation.PhaseDeg(deg),
     derivation.RPct(pct),
     derivation.KSet(k),
     derivation.Keep,
   ] = fixture.patches
-  be_close(deg, 0.0, 0.000_001)
-  be_close(pct, 73.0, 0.000_001)
-  should.equal(d2.k - 2, k)
+  should.equal(73.0, pct)
+  should.not_equal(k_slot.k, k)
+  should.be_true(deg >=. 0.0 && deg <. 360.0)
+  should.be_true(on_grid(deg))
 }
 
-pub fn start_phase_snaps_to_the_dial_grid_test() {
+pub fn varied_patches_is_deterministic_test() {
+  // §1 decision 5: the draw is a pure function of the puzzle. The same drawing
+  // draws the same four patches on every call, so a re-save is reproducible
+  // and no RNG state (nor OTP entropy) is anywhere in the pipeline.
+  let dial = derived_dial(sketch.star())
+  should.equal(4, list.length(derivation.varied_patches(dial)))
+  should.equal(derivation.varied_patches(dial), derivation.varied_patches(dial))
+  // The date is a label, not an input: two fixtures from the same dots agree.
+  let early = derivation.derive_fixture(sketch.star(), "star", "2026-10-28")
+  let later = derivation.derive_fixture(sketch.star(), "star", "2027-03-01")
+  should.equal(early.patches, later.patches)
+}
+
+pub fn varied_phase_offset_is_far_and_on_grid_test() {
+  // §1 decision 2: the turn is drawn on the 5° dial grid with magnitude in
+  // [45°, 315°] — at least a 45° step from truth either direction (315° is
+  // −45°), never a whole turn.
+  list.each(probes(), fn(probe) {
+    let #(label, dial) = probe
+    let truth = slot_phase(dial)
+    let offset = derivation.phase_offset_deg(derivation.dial_seed(dial))
+    expect(
+      offset >= 45,
+      label <> ": phase offset below 45°, got " <> int.to_string(offset),
+    )
+    expect(
+      offset <= 315,
+      label <> ": phase offset above 315°, got " <> int.to_string(offset),
+    )
+    expect(
+      offset % 5 == 0,
+      label <> ": phase offset off the 5° grid, got " <> int.to_string(offset),
+    )
+    // The start IS that turn applied to truth, snapped onto the dial grid.
+    let patch = start_phase(dial)
+    should.equal(derivation.snap5(mod360(truth +. int.to_float(offset))), patch)
+    expect(on_grid(patch), label <> ": start phase off the 5° grid")
+    // The observed turn (after the snap's ±2.5° rounding) is still far.
+    let turned = mod360(patch -. truth)
+    expect(
+      turned >=. 42.5 && turned <=. 317.5,
+      label <> ": start phase is not a far turn from truth",
+    )
+  })
+}
+
+pub fn varied_k_shift_is_small_and_nonzero_test() {
+  // §1 decision 3: the k shift is drawn nonzero from {−3, −2, −1, +1, +2, +3}.
+  // The k dial always moves — and never by so much that the player has to hunt
+  // for it — and the shift that was DRAWN is the one applied (flip included).
+  list.each(probes(), fn(probe) {
+    let #(label, dial) = probe
+    let shift = derivation.drawn_k_shift(derivation.dial_seed(dial))
+    expect(shift != 0, label <> ": the drawn k shift is zero")
+    expect(
+      list.contains(derivation.k_shifts, shift),
+      label <> ": drawn k shift outside ±1..3: " <> int.to_string(shift),
+    )
+    let truth_k = slot_k(dial)
+    let patched = start_k(dial)
+    expect(patched != truth_k, label <> ": the patched k equals the truth")
+    let expected = case truth_k + shift < derivation.k_min {
+      True -> truth_k - shift
+      False -> truth_k + shift
+    }
+    should.equal(expected, patched)
+  })
+}
+
+pub fn k_wall_flip_generalizes_test() {
+  // §1 decision 3's wall: at truth k = −15 a drawn −3 would leave the dial
+  // (below k_min = −16), so the shift flips: −15 + 3 = −12, still inside the
+  // dial with room to step back. A dial is SEARCHED for, not constructed: the
+  // shift is a hash of the dial, so the test walks candidates until the draw
+  // lands on −3.
+  let dial = dial_drawing_shift(-3, -15)
+  should.equal(-3, derivation.drawn_k_shift(derivation.dial_seed(dial)))
+  let assert [_, _, derivation.KSet(patched), _] =
+    derivation.varied_patches(dial)
+  should.equal(-12, patched)
+  should.be_true(patched >= derivation.k_min)
+}
+
+pub fn k_shift_stays_inside_the_dial_test() {
+  // The retired −2 shift was kept inside the dial by a flip; that holds for
+  // EVERY drawn shift, at every truth near the floor, and the slot always
+  // moves (a flip never lands back on truth).
+  [6, -3, -14, -15, -16]
+  |> list.each(fn(truth_k) {
+    list.each(derivation.k_shifts, fn(shift) {
+      let patched = derivation.shifted_k(truth_k, shift)
+      should.not_equal(truth_k, patched)
+      should.be_true(patched >= derivation.k_min)
+    })
+  })
+}
+
+pub fn radius_stays_anchored_test() {
+  // §1 decision 4: the radius dial is the anchor the ring's meaning is built
+  // on (73% of the biggest dialable radius) — not varied, not ever.
+  list.each(probes(), fn(probe) {
+    let #(label, dial) = probe
+    let assert [_, derivation.RPct(pct), _, _] = derivation.varied_patches(dial)
+    expect(pct == 73.0, label <> ": the radius start moved off 73%")
+  })
+}
+
+pub fn varied_start_is_the_documented_vocabulary_test() {
+  // The slot vocabulary is unchanged (phase / radius / k / keep); only the
+  // values are drawn now. The fixed slot still starts at its correct truth.
+  let fixture = derivation.derive_fixture(sketch.star(), "star", "2026-10-25")
+  let assert [phase_slot, _, d2, _] = fixture.dial
+  let assert [
+    derivation.PhaseDeg(deg),
+    derivation.RPct(pct),
+    derivation.KSet(k),
+    derivation.Keep,
+  ] = fixture.patches
+  should.not_equal(phase_slot.phase_deg, deg)
+  should.be_true(on_grid(deg))
+  should.equal(73.0, pct)
+  should.not_equal(d2.k, k)
+}
+
+pub fn varied_phase_still_snaps_to_the_dial_grid_test() {
   // The dial steps in 5°: a start off the grid could never be stepped onto.
-  // 262.4° truth + 90° = 352.4° -> the nearest grid point, 350°.
-  let patches =
-    derivation.standard_patches([
-      derivation.Dial(k: 1, radius: 5.0, phase_deg: 262.4),
-      derivation.Dial(k: 2, radius: 4.0, phase_deg: 12.0),
-      derivation.Dial(k: 3, radius: 3.0, phase_deg: 0.0),
-      derivation.Dial(k: 4, radius: 2.0, phase_deg: 90.0),
-    ])
-  should.equal(
-    [
-      derivation.PhaseDeg(350.0),
-      derivation.RPct(73.0),
-      derivation.KSet(1),
-      derivation.Keep,
-    ],
-    patches,
+  // The draw adds whole 5° steps, so only the truth's own off-grid-ness
+  // (262.4° here) is rounded away — onto the grid, always.
+  let dial = [
+    derivation.Dial(k: 1, radius: 5.0, phase_deg: 262.4),
+    derivation.Dial(k: 2, radius: 4.0, phase_deg: 12.0),
+    derivation.Dial(k: 3, radius: 3.0, phase_deg: 0.0),
+    derivation.Dial(k: 4, radius: 2.0, phase_deg: 90.0),
+  ]
+  let offset = derivation.phase_offset_deg(derivation.dial_seed(dial))
+  let assert [derivation.PhaseDeg(deg), derivation.RPct(pct), _, _] =
+    derivation.varied_patches(dial)
+  should.equal(derivation.snap5(262.4 +. int.to_float(offset)), deg)
+  should.be_true(on_grid(deg))
+  should.equal(73.0, pct)
+}
+
+pub fn distinct_drawings_draw_distinctly_test() {
+  // §1 decision 5: different drawings draw different offsets. Seven distinct
+  // shapes, 55 × 6 = 330 possible draws — a single distinct member means the
+  // draw is degenerate (a constant dressed up as a hash).
+  let probes = probes()
+  expect(list.length(probes) >= 6, "the probe set is smaller than six")
+  let draws =
+    list.map(probes, fn(probe) {
+      let #(_, dial) = probe
+      let seed = derivation.dial_seed(dial)
+      #(derivation.phase_offset_deg(seed), derivation.drawn_k_shift(seed))
+    })
+    |> list.unique
+  expect(
+    list.length(draws) > 1,
+    "every probe drawing drew the same (phase offset, k shift)",
   )
 }
 
-pub fn start_k_shift_stays_inside_the_dial_test() {
-  // −2 normally; near the floor k_min = −16 a −2 would leave the dial, so the
-  // perturbation flips direction instead of clamping onto a value the player
-  // could not step off symmetrically.
-  let k_patch = fn(k: Int) {
-    case
-      derivation.standard_patches([
-        derivation.Dial(k: 1, radius: 5.0, phase_deg: 0.0),
-        derivation.Dial(k: 2, radius: 4.0, phase_deg: 0.0),
-        derivation.Dial(k: k, radius: 3.0, phase_deg: 0.0),
-        derivation.Dial(k: 4, radius: 2.0, phase_deg: 0.0),
-      ])
-    {
-      [_, _, derivation.KSet(patched), _] -> patched
-      _ -> 999
-    }
-  }
-  should.equal(4, k_patch(6))
-  should.equal(-5, k_patch(-3))
-  should.equal(-16, k_patch(-14))
-  should.equal(-13, k_patch(-15))
-  should.equal(-14, k_patch(-16))
+pub fn fixture_round_trips_varied_patches_test() {
+  // fixture_json is untouched by the varied draw (§3): the same four slots on
+  // the wire, only the values differ — and they survive encode/decode exactly.
+  let fixture = derivation.derive_fixture(sketch.star(), "star", "2026-10-25")
+  let assert Ok(decoded) = fixture_json.decode(fixture_json.to_string(fixture))
+  should.equal(4, list.length(decoded.patches))
+  should.equal(fixture.patches, decoded.patches)
 }
 
 pub fn degenerate_fixture_has_no_start_test() {
@@ -284,6 +405,115 @@ pub fn degenerate_fixture_has_no_start_test() {
   let fixture =
     derivation.derive_fixture([#(10.0, 10.0), #(20.0, 20.0)], "x", "2026-10-25")
   should.equal([], fixture.patches)
+}
+
+// ---- the probe set: seven distinct drawings, one per shape family ----------
+// Every "for each probe" test above walks this list. The shapes are distinct
+// drawings (not one drawing translated: a translation changes only the DC
+// term, so it would legitimately draw the same start).
+
+fn probes() -> List(#(String, List(derivation.Dial))) {
+  list.map(probe_drawings(), fn(drawing) {
+    let #(label, dots) = drawing
+    #(label, derived_dial(dots))
+  })
+}
+
+fn probe_drawings() -> List(#(String, List(#(Float, Float)))) {
+  [
+    #("star", sketch.star()),
+    #("heart", sketch.heart()),
+    #("wobble", sketch.wobble()),
+    #("quaver", quaver_dots()),
+    #("triangle", regular_polygon(3, 34.0)),
+    #("hexagon", regular_polygon(6, 30.0)),
+    #("bitten-square", bitten_square()),
+  ]
+}
+
+fn regular_polygon(count: Int, radius: Float) -> List(#(Float, Float)) {
+  indices(count)
+  |> list.map(fn(i) {
+    let angle = 2.0 *. pi *. int.to_float(i) /. int.to_float(count) -. pi /. 2.0
+    #(50.0 +. radius *. cos(angle), 50.0 +. radius *. sin(angle))
+  })
+}
+
+/// A deliberately asymmetric six-gon: no symmetry to make the dial truth look
+/// like the star's or the hexagon's.
+fn bitten_square() -> List(#(Float, Float)) {
+  [
+    #(20.0, 20.0),
+    #(80.0, 18.0),
+    #(82.0, 55.0),
+    #(60.0, 60.0),
+    #(78.0, 84.0),
+    #(24.0, 80.0),
+  ]
+}
+
+/// A derived dial for one drawing.
+fn derived_dial(dots: List(#(Float, Float))) -> List(derivation.Dial) {
+  derivation.derive_fixture(dots, "probe", "2026-10-25").dial
+}
+
+fn slot_phase(dial: List(derivation.Dial)) -> Float {
+  let assert [phase_slot, _, _, _] = dial
+  phase_slot.phase_deg
+}
+
+fn slot_k(dial: List(derivation.Dial)) -> Int {
+  let assert [_, _, k_slot, _] = dial
+  k_slot.k
+}
+
+fn start_phase(dial: List(derivation.Dial)) -> Float {
+  let assert [derivation.PhaseDeg(deg), _, _, _] =
+    derivation.varied_patches(dial)
+  deg
+}
+
+fn start_k(dial: List(derivation.Dial)) -> Int {
+  let assert [_, _, derivation.KSet(k), _] = derivation.varied_patches(dial)
+  k
+}
+
+/// A dial that DRAWS `wanted` as its k shift, with its k slot at `truth_k`.
+/// Searched rather than constructed: the shift is a hash of the dial, so the
+/// test walks candidate truths until the draw lands on the shift under test.
+/// 360 candidates over a 6-outcome draw cannot all miss in practice; if the
+/// hash ever changes shape, this fails loudly rather than silently skipping.
+fn dial_drawing_shift(wanted: Int, truth_k: Int) -> List(derivation.Dial) {
+  let assert Ok(dial) =
+    indices(360)
+    |> list.map(fn(i) {
+      [
+        derivation.Dial(k: 1, radius: 5.0, phase_deg: int.to_float(i)),
+        derivation.Dial(k: 2, radius: 4.0, phase_deg: 12.0),
+        derivation.Dial(k: truth_k, radius: 3.0, phase_deg: 0.0),
+        derivation.Dial(k: 4, radius: 2.0, phase_deg: 90.0),
+      ]
+    })
+    |> list.find(fn(candidate) {
+      derivation.drawn_k_shift(derivation.dial_seed(candidate)) == wanted
+    })
+  dial
+}
+
+/// An assertion with a message that names the probe: a bare `should.be_true`
+/// on a per-probe loop says WHICH loop failed, not which shape.
+fn expect(condition: Bool, what: String) -> Nil {
+  case condition {
+    True -> Nil
+    False -> panic as what
+  }
+}
+
+/// Is this a multiple of 5°? Written as "the step count is a whole number" so
+/// it does not lean on the implementation's own snap5 (floats have no `%`).
+fn on_grid(deg: Float) -> Bool {
+  let steps = deg /. 5.0
+  steps == int.to_float(float.round(steps))
 }
 
 // ---- the quaver's drawing, built from the toy's own term table -------------

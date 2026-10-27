@@ -217,3 +217,29 @@ Daily-puzzle backend + admin: per-feature plans, this rolling ledger.
   Two probe-draft rows inserted for testing were deleted (the busybox wget
   has no DELETE/PUT — the deletion ran through a throwaway curl container
   on br-pi).
+
+## Varied starts — Phase 1: the per-puzzle draw (2026-10-27, PLAN-varied-starts.md)
+
+TDD by the coder subagent under review, in a worktree, in parallel with the
+toy's boot rework (RED 255 passed/5 failures — every failure the retired
++90°/−2 signature; GREEN 260 in the Docker loop, format clean): the fixed
+start constants retire; `varied_patches(dial)` draws at save time from a
+pure-Gleam FNV-1a over the dial rows ([k, round(r×1e6), round(phase×100)] —
+a negative k hashes as itself): phase offset 45+5·(seed mod 55) snapped to
+the dial grid, k shift from {−3,−2,−1,1,2,3} via the seed's next base-55
+digit, wall flip generalized at k_min, radius anchored at 73%, slot 4 Keep.
+Same drawing → same patches (pure function); every player of the day starts
+identically (the draw is embedded in the fixture at save). Real-drawing
+spot check: star (offset 110°, shift −3), heart (315°, +1), wobble (55°, −2)
+— all starts now differ. The retired tests were rewritten, not deleted
+(the old gold becomes the varied-draw pin for the quaver drawing).
+Known legacy path (reviewed, accepted): admin_ui's own `standard_patches()`
+is a fallback for pre-patches-field rows only — every fixture saved going
+forward embeds its varied start and the editor test-plays exactly that.
+Phase 2 (re-derive the not-yet-served puzzles) is staged:
+`scripts/rederive-starts.sh` is committed with a --dry-run mode (live dry
+run: 21 rows after 2026-10-27 would be re-saved, zero writes verified by
+DB mtime); the real run executes after this branch merges and the backend
+image rebuilds — re-saving through the OLD backend would re-derive with
+the OLD formula. Script transport note: host curl against the container's
+bridge IP (busybox wget cannot PUT; documented in the header).
