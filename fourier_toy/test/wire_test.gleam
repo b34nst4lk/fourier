@@ -244,6 +244,19 @@ pub fn a_puzzle_without_three_dials_is_refused_test() {
   )
 }
 
+pub fn an_empty_target_is_refused_test() {
+  // `target` is the 512-point trace the score is measured against: an empty
+  // list is a well-formed JSON array but NOT a usable metric. `shapes.from_parts`
+  // derives rms_polar from it (asserting a non-zero count), so the boundary
+  // must refuse it before any shape is built — a fallback, not a panic.
+  should.equal(
+    Error(Nil),
+    wire.decode(
+      "{\"status\":\"ok\",\"puzzle\":{\"name\":\"n\",\"showDate\":\"2026-10-26\",\"centroid\":[50.0,50.0],\"dials\":[\"phase\",\"radius\",\"k\"],\"dial\":[{\"k\":1,\"radius\":27.0,\"phase\":270.0},{\"k\":-4,\"radius\":6.0,\"phase\":270.0},{\"k\":6,\"radius\":3.0,\"phase\":270.0}],\"extras\":[],\"patches\":[{\"kind\":\"phase\",\"deg\":0.0},{\"kind\":\"radius\",\"pct\":73.0},{\"kind\":\"k\",\"k\":4}],\"target\":[]}}",
+    ),
+  )
+}
+
 pub fn an_unknown_patch_kind_is_refused_test() {
   should.equal(
     Error(Nil),

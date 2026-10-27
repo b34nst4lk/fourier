@@ -97,11 +97,16 @@ fn at_puzzle() -> decode.Decoder(DailyPuzzle) {
 
   // The three per-slot lists are parallel: a document whose counts disagree
   // contradicts itself, and normalizing it would misalign terms and patches.
+  // The target trace must also be non-empty: it is what `rms_polar` — and so
+  // the score — is derived from, and `shapes.from_parts` asserts a non-zero
+  // count. Refusing it HERE keeps an empty list a documented fallback rather
+  // than a panic inside the shape derivation.
   case
     list.length(kinds) == list.length(dial),
-    list.length(kinds) == list.length(patches)
+    list.length(kinds) == list.length(patches),
+    list.length(target) > 0
   {
-    True, True -> {
+    True, True, True -> {
       let rows = zip3(kinds, dial, patches)
       // A fixed slot is data, not a position: its truth term is a fixed term
       // (an extra) and its patch is dropped, wherever the slot sits. The served
@@ -151,7 +156,11 @@ fn at_puzzle() -> decode.Decoder(DailyPuzzle) {
           decode.failure(daily, "three dials, three truth terms, three patches")
       }
     }
-    _, _ -> decode.failure(no_puzzle(), "matching dial and patch counts")
+    _, _, _ ->
+      decode.failure(
+        no_puzzle(),
+        "matching dial and patch counts and a non-empty target",
+      )
   }
 }
 

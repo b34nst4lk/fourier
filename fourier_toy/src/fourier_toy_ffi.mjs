@@ -41,9 +41,26 @@ const STEPS = 512; // trace resolution — matches the metric's sampling
 const MAX_DPR = 2;
 const FRAME_MS = 1000 / 30;
 const CHUNKS = 12; // comet alpha chunks
-const TAIL_FRAC = 0.98; // fraction of the lap drawn by the comet
+const TAIL_FRAC = 1.0; // fraction of the lap drawn by the comet — a full lap,
+// so the tail begins exactly where the head is: no seam at the lap's start
+// (PLAN-legibility-pass §2)
 const COMET_TAIL = 0.4; // comet alpha floor — the whole lap stays readable
 const COMET_TIP = 0.85; // comet alpha at the pen
+const COMET_WIDTH = 2.6; // the comet's ordinary stroke width
+
+// Legibility pass (PLAN-legibility-pass §2): two DRAW-STATE effects that ride
+// the same clock as the comet. Neither touches the payload, the wire or the
+// score — they only decide how the next frames paint.
+const PULSE_MS = 600; // press-highlight window
+const PULSE_WIDTH = 3; // the emphasis ring's width (board circles 1, rings 1.5)
+const PULSE_ALPHA = 0.9; // the emphasis's alpha at the press
+const PULSE_SWELL = 0.15; // the emphasis ring's radius factor − 1
+const REVEAL_MS = 2000; // solve-reveal window
+const REVEAL_WIDTH = 1.5; // × the comet's ordinary width
+const TRAIL_SEGS = 6; // the k column's trail segments
+const TRAIL_SWEEP = Math.PI / 4; // 45° behind the arm tip
+const TRAIL_MIN_ALPHA = 0.15; // the farthest segment's alpha
+const TRAIL_WIDTH = 2; // the trail's stroke width
 
 // Kind codes — ffi.gleam's LOCAL mapping of puzzle.DialKind (the retired
 // puzzle.kind_code wire contract). They are BEHAVIOR: phase draws the start
@@ -93,6 +110,15 @@ const anim = {
   raf: null,
   dirty: true,
   dark: false,
+  // press-highlight + solve reveal (PLAN-legibility-pass §2): draw-state only.
+  // A request is PENDING until the next frame stamps it with that frame's own
+  // timestamp — so both windows are measured on the draw clock, never on a
+  // wall-clock read taken mid-draw.
+  pulsePending: -1, // the slot canvas_pulse() pushed, not yet stamped
+  pulseSlot: -1, // the stamped slot (its circle + its column ring emphasise)
+  pulseAt: -Infinity,
+  revealPending: false,
+  revealAt: -Infinity,
 };
 
 // The ink scheme: black ink on white (light) / white ink on black (dark), with
@@ -170,6 +196,18 @@ function pump() {
 function frame(now) {
   anim.raf = null;
   if (!any_ctx()) return;
+  // a pulse/reveal pushed between frames starts at the frame that paints it
+  if (anim.pulsePending >= 0) {
+    anim.pulseSlot = anim.pulsePending;
+    anim.pulseAt = now;
+    anim.pulsePending = -1;
+    anim.dirty = true;
+  }
+  if (anim.revealPending) {
+    anim.revealAt = now;
+    anim.revealPending = false;
+    anim.dirty = true;
+  }
   const dt = anim.last === null ? 0 : Math.min((now - anim.last) / 1000, 0.05);
   anim.last = now;
   if (now - anim.lastDraw >= FRAME_MS) {
@@ -183,7 +221,7 @@ function frame(now) {
     // fit only on frames that paint: 4 layout reads per DRAWN frame, not per
     // display frame (the 30fps gate runs below the browser's 60fps tick)
     for (const view of all_views()) if (view.ctx) fit(view, dpr);
-    draw_all();
+    draw_all(now);
   }
   anim.raf = requestAnimationFrame(frame);
 }
@@ -324,6 +362,27 @@ export function canvas_theme(dark) {
   ensure_boot();
 }
 
+/// Press-highlight (PLAN-legibility-pass §2): the slot that just stepped — its
+/// term circle and its column ring pulse for ~600ms. A draw-state request, so
+/// it costs nothing on the payload path; a repeat that re-pushes the same slot
+/// simply re-arms the window.
+export function canvas_pulse(slot) {
+  const s = Math.trunc(Number(slot));
+  if (!Number.isFinite(s) || s < 0) return; // an unknown slot pulses nothing
+  anim.pulsePending = s;
+  anim.dirty = true;
+  pump();
+}
+
+/// Solve reveal (PLAN-legibility-pass §2): the comet goes solid over the target
+/// for ~2s at the solve crossing. Fired beside the solve POST, never in front
+/// of it — the network side keeps its own timing and retry rules.
+export function canvas_reveal() {
+  anim.revealPending = true;
+  anim.dirty = true;
+  pump();
+}
+
 // rebuild_cache: one lap of the FULL metric synthesis — the dial terms plus
 // the fixed extras, every term rotating at its own k (exactly the score's
 // shapes.synth_trace — the extras are NOT a constant offset). Also caches
@@ -363,16 +422,35 @@ function rebuild() {
 
 // ---- drawing ----
 
-function draw_all() {
-  draw_board();
-  for (let i = 0; i < views.cols.length; i++) draw_column(i);
+// the press-highlight's remaining strength: 1 at the press, 0 when the window
+// closes — eased out (a punch that settles, not a linear fade)
+function pulse_strength(now) {
+  if (!Number.isFinite(anim.pulseAt) || anim.pulseSlot < 0) return 0;
+  const p = (now - anim.pulseAt) / PULSE_MS;
+  if (p >= 1) return 0;
+  const q = 1 - (p <= 0 ? 0 : p);
+  return q * q;
 }
 
-function draw_board() {
+// the solve reveal's window: full alpha + bolder comet over the dashed target
+function reveal_active(now) {
+  return Number.isFinite(anim.revealAt) && now - anim.revealAt < REVEAL_MS;
+}
+
+function draw_all(now) {
+  draw_board(now);
+  for (let i = 0; i < views.cols.length; i++) draw_column(i, now);
+}
+
+function draw_board(now) {
   const view = views.board;
   const ctx = view.ctx;
   if (!ctx) return;
   const pal = palette();
+  // the press-highlight is one window for the whole board: the pressed term
+  // circle and its column's ring share the strength
+  const pulse = pulse_strength(now);
+  const revealed = reveal_active(now);
   // the backing store is w·dpr — without this mapping everything paints into
   // its top-left quarter on retina screens (sibling's first-draw step)
   ctx.setTransform(view.dpr, 0, 0, view.dpr, 0, 0);
@@ -439,6 +517,21 @@ function draw_board() {
     ctx.moveTo(X + r, Y);
     ctx.arc(X, Y, r, 0, 2 * Math.PI);
     ctx.stroke();
+    // press-highlight (PLAN-legibility-pass §2): the dialed slot's circle takes
+    // a thicker emphasis ring in its own full ordinal ink, swelling out and
+    // fading back as the window runs out. The base circle above is untouched
+    // (the chain geometry is the contract) — the emphasis is drawn over it.
+    if (pulse > 0 && row[4] && row[3] === anim.pulseSlot) {
+      const R = r * (1 + PULSE_SWELL * pulse);
+      ctx.globalAlpha = PULSE_ALPHA * pulse;
+      ctx.lineWidth = PULSE_WIDTH;
+      ctx.beginPath();
+      ctx.moveTo(X + R, Y);
+      ctx.arc(X, Y, R, 0, 2 * Math.PI);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+      ctx.lineWidth = 1;
+    }
   }
 
   // links: one arm per row, same ink rule (sub-pixel arms skipped)
@@ -458,12 +551,17 @@ function draw_board() {
   // gap, no overshoot.
   const TAIL = Math.floor(TAIL_FRAC * STEPS);
   const idx = Math.max(1, Math.floor(t * STEPS));
-  ctx.lineWidth = 2.6; // the comet is the subject now: bolder than the scaffold
+  // the reveal bolds the comet 1.5× and pins it at full alpha; otherwise the
+  // ordinary 40→85% ramp does the motion reading. The comet is the subject
+  // now: bolder than the scaffold.
+  ctx.lineWidth = revealed ? COMET_WIDTH * REVEAL_WIDTH : COMET_WIDTH;
   ctx.strokeStyle = pal.trace;
   for (let k = 0; k < CHUNKS; k++) {
     // tail at COMET_TAIL, tip at COMET_TIP, linear across the chunks —
     // the whole lap stays readable while the gradient still shows motion
-    ctx.globalAlpha = COMET_TAIL + ((COMET_TIP - COMET_TAIL) * k) / (CHUNKS - 1);
+    ctx.globalAlpha = revealed
+      ? 1
+      : COMET_TAIL + ((COMET_TIP - COMET_TAIL) * k) / (CHUNKS - 1);
     const a0 = idx - TAIL + Math.floor((TAIL * k) / CHUNKS);
     const a1 = idx - TAIL + Math.floor((TAIL * (k + 1)) / CHUNKS);
     ctx.beginPath();
@@ -482,7 +580,7 @@ function draw_board() {
   // and links, so the pen can never desync from the comet (whose head is
   // the sample idx = floor(t·STEPS), at most one sample behind the tip)
   ctx.strokeStyle = pal.pen;
-  ctx.lineWidth = 2.6;
+  ctx.lineWidth = COMET_WIDTH;
   ctx.beginPath();
   ctx.arc(sx(c[2 * n]), sy(c[2 * n + 1]), 2.2, 0, 2 * Math.PI);
   ctx.stroke();
@@ -504,7 +602,7 @@ function draw_board() {
 // smaller side is the diameter of a full-space ring, so `space` is its radius
 // unit (phase ring radius = 0.5·space ⇒ diameter = half the box; the radius
 // ceiling ⇒ diameter = the box). Nothing can overflow.
-function draw_column(i) {
+function draw_column(i, now) {
   const view = views.cols[i];
   const ctx = view.ctx;
   if (!ctx) return;
@@ -541,6 +639,20 @@ function draw_column(i) {
   ctx.arc(cx, cy, ring, 0, 2 * Math.PI);
   ctx.stroke();
 
+  // press-highlight (PLAN-legibility-pass §2): the pressed column's ring takes
+  // the same beat as its term circle — thicker, fading out over PULSE_MS
+  const pulse = pulse_strength(now);
+  if (pulse > 0 && anim.pulseSlot === i) {
+    ctx.globalAlpha = PULSE_ALPHA * pulse;
+    ctx.lineWidth = PULSE_WIDTH;
+    ctx.beginPath();
+    ctx.moveTo(cx + ring, cy);
+    ctx.arc(cx, cy, ring, 0, 2 * Math.PI);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+    ctx.lineWidth = 1.5;
+  }
+
   // phase column: the lone start-marker dot, ON the ring at the dialed phase.
   // Static (it reads φ, never t); no arm, so it can never be mistaken for the
   // pen even when they coincide.
@@ -560,6 +672,28 @@ function draw_column(i) {
   // the arm: the exact position_at convention — angle = 2π·k·t + φ, so the
   // column's angle, speed and phase are the canvas circle's own numbers
   const a = 2 * Math.PI * k * anim.t + (deg * Math.PI) / 180;
+
+  // arm trail (PLAN-legibility-pass §2): the k column's speed made legible as
+  // motion — six arc segments on the ring over the last 45° BEHIND the tip,
+  // alpha stepped 0.15 → 1.0 (the comet's chunk ramp in miniature). Only k
+  // rotates: phase has its marker, radius its size, so neither draws one, and
+  // a frozen arm (k = 0) has no direction to trail behind.
+  if (kind === KIND_K && k !== 0) {
+    const dir = k > 0 ? 1 : -1;
+    ctx.lineWidth = TRAIL_WIDTH;
+    for (let j = TRAIL_SEGS - 1; j >= 0; j--) {
+      const near = a - (dir * TRAIL_SWEEP * j) / TRAIL_SEGS;
+      const far = a - (dir * TRAIL_SWEEP * (j + 1)) / TRAIL_SEGS;
+      // the far end at 15%, the segment touching the tip at 100%
+      ctx.globalAlpha = 1 - ((1 - TRAIL_MIN_ALPHA) * j) / (TRAIL_SEGS - 1);
+      ctx.beginPath();
+      ctx.arc(cx, cy, ring, far, near, far > near);
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+    ctx.lineWidth = 1.5;
+  }
+
   const tx = cx + ring * Math.cos(a);
   const ty = cy + ring * Math.sin(a);
   ctx.beginPath();
@@ -720,7 +854,11 @@ export function hold_init() {
 // that must still play.
 
 const UID_KEY = "j-uid";
-const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+// The backend's `is_uuid_v4` accepts the canonical LOWERCASE form only, so this
+// pattern is case-sensitive on purpose: an uppercase value would be reused here
+// and then rejected BadUuid on every solve POST — regenerating is the only
+// working identity (both generators below already emit lowercase).
+const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
 // The API's `tz` is minutes to ADD to UTC (plan Q4) — the opposite sign of
 // Date#getTimezoneOffset, which is minutes to SUBTRACT. UTC+2 ⇒ 120.
@@ -762,8 +900,8 @@ export function ls_del(key) {
 
 // The site-wide anonymous identity (plan Q16): created once, reused forever,
 // so a player's solves across days are recognised as one player. A stored
-// value that is not a v4 uuid (hand-edited, a different app's key) is replaced
-// — the backend refuses anything else.
+// value that is not a CANONICAL LOWERCASE v4 uuid (hand-edited, a different
+// app's key) is replaced — the backend refuses anything else.
 export function uuid_ensure() {
   const stored = ls_get(UID_KEY);
   if (typeof stored === "string" && UUID_V4.test(stored)) return stored;

@@ -562,3 +562,79 @@ fetch-first boot with a last-loaded cache (user-approved direction), and the
 legibility pass (press-highlight, blue arm trail, comet loop closure, larger
 corner chips, solve reveal; extras-dash deferred pending the dark-mode
 visibility question).
+
+## Fetch-first boot (2026-10-27, PLAN-fetch-first-boot.md)
+
+The boot rework by the coder subagent under review, in a worktree, in
+parallel with the backend's varied-starts draw (smoke RED 195/224 — 29
+failures, each the old quaver-first behaviour; GREEN 224/224, boot contract
+123/123, gleam 42/42, format, bench, dist 96K byte-reproducible 4df4125b…):
+the fetch fires before any canvas sync; a `j-last` localStorage key holds
+the RAW last-loaded document, decoded through the live wire decoder at
+boot (versionless — the decoder IS the gate), and a decodable cache enters
+the day through the SAME enter_daily the fetch answer takes — so the
+optimistic paint is a full daily for its own date (matching attempt
+resumes, steps persist, unreported-solve replay fires), the fetch can only
+confirm (same date: an explicit no-op), swap (newer date: retire-then-open
+as before), or fail (the cached board stands); the quaver is now a cold-
+start-only fallback (Loading → Quaver on fetch failure, the loading state
+renders bar + empty canvas + disabled glyphs, no title, no score). One REAL
+bug caught en route: `effect.batch` folds with a prepend, so the local
+`batch` helper's "run in order" claim was false — the boot had been running
+its effects reversed since the dial-columns round (harmlessly there; fatal
+here, where the fetch must precede any sync). Fixed at the helper
+(list.reverse); boot contract + smoke confirm nothing depended on the old
+reversal. Second subtlety, chased to ground: the loading state keeps an
+invisible empty div in the title slot so the board canvas and the column
+canvases keep DOM identity across the Loading → puzzle transition (Lustre's
+unkeyed diff replaces by index; a re-created canvas would stay blank until
+the next sync). Plan divergences, all strengthening: score pins that
+cannot distinguish 0% starts were replaced with stronger retire/POST pins;
+the cached boot passes no raw doc (reading the cache never rewrites it).
+
+## Legibility pass (2026-10-27, PLAN-legibility-pass.md)
+
+The five playtest answers, one RED-first cycle by the coder subagent under
+review (boot contract RED 133/148, smoke RED 229/236 — every failure the
+absent feature; GREEN 148/148 + 236/236, gleam 42/42, format, bench, dist
+byte-reproducible c592f4fb…): **press-highlight** — every step pulses its
+slot: an over-stroke emphasis ring on the board's term circle (width 3,
+alpha 0.9, ease-out swell ×1.15) plus the pressed column's ring, 600ms
+window, re-armed per hold tick (the chain circle itself is untouched — the
+geometry contract holds through the pulse); **blue arm trail** — 6
+alpha-stepped segments (0.15→1.0) over the last 45° behind the k column's
+arm tip, phase/radius draw none, a frozen k=0 arm draws none; **comet loop
+closure** — TAIL_FRAC 1.0, the seam gone, the alpha-ramp pins untouched;
+**bigger corner chips** — 20px icons, 41px computed touch target, both
+themes; **solve reveal** — at the ≥95% crossing the comet strokes full-
+alpha at 1.5× width for 2s over the dashed target (a sibling of the solve
+POST, once per crossing). Harness en route: boot-contract tick gained a
+frame count (windows need multiple frames), and a REAL vacuous-pass bug
+was caught — the smoke's daily session rode a dead RAF (boot_dom resets the
+global queue, and the frozen frame passed the old canvas pins vacuously),
+so the reveal sections boot fresh sessions and the dead fixture path was
+deleted. Pulse/reveal are draw-clock state (pending until the next frame
+stamps them) — the 30fps gate, dedupe and payload paths are unchanged.
+
+## Review fix round (2026-10-27, the whole-repo review's three warnings)
+
+The repo-reviewer pass (deepseek-v4-pro:cloud) found no criticals; its
+three warnings are fixed on this branch by the coder subagent under review,
+each RED-first (gleam RED 42/1 — the empty-target panic caught live in the
+failing test's own stack; smoke RED 238/240; boot contract RED 149/152):
+(1) a served document with an EMPTY target is refused at the wire boundary
+(the outer arity gate, BEFORE shape construction — the reviewer's crash
+finding; the stranded-in-Loading variant on this branch covered by the same
+check), decoded to the documented fallback; (2) `retire_then_open` abandons
+only PLAYED attempts (`count > 0`, the reset path's rule) — a 0-move attempt
+from an older day is replaced silently, so the difficulty data stops
+collecting spurious 0-move abandons; (3) `uuid_ensure` accepts only the
+CANONICAL LOWERCASE v4 form (the backend's validator is case-sensitive; an
+uppercase hand-edited j-uid would have been reused and every solve POST
+rejected BadUuid forever) — malformed identities regenerate and overwrite.
+Gates: gleam 43/43, smoke 240/240, boot contract 152/152 (its S19 installs
+the contract's first storage stub; a vacuous overwrite-pin was caught and
+strengthened en route), bench green, dist byte-reproducible c5e47d8e….
+The docs side landed on main (3976dab): the varied-starts 45° ruling
+amended honestly to the 42.5° post-snap floor, the duplicated toy_admin
+ledger row deduped.

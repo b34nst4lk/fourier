@@ -70,11 +70,14 @@ body {
 .chip {
   width: auto;
   display: inline-flex; align-items: center; justify-content: center;
-  padding: 5px;
+  /* a real touch target (PLAN-legibility-pass §2): 20px icon + 2×9 padding
+     + 2×1.5 border = 41px, so the corner chips are thumb-sized, not hairline */
+  padding: 9px;
+  min-width: 40px; min-height: 40px;
   border: 1.5px solid var(--line); border-radius: 6px;
   background: var(--card); color: var(--ink); cursor: pointer;
 }
-.chip .icon { display: block; width: 16px; height: 16px; }
+.chip .icon { display: block; width: 20px; height: 20px; }
 .chip .icon path, .chip .icon circle, .chip .icon line, .chip .icon polyline,
 .chip .icon polygon {
   stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round;

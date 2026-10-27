@@ -66,6 +66,27 @@ pub fn canvas_theme(dark: Bool) -> Nil {
 @external(javascript, "../fourier_toy_ffi.mjs", "canvas_theme")
 fn js_canvas_theme(dark: Bool) -> Nil
 
+/// Press-highlight (PLAN-legibility-pass §2): pulse the slot that just stepped
+/// — its term circle and its column ring emphasis for ~600ms, then fade back.
+/// Draw-state only: the payload, the score and the wire are untouched, and a
+/// repeat that re-pushes the same slot simply re-arms the window.
+pub fn canvas_pulse(slot: Int) -> Nil {
+  js_canvas_pulse(slot)
+}
+
+@external(javascript, "../fourier_toy_ffi.mjs", "canvas_pulse")
+fn js_canvas_pulse(slot: Int) -> Nil
+
+/// Solve reveal (PLAN-legibility-pass §2): the comet goes solid over the
+/// dashed target for ~2s at the solve crossing. Fired BESIDE the solve POST in
+/// the same effect list — it never gates, delays or retries it.
+pub fn canvas_reveal() -> Nil {
+  js_canvas_reveal()
+}
+
+@external(javascript, "../fourier_toy_ffi.mjs", "canvas_reveal")
+fn js_canvas_reveal() -> Nil
+
 fn row(t: TermState) -> #(Int, Float, Float) {
   #(t.k, t.r, t.phase_deg)
 }

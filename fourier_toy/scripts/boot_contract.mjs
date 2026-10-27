@@ -29,6 +29,20 @@
 //    side is a full-space ring's diameter, so a phase ring (0.5 × space) has
 //    diameter = half the box and the radius ceiling fills the box exactly.
 //
+// 3. The legibility pass (PLAN-legibility-pass §2/§4) — two draw-state effects
+//    that ride the SAME clock as the comet (no payload, no wire):
+//    - press-highlight (`canvas_pulse(slot)`): for PULSE_MS ≈ 600ms after the
+//      pulse, the board's term-slot circle gains a thicker emphasis ring (width
+//      3 over the baseline 1) swelled to ~1.15× and its column's ring brightens
+//      the same way. Both decay monotonically to nothing — after the window the
+//      frame is byte-identical to the baseline one (op deltas zero).
+//    - solve reveal (`canvas_reveal()`): for REVEAL_MS ≈ 2000ms the comet
+//      strokes full alpha at 1.5× width over the dashed target, then the
+//      ordinary 40→85% ramp returns untouched.
+//    Plus the comet's full lap (TAIL_FRAC 0.98 → 1.0: the tail meets the head)
+//    and the k column's 45° arm trail (six alpha-stepped arc segments behind
+//    the tip; phase and radius draw none).
+//
 // Geometry expectations are computed from the SAME math the FFI uses
 // (angle = 2πkt + φ), tolerance 1.3px (house pin tolerance). The column
 // scenarios run on FRESH module instances (a cache-busting import) so the
@@ -43,7 +57,21 @@ import * as puzzle from "../build/dev/javascript/fourier_toy/fourier_toy/puzzle.
 const SPEED = 0.125; // laps per second
 const FRAME_MS = 1000 / 30; // the 30fps draw gate
 const COMET_CHUNKS = 12; // fourier_toy_ffi.mjs CHUNKS
+const STEPS = 512; // the trace resolution (fourier_toy_ffi.mjs STEPS)
+const COMET_WIDTH = 2.6; // the comet's ordinary stroke width
 const TOL = 1.3; // px — house geometry tolerance
+
+// the legibility pass's own parameters (PLAN-legibility-pass §2)
+const PULSE_MS = 600; // press-highlight window
+const PULSE_WIDTH = 3; // the emphasis ring's width (baseline 1 on the board)
+const PULSE_ALPHA = 0.9; // the emphasis's alpha at the press
+const PULSE_SWELL = 0.15; // the emphasis ring's radius factor − 1
+const TRAIL_SEGS = 6; // the k column's trail segments
+const TRAIL_SWEEP = Math.PI / 4; // 45° behind the arm tip
+const TRAIL_MIN_ALPHA = 0.15; // the farthest segment's alpha
+const TRAIL_WIDTH = 2; // the trail's stroke width
+const REVEAL_MS = 2000; // solve-reveal window
+const REVEAL_WIDTH = COMET_WIDTH * 1.5; // the reveal's bolder comet
 const RECT = 300; // the stub canvas box (CSS px)
 const SPACE = RECT / 2; // the radius-space unit: half the box
 
@@ -129,9 +157,11 @@ function make_ctx() {
       count("lineTo");
       push(x, y);
     },
-    arc: (x, y, r) => {
+    arc: (x, y, r, a0, a1) => {
       count("arc");
-      seg_arcs.push({ x, y, r });
+      // the start/end angles are recorded too: the k column's trail is arc
+      // segments whose alpha ramp AND 45° sweep are part of the contract
+      seg_arcs.push({ x, y, r, a0, a1 });
       push(x, y);
     },
     stroke: () => {
@@ -180,11 +210,15 @@ globalThis.requestAnimationFrame = (cb) => {
 };
 globalThis.cancelAnimationFrame = () => {};
 let NOW = 1000.0;
-function tick(ms = 16) {
-  NOW += ms;
-  const q = raf_q;
-  raf_q = [];
-  for (const cb of q) cb(NOW);
+// `n` frames of `ms` each (the smoke's spelling): the legibility windows are
+// 600ms/2000ms, so several frames per check are needed to cross them
+function tick(ms = 16, n = 1) {
+  for (let i = 0; i < n; i++) {
+    NOW += ms;
+    const q = raf_q;
+    raf_q = [];
+    for (const cb of q) cb(NOW);
+  }
 }
 
 // ---- the mount registry ------------------------------------------------------
@@ -580,6 +614,23 @@ console.log("S6 · quaver at truth — DPR transform, pen/comet lockstep, comet 
     "comet tip at 85%, gradient tail→tip",
     maxA <= 0.85 + 1e-9 && cometA[0] < cometA[cometA.length - 1],
     "max " + maxA.toFixed(3) + ", head " + cometA[0] + " tail " + cometA[cometA.length - 1],
+  );
+  // the lap closes (PLAN-legibility-pass §2/§4): TAIL_FRAC 0.98 → 1.0, so the
+  // comet walks every sample of the trace — the seam at the start of the lap
+  // is gone, and the tail begins exactly where the head is.
+  const covered = last.comet.reduce((n, s) => n + (s.pts.length - 1), 0);
+  check(
+    "comet covers the full lap (TAIL_FRAC 1: all 512 samples, no seam)",
+    covered === STEPS,
+    covered + " of " + STEPS + " samples across " + last.comet.length + " chunks",
+  );
+  const tailPt = last.comet[0].pts[0];
+  const headStroke = last.comet[last.comet.length - 1];
+  const headPt = headStroke.pts[headStroke.pts.length - 1];
+  check(
+    "comet tail starts at the head (the lap closes exactly)",
+    dist(tailPt, headPt) <= 1e-9,
+    dist(tailPt, headPt) + "px",
   );
 }
 
@@ -1151,6 +1202,325 @@ console.log("S15 · one clock — all four canvases repaint from the same 30fps 
     );
   }
   globalThis.window.devicePixelRatio = 2;
+}
+
+// ---- the legibility pass (PLAN-legibility-pass §2/§4) -----------------------
+// Board-wide effects need the real quaver start on a fresh clock, exactly like
+// column_scene: fresh module instance, t = 0 after the first frame, then one
+// real frame at a non-zero t.
+let press_seq = 0;
+async function board_scene() {
+  unmount_all();
+  const made = mount_all();
+  press_seq++;
+  const f = await import("../src/fourier_toy_ffi.mjs?press=" + press_seq);
+  const setup = setup_of();
+  const { shape, state } = sync_board(f, setup);
+  tick(16); // bind + first frame (dt 0, t = 0)
+  tick(34); // one real frame at a non-zero t
+  return { ffi: f, made, setup, shape, state };
+}
+
+// a circle's stable fingerprint: radius, width, alpha and ink are shape/palette
+// dependent (the centres move with t, so they are deliberately excluded)
+const circle_key = (s) => [s.arcs[0].r, s.width, s.alpha, s.style].join("|");
+const circles_key = (frame) => frame.circles.map(circle_key).join(" ");
+const emph_of = (frame) => frame.circles.filter((s) => s.width === PULSE_WIDTH);
+// shortest angular distance, radians
+function rad_diff(a, b) {
+  const d = (((a - b) % (Math.PI * 2)) + Math.PI * 3) % (Math.PI * 2);
+  return Math.abs(d - Math.PI);
+}
+
+console.log("S16 · press-highlight — the pressed circle + its column ring pulse (~600ms)");
+{
+  const scene = await board_scene();
+  const base = board_frame();
+  const colBase = COLS.map((id) => column_frame(id));
+  const radii = base.circles.slice(0, 3).map((s) => s.arcs[0].r);
+  check(
+    "baseline: the three dial circles stroke thin at full ordinal ink",
+    base.circles.slice(0, 3).every((s) => s.width === 1 && s.alpha === 1),
+    base.circles
+      .slice(0, 3)
+      .map((s) => s.width + "@" + s.alpha)
+      .join(" "),
+  );
+  check(
+    "baseline: no emphasis ring anywhere before a press",
+    emph_of(base).length === 0,
+    emph_of(base).length + " emphasis strokes",
+  );
+
+  scene.ffi.canvas_pulse(1); // the radius column's slot
+  tick(34); // this frame stamps the pulse: elapsed 0 = peak
+  const peak = board_frame();
+  const emph = emph_of(peak);
+  check(
+    "pulse peak: the slot-1 circle gains a thicker emphasis ring (width 3 > 1)",
+    emph.length === 1 && emph[0].width > base.circles[1].width,
+    emph.length + " emphasis stroke(s), width " + emph.map((s) => s.width).join(","),
+  );
+  check(
+    "pulse peak: the emphasis carries its own alpha (ink up over the 1px ring)",
+    emph.length === 1 &&
+      Math.abs(emph[0].alpha - PULSE_ALPHA) <= 1e-6 &&
+      emph[0].width * emph[0].alpha > base.circles[1].width * base.circles[1].alpha,
+    emph.length ? "alpha " + emph[0].alpha + ", ink " + (emph[0].width * emph[0].alpha).toFixed(2) : "none",
+  );
+  check(
+    "pulse peak: the ring swells ~15% around the term-1 circle's centre",
+    emph.length === 1 &&
+      Math.abs(emph[0].arcs[0].r - radii[1] * (1 + PULSE_SWELL)) <= TOL &&
+      Math.abs(emph[0].arcs[0].x - peak.circles[1].arcs[0].x) <= 1e-9 &&
+      Math.abs(emph[0].arcs[0].y - peak.circles[1].arcs[0].y) <= 1e-9,
+    emph.length
+      ? "r " + emph[0].arcs[0].r.toFixed(2) + " vs " + (radii[1] * (1 + PULSE_SWELL)).toFixed(2)
+      : "none",
+  );
+  check(
+    "pulse: every other circle keeps its baseline stroke (no bleed)",
+    circles_key({ circles: peak.circles.filter((s) => s.width !== PULSE_WIDTH) }) ===
+      circles_key(base),
+    peak.circles.length + " circles vs " + base.circles.length,
+  );
+
+  const colPeak = COLS.map((id) => column_frame(id));
+  const ring_emph = (frame) =>
+    frame.draw.filter((s) => s.arcs.length === 1 && s.width === PULSE_WIDTH);
+  check(
+    "pulse: the pressed column's ring brightens for the same window",
+    ring_emph(colPeak[1]).length === 1 &&
+      Math.abs(ring_emph(colPeak[1])[0].alpha - PULSE_ALPHA) <= 1e-6 &&
+      Math.abs(ring_emph(colPeak[1])[0].arcs[0].r - ring_r(colBase[1])) <= 1e-9,
+    ring_emph(colPeak[1]).length + " emphasis ring(s) on col-1",
+  );
+  check(
+    "pulse: the other columns' rings are untouched",
+    ring_emph(colPeak[0]).length === 0 &&
+      ring_emph(colPeak[2]).length === 0 &&
+      colPeak[0].ring.width === colBase[0].ring.width &&
+      colPeak[2].ring.width === colBase[2].ring.width,
+    [0, 2].map((i) => ring_emph(colPeak[i]).length + "@" + colPeak[i].ring.width).join(" "),
+  );
+
+  tick(34); // elapsed 34ms
+  const early = emph_of(board_frame());
+  tick(34, 10); // +340ms → elapsed ~374ms, still inside the window
+  const late = emph_of(board_frame());
+  check(
+    "pulse: the emphasis decays through the window (alpha + swell ride down)",
+    early.length === 1 &&
+      late.length === 1 &&
+      late[0].alpha < early[0].alpha &&
+      late[0].arcs[0].r < early[0].arcs[0].r &&
+      early[0].arcs[0].r > radii[1],
+    early.length && late.length
+      ? "alpha " + early[0].alpha.toFixed(3) + " → " + late[0].alpha.toFixed(3)
+      : "missing emphasis",
+  );
+
+  tick(34, 12); // elapsed ~782ms — past the 600ms window
+  const after = board_frame();
+  check(
+    "pulse: after ~600ms the frame is back to baseline (op deltas zero)",
+    emph_of(after).length === 0 && circles_key(after) === circles_key(base),
+    emph_of(after).length + " emphasis strokes, circles " + (circles_key(after) === circles_key(base) ? "identical" : "drifted"),
+  );
+
+  scene.ffi.canvas_pulse(1);
+  tick(34);
+  const rearmed = emph_of(board_frame());
+  check(
+    "pulse: a second pulse re-arms the window (each hold-repeat tick pulses)",
+    rearmed.length === 1 && Math.abs(rearmed[0].alpha - PULSE_ALPHA) <= 1e-6,
+    rearmed.length ? "alpha " + rearmed[0].alpha : "none",
+  );
+}
+
+console.log("S17 · blue arm trail — the k column leaves a 45° fading sweep");
+{
+  const maxR = puzzle.shape_of("quaver").dial_max_r;
+  const kinds = [KIND_PHASE, KIND_RADIUS, KIND_K];
+  const scene = await column_scene(
+    [
+      [-1, maxR, 30.0],
+      [1, maxR, 120.0],
+      [-3, maxR, 200.0],
+    ],
+    kinds,
+  );
+  advance(scene);
+  const kf = column_frame("col-2");
+  const ringR = ring_r(kf);
+  const trail = kf.draw.filter(
+    (s) => s.arcs.length === 1 && s.pts.length === 1 && s.width === TRAIL_WIDTH,
+  );
+  check(
+    "the k column draws its 6 trailing segments",
+    trail.length === TRAIL_SEGS,
+    trail.length + " segments",
+  );
+  const cx = scene.rect.width / 2;
+  const cy = scene.rect.height / 2;
+  check(
+    "every segment rides the arm's own ring (same centre, same radius)",
+    trail.length === TRAIL_SEGS &&
+      trail.every(
+        (s) =>
+          Math.abs(s.arcs[0].r - ringR) <= 1e-9 &&
+          Math.abs(s.arcs[0].x - cx) <= 1e-9 &&
+          Math.abs(s.arcs[0].y - cy) <= 1e-9,
+      ),
+    trail.length ? "r " + trail[0].arcs[0].r + " vs ring " + ringR : "no trail",
+  );
+  const trailA = trail.map((s) => s.alpha);
+  check(
+    "the trail alphas step up toward the tip (0.15 → 1.0, monotone)",
+    trailA.length === TRAIL_SEGS &&
+      Math.abs(trailA[0] - TRAIL_MIN_ALPHA) <= 1e-9 &&
+      Math.abs(trailA[trailA.length - 1] - 1) <= 1e-9 &&
+      trailA.every((a, i) => i === 0 || a > trailA[i - 1]),
+    trailA.map((a) => a.toFixed(2)).join(" → "),
+  );
+  const tip = kf.arm.pts[kf.arm.pts.length - 1];
+  const aTip = Math.atan2(tip[1] - cy, tip[0] - cx);
+  const nearest = trail[trail.length - 1];
+  const farthest = trail[0];
+  check(
+    "the sweep ends at the arm tip and covers the last 45° behind it",
+    trail.length === TRAIL_SEGS &&
+      rad_diff(nearest.arcs[0].a1, aTip) <= 1e-9 &&
+      // k < 0 rotates the other way: "behind the tip" is ahead in angle
+      rad_diff(farthest.arcs[0].a0, aTip + TRAIL_SWEEP) <= 1e-9,
+    trail.length
+      ? "tip end " + rad_diff(nearest.arcs[0].a1, aTip).toFixed(3) +
+        " rad off, far end " + rad_diff(farthest.arcs[0].a0, aTip + TRAIL_SWEEP).toFixed(3) + " rad off"
+      : "no trail",
+  );
+  check(
+    "the phase and radius columns draw no trail (every stroke full alpha)",
+    [0, 1].every((i) => column_frame(COLS[i]).draw.every((s) => s.alpha === 1)),
+    [0, 1]
+      .map((i) => column_frame(COLS[i]).draw.filter((s) => s.alpha !== 1).length + " faded")
+      .join(", "),
+  );
+
+  const frozen = await column_scene(
+    [
+      [1, maxR, 40.0],
+      [1, maxR, 140.0],
+      [0, maxR, 250.0],
+    ],
+    kinds,
+  );
+  advance(frozen);
+  const frozenTrail = column_frame("col-2").draw.filter(
+    (s) => s.arcs.length === 1 && s.pts.length === 1 && s.width === TRAIL_WIDTH,
+  );
+  check(
+    "a frozen arm (k = 0) leaves no trail — there is no motion to draw",
+    frozenTrail.length === 0,
+    frozenTrail.length + " segments",
+  );
+}
+
+console.log("S18 · solve reveal — the comet snaps solid over the target for ~2s");
+{
+  const scene = await board_scene();
+  const target_key = (frame) =>
+    [frame.target.style, frame.target.width, frame.target.alpha, frame.target.pts.length].join("|");
+  const ramp = (frame) => {
+    const a = frame.comet.map((s) => s.alpha);
+    return {
+      min: Math.min(...a),
+      max: Math.max(...a),
+      widths: frame.comet.map((s) => s.width),
+    };
+  };
+  const base = board_frame();
+  const baseRamp = ramp(base);
+  check(
+    "baseline: the comet rides its 40→85% ramp at 2.6",
+    base.comet.length === COMET_CHUNKS &&
+      baseRamp.min >= 0.4 &&
+      baseRamp.max <= 0.85 + 1e-9 &&
+      baseRamp.widths.every((w) => w === COMET_WIDTH),
+    baseRamp.min.toFixed(2) + "–" + baseRamp.max.toFixed(2) + " @ " + baseRamp.widths[0],
+  );
+  const targetBase = target_key(base);
+
+  scene.ffi.canvas_reveal();
+  tick(34); // this frame stamps the reveal (elapsed 0)
+  const shown = board_frame();
+  check(
+    "the reveal window strokes the comet at full alpha (no ramp)",
+    shown.comet.length === COMET_CHUNKS && shown.comet.every((s) => s.alpha === 1),
+    shown.comet.map((s) => s.alpha).join(","),
+  );
+  check(
+    "the reveal bolds the comet 1.5× (2.6 → 3.9)",
+    shown.comet.every((s) => s.width === REVEAL_WIDTH),
+    "widths " + Array.from(new Set(shown.comet.map((s) => s.width))).join(","),
+  );
+  check(
+    "the dashed target is untouched through the reveal",
+    target_key(shown) === targetBase,
+    target_key(shown),
+  );
+  tick(34, 5); // ~200ms in: the reveal holds
+  const mid = ramp(board_frame());
+  check(
+    "the reveal holds through the window (~200ms in: still solid)",
+    mid.min === 1 && mid.max === 1 && mid.widths.every((w) => w === REVEAL_WIDTH),
+    mid.min.toFixed(2) + "–" + mid.max.toFixed(2),
+  );
+  tick(34, 60); // +2.04s → past the 2000ms window
+  const after = ramp(board_frame());
+  check(
+    "after ~2s the ordinary ramp returns (40→85%, 2.6)",
+    after.min >= 0.4 &&
+      after.max <= 0.85 + 1e-9 &&
+      after.widths.every((w) => w === COMET_WIDTH),
+    after.min.toFixed(2) + "–" + after.max.toFixed(2) + " @ " + after.widths[0],
+  );
+}
+
+console.log("S19 · identity — only a canonical lowercase v4 uuid is reused");
+{
+  // The backend's `is_uuid_v4` accepts lowercase only. Reusing a hand-edited
+  // UPPERCASE value would make every solve POST fail BadUuid forever, so the
+  // reuse check must require the canonical spelling and regenerate otherwise.
+  const store = new Map();
+  globalThis.window.localStorage = {
+    getItem: (k) => (store.has(k) ? store.get(k) : null),
+    setItem: (k, v) => store.set(k, String(v)),
+    removeItem: (k) => store.delete(k),
+  };
+  const LOWER = "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d";
+  const UPPER = LOWER.toUpperCase();
+  const LOWER_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+
+  store.set("j-uid", LOWER);
+  check(
+    "a stored lowercase v4 uuid is reused unchanged",
+    ffi.uuid_ensure() === LOWER && store.get("j-uid") === LOWER,
+    String(store.get("j-uid")),
+  );
+
+  store.set("j-uid", UPPER);
+  const made = ffi.uuid_ensure();
+  check("an UPPERCASE stored uuid is NOT reused", made !== UPPER, String(made));
+  check(
+    "the replacement is a canonical lowercase v4 uuid",
+    LOWER_V4.test(made),
+    String(made),
+  );
+  check(
+    "the replacement overwrites the malformed stored identity",
+    LOWER_V4.test(made) && store.get("j-uid") === made,
+    String(store.get("j-uid")),
+  );
 }
 
 console.log("");
