@@ -1,4 +1,4 @@
-//// The served puzzle's decoder (PLAN-daily-puzzles.md §1 Q1): the JSON
+//// The served puzzle's decoder: the JSON
 //// `/api/puzzle/today` answers with becomes the toy's `Setup` + `Shape`.
 ////
 //// Why a decoder and not a second fixture pipeline: the backend derives the
@@ -16,7 +16,7 @@
 //// for an empty calendar, "error" for a refused request — are `Error(Nil)`:
 //// the caller falls back to the built-in quaver.
 ////
-//// The 3-lock and normalization (PLAN-dial-columns.md §4.1d): the board dials
+//// The 3-lock and normalization: the board dials
 //// exactly three terms, so a served document is normalized before it is
 //// accepted — every "fixed" slot's truth term becomes an EXTRA (a
 //// fixed-correct term IS an extra) and its patch is dropped, wherever the
@@ -108,7 +108,8 @@ pub fn the_decoder_derives_what_the_wire_cannot_carry_test() {
 
 pub fn the_start_resolves_against_the_served_shape_test() {
   // What the board opens with: phase 0° (the patch), radius 73% of 27.57…,
-  // k 4 (the patch) — and NO fourth slot (the pattern is exact).
+  // k 4 (the patch) — and NO fourth slot (the pattern is exact), because the
+  // served "fixed" term is normalized into an extra.
   let assert Ok(daily) = wire.decode(star_json)
   let state = puzzle.initial(daily.shape, daily.setup.patches)
   let assert [phase_slot, radius_slot, k_slot] = state
@@ -193,7 +194,7 @@ pub fn no_published_puzzle_is_not_a_puzzle_test() {
 }
 
 pub fn a_four_dialable_document_is_refused_test() {
-  // P10's arrangement (four dialable slots) violates the 3-lock: the board
+  // a four-dialable-slot arrangement violates the 3-lock: the board
   // has three columns, so a four-dial document is a fallback, not a board.
   should.equal(
     Error(Nil),

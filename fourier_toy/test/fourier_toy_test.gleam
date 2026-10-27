@@ -1,13 +1,11 @@
-//// v2 core contracts (TDD): the fixture pipeline and the dial logic must
+//// Core contracts (TDD): the fixture pipeline and the dial logic must
 //// reproduce the archived JS prototype's ground-truth numbers.
 //// Gold sources: prototype_js/generate_proto.mjs console output and its
 //// jsdom artifact checks (tag prototype-js-v1).
 ////
-//// Dial-columns rework (PLAN-dial-columns.md §4.1a/1b): a shape DIALS exactly
-//// its top-THREE terms and the former 4th term moves into `extras`. The
-//// synthesis term set is identical (top-4 = top-3 + extras[0]), so every
-//// metric pin below stays untouched — they are the proof the split is
-//// score-neutral, not an accident.
+//// A shape DIALS exactly its top-THREE terms; its 4th term lives in `extras`.
+//// The synthesis term set is identical (top-4 = top-3 + extras[0]), so the
+//// metric pins below hold whichever way the terms are split.
 
 import fourier_toy/puzzle.{DialK, DialP, DialR, KSet, PhaseDeg, RPct}
 import fourier_toy/shapes
@@ -68,7 +66,7 @@ pub fn fish_dial_top3_gold_test() {
     shapes.TermState(1, 16.27, 90.0),
     shapes.TermState(-2, 7.51, 340.0),
   ])
-  // 28 table rows, 3 dialed ⇒ 26 baked extras; the head is the old 4th term
+  // 28 table rows, 3 dialed ⇒ 26 baked extras; the head is the 4th term
   fish.extras |> list.length |> should.equal(26)
   fish.extras
   |> list.first
@@ -154,8 +152,8 @@ pub fn quaver_start_is_unsolved_gold_test() {
 }
 
 pub fn flower_p7_start_test() {
-  // P7 start: phase +90° on the dominant, radius 72%, k +5 on slot 3 — the
-  // retired P10 start's 4th patch (radius 16%) has no slot to land on now
+  // the flower start: phase +90° on the dominant, radius 72%, k +5 on slot 3
+  // — a 4th patch would have no slot to land on
   let flower = shapes.flower()
   let state = puzzle.initial(flower, [PhaseDeg(90.0), RPct(72.0), KSet(5)])
   let assert [s0, s1, s2] = state
@@ -181,7 +179,7 @@ pub fn flower_p7_start_test() {
 }
 
 pub fn fish_p8_start_clamps_to_zero_test() {
-  // P8 start: phase +90° on the dominant, radius 72%, k−6 on slot 3
+  // the fish start: phase +90° on the dominant, radius 72%, k−6 on slot 3
   let fish = shapes.fish()
   let state = puzzle.initial(fish, [PhaseDeg(345.0), RPct(72.0), KSet(-6)])
   shapes.match_pct(fish, state) |> should.equal(0.0)

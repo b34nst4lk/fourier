@@ -1,15 +1,14 @@
 //// Puzzle configuration and dial state machine (pure, fully tested).
 ////
 //// A Setup names one experiment: the shape, the dial kind per slot, and the
-//// deterministic starting perturbation (see the JS prototype's vocabulary —
-//// phase +90°, radius ~72% of max, k −2 on the kind-3 slot; same offsets
-//// scaled per shape so cross-puzzle feels compare).
+//// deterministic starting perturbation — phase +90°, radius ~72% of max, k −2
+//// on the kind-3 slot, the same offsets scaled per shape so cross-puzzle feels
+//// compare.
 ////
-//// The dial-columns board (PLAN-dial-columns.md §3): exactly THREE dialed
-//// terms, one column each, kinds ∈ {phase, radius, k}. There is no fixed slot
-//// any more — a shape's 4th+ terms are baked into its `extras` (wire.gleam
-//// normalizes an old served "fixed" slot into an extra before it reaches this
-//// module), so a dial state is always three terms long.
+//// Exactly THREE dialed terms, one column each, kinds ∈ {phase, radius, k}.
+//// There is no fixed slot: a shape's 4th+ terms are baked into its `extras`
+//// (wire.gleam normalizes an old served "fixed" slot into an extra before it
+//// reaches this module), so a dial state is always three terms long.
 ////
 //// Dials: k ±1 clamped to ±16; phase ±5° wrapping 0..360; radius ±2% of the
 //// shape's biggest dialable radius, clamped to 0..200%.
@@ -108,11 +107,10 @@ pub fn initial(shape: Shape, patches: List(Patch)) -> List(TermState) {
 }
 
 // ---------- the one shipped experiment ----------
-// The roster is private and has collapsed to the shipped quaver: P6–P10 were
-// board-data experiments ported from the JS prototype, and P10's four dials
-// violate the 3-lock. Step-logic coverage continues in the direct kind tests.
+// The roster is private and holds the shipped quaver alone; step-logic coverage
+// lives in the direct kind tests.
 
-/// The one shipped puzzle — the final v2 interface is single-puzzle.
+/// The one shipped puzzle — the interface is single-puzzle.
 pub fn quaver_setup() -> Setup {
   Setup(
     id: "quaver",
@@ -136,8 +134,8 @@ pub fn shape_of(key: String) -> Shape {
 
 // ---------- display formatting ----------
 // The dial columns carry NO text (the board is the precision instrument), so
-// the per-dial readout helpers are gone. The score bar is not a dial and keeps
-// its one-decimal match display.
+// there are no per-dial readouts. The score bar is not a dial and keeps its
+// one-decimal match display.
 
 /// One-decimal match display, matching the JS prototype's toFixed(1).
 pub fn fmt1(m: Float) -> String {

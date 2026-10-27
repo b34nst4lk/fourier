@@ -1,6 +1,6 @@
 //// External bindings: the canvas animation shell, the page theme, the
 //// hold-to-repeat input driver, and the daily puzzle's network/storage/
-//// telemetry (PLAN-daily-puzzles.md §1).
+//// telemetry.
 
 import fourier_toy/puzzle
 import fourier_toy/shapes.{type TermState}
@@ -34,10 +34,10 @@ fn js_canvas_shape(
 
 /// Push the current three dial terms and their KINDS. The canvas reads the
 /// kinds for BEHAVIOR (which symbology a column draws: start marker / ring
-/// size / arm speed) and the slot ORDINAL (the array index) for COLOUR — the
-/// ordinal-ink contract of PLAN-dial-columns §3. The kind codes are a local
-/// wire detail of this module; the retired `puzzle.kind_code` is not part of
-/// the core vocabulary. Cache-deduped on the JS side, terms and kinds alike.
+/// size / arm speed) and the slot ORDINAL (the array index) for COLOUR — colour
+/// answers "which wheel in the chain", never "what does it do". The kind codes
+/// are a local wire detail of this module, not part of the core vocabulary.
+/// Cache-deduped on the JS side, terms and kinds alike.
 pub fn canvas_terms(
   dial: List(TermState),
   kinds: List(puzzle.DialKind),
@@ -66,7 +66,7 @@ pub fn canvas_theme(dark: Bool) -> Nil {
 @external(javascript, "../fourier_toy_ffi.mjs", "canvas_theme")
 fn js_canvas_theme(dark: Bool) -> Nil
 
-/// Press-highlight (PLAN-legibility-pass §2): pulse the slot that just stepped
+/// Press-highlight: pulse the slot that just stepped
 /// — its term circle and its column ring emphasis for ~600ms, then fade back.
 /// Draw-state only: the payload, the score and the wire are untouched, and a
 /// repeat that re-pushes the same slot simply re-arms the window.
@@ -77,7 +77,7 @@ pub fn canvas_pulse(slot: Int) -> Nil {
 @external(javascript, "../fourier_toy_ffi.mjs", "canvas_pulse")
 fn js_canvas_pulse(slot: Int) -> Nil
 
-/// Solve reveal (PLAN-legibility-pass §2): the comet goes solid over the
+/// Solve reveal: the comet goes solid over the
 /// dashed target for ~2s at the solve crossing. Fired BESIDE the solve POST in
 /// the same effect list — it never gates, delays or retries it.
 pub fn canvas_reveal() -> Nil {
@@ -126,7 +126,7 @@ pub fn hold_init() -> Nil {
 @external(javascript, "../fourier_toy_ffi.mjs", "hold_init")
 fn js_hold_init() -> Nil
 
-// ---------- the daily puzzle (PLAN-daily-puzzles.md §1) ----------
+// ---------- the daily puzzle ----------
 // Four concerns the pure core cannot own: reaching the API, the anonymous
 // identity, the stored attempt, and the two fire-and-forget POSTs. Each is a
 // thin binding over a guarded JS function — a toy with no storage, no fetch and
@@ -168,7 +168,7 @@ pub fn ls_del(key: String) -> Nil {
 @external(javascript, "../fourier_toy_ffi.mjs", "ls_del")
 fn js_ls_del(key: String) -> Nil
 
-/// The site-wide anonymous identity (`j-uid`, plan Q16): the stored v4 uuid, or
+/// The site-wide anonymous identity (`j-uid`): the stored v4 uuid, or
 /// a fresh one that is stored for next time. Always v4-shaped — the backend
 /// validates it, and a rejected identity would silently lose every solve.
 pub fn uuid_ensure() -> String {
@@ -199,7 +199,7 @@ fn js_fetch_puzzle(
 
 /// POST a telemetry body to `path`, calling `on_sent` only on a 2xx. Nothing
 /// retries here: an unsent solve is re-sent by the next boot from the stored
-/// attempt (`reported: false`), and an abandoned attempt is simply gone (Q21).
+/// attempt (`reported: false`), and an abandoned attempt is simply gone.
 pub fn post_telemetry(path: String, body: String, on_sent: fn() -> Nil) -> Nil {
   js_post_telemetry(path, body, on_sent)
 }

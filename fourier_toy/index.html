@@ -70,7 +70,7 @@ body {
 .chip {
   width: auto;
   display: inline-flex; align-items: center; justify-content: center;
-  /* a real touch target (PLAN-legibility-pass §2): 20px icon + 2×9 padding
+  /* a real touch target: 20px icon + 2×9 padding
      + 2×1.5 border = 41px, so the corner chips are thumb-sized, not hairline */
   padding: 9px;
   min-width: 40px; min-height: 40px;
@@ -132,8 +132,8 @@ button:active { background: #ededed; }
 body[data-theme="dark"] button:active { background: #232323; }
 button:disabled { opacity: .35; cursor: default; }
 /* glyph buttons: icon-only, but real BUTTONS — they keep the global button
-   chrome (line border, 10px radius, card fill — what the retired +/− steppers
-   wore) and only override what icon-only needs. The column's ordinal ink
+   chrome (line border, 10px radius, card fill) and only override what
+   icon-only needs. The column's ordinal ink
    reaches the svg through currentColor, so a column and its circle agree. */
 .glyph {
   color: inherit;

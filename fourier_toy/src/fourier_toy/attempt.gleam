@@ -1,5 +1,5 @@
 //// The stored attempt (localStorage key `j-att`): one player's progress on one
-//// puzzle date, client-side (PLAN-daily-puzzles.md §1, Q21/Q24).
+//// puzzle date, client-side.
 ////
 //// Schema v2 — a JSON OBJECT, one key per field, never positional:
 ////
@@ -12,30 +12,26 @@
 ////    "solved":false,                     the record is FINAL once true
 ////    "reported":false}                   the solve POST has landed (2xx)
 ////
-//// v2 (PLAN-dial-columns.md §3): the board dials three terms, not four,
-//// so `state` is a 3-term array and `v` bumps 1→2. A
-//// stored v1 document (four terms) is stale: it decodes to `Error(Nil)` and the
-//// board starts fresh. The version bump is the sanctioned way to retire a
-//// stored format, and only pre-change attempts are affected.
+//// `state` carries exactly the board's three dial terms, in slot order. A
+//// stored document that does not match — an older four-term one included —
+//// decodes to `Error(Nil)` and the board starts fresh: the version bump is the
+//// sanctioned way to retire a stored format, and a half-restored board is
+//// never better than a clean one.
 ////
 //// Why both the list and the count: the list is the reproducible record the
 //// backend re-derives the final state from, and it stops growing at the first
-//// solve (the counter-freeze boundary) plus at its 500-entry cap (Q1's cap,
-//// the backend's `TooManyMoves`). The count is what the player sees. They agree
+//// solve (the counter-freeze boundary) plus at its 500-entry cap (the
+//// backend's `TooManyMoves`). The count is what the player sees. They agree
 //// until one of those two boundaries separates them, and each tells its own
 //// truth: "how many steps it took" vs "the steps we can replay".
 ////
 //// Why `reported` is its own flag rather than "solved && posted": the POST is
 //// asynchronous — a solve that never landed (offline, closed tab) must be
 //// re-sent on the next boot, and the backend's solve is idempotent (it REPLACES
-//// the row, §8), so a duplicate is free.
-////
-//// A document that does not decode means "start fresh": a version bump (`v`)
-//// is the sanctioned way to retire this format, and a half-restored board is
-//// never better than a clean one.
+//// the row), so a duplicate is free.
 ////
 //// Not persisted, by design: the theme (its own key, f-toy-theme) and the uuid
-//// (site-wide, j-uid, Q16) — an attempt is about one puzzle on one date.
+//// (site-wide, j-uid) — an attempt is about one puzzle on one date.
 
 import fourier_toy/shapes.{type TermState}
 import gleam/dynamic/decode
@@ -68,7 +64,7 @@ pub type Attempt {
 /// The storage key: one attempt at a time, replaced on a new day.
 pub const storage_key = "j-att"
 
-/// The move-list cap (Q1: the client caps at 500; the backend refuses more).
+/// The move-list cap: the client caps at 500; the backend refuses more.
 pub const move_cap = 500
 
 /// A brand-new attempt: nothing played, nothing solved, nothing reported.
@@ -185,7 +181,7 @@ fn attempt_decoder() -> decode.Decoder(Attempt) {
         _ -> decode.failure(empty_attempt(), "three dial terms")
       }
     }
-    // v1 (four terms) is stale by the bump — and so is anything newer
+    // any other version (a four-term v1 included) is stale by the bump
     _ -> decode.failure(empty_attempt(), "version 2")
   }
 }

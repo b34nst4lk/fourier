@@ -1,11 +1,10 @@
-// fourier_toy v2's canvases: the board (dashed target + epicycle circles +
+// fourier_toy's canvases: the board (dashed target + epicycle circles +
 // comet) and three dial columns (each term's epicycle in miniature, one
-// controlled indicator per dial kind). Ported from fourier_sketch_ffi.mjs's
-// panel-2 loop with the guardrails that survived its phone-heat audit: 30fps
-// draw cap, DPR ≤ 2, dirty gate, batched paths, terms dedupe, rebuild-cache
-// only on terms change.
+// controlled indicator per dial kind). Modelled on fourier_sketch_ffi.mjs's
+// panel-2 loop with its guardrails: 30fps draw cap, DPR ≤ 2, dirty gate,
+// batched paths, terms dedupe, rebuild-cache only on terms change.
 //
-// PLAN-dial-columns.md §2/§4. What the columns add to the board contract:
+// What the columns add to the board contract:
 //   - ONE clock for all four canvases: same `t`, same SPEED, one RAF pump. A
 //     column and the board circle it mirrors can never disagree.
 //   - Kind codes drive BEHAVIOR (which symbology a column draws); the slot
@@ -24,7 +23,7 @@
 // Differences from the sibling:
 //   - 50% of the sibling's max speed (SPEED 0.125 laps/s vs 0.25).
 //   - Always-on comet (no pause/final frames — the toy's liveliness IS the
-//     illustration; ruled in the prototype-2 grill).
+//     illustration).
 //   - Two traces: a dashed TARGET (static per shape) and the player's comet.
 //   - No selection highlight; no IntersectionObserver (single above-fold
 //     canvas in a narrow column).
@@ -43,14 +42,13 @@ const FRAME_MS = 1000 / 30;
 const CHUNKS = 12; // comet alpha chunks
 const TAIL_FRAC = 1.0; // fraction of the lap drawn by the comet — a full lap,
 // so the tail begins exactly where the head is: no seam at the lap's start
-// (PLAN-legibility-pass §2)
 const COMET_TAIL = 0.4; // comet alpha floor — the whole lap stays readable
 const COMET_TIP = 0.85; // comet alpha at the pen
 const COMET_WIDTH = 2.6; // the comet's ordinary stroke width
 
-// Legibility pass (PLAN-legibility-pass §2): two DRAW-STATE effects that ride
-// the same clock as the comet. Neither touches the payload, the wire or the
-// score — they only decide how the next frames paint.
+// Two DRAW-STATE effects that ride the same clock as the comet. Neither
+// touches the payload, the wire or the score — they only decide how the next
+// frames paint.
 const PULSE_MS = 600; // press-highlight window
 const PULSE_WIDTH = 3; // the emphasis ring's width (board circles 1, rings 1.5)
 const PULSE_ALPHA = 0.9; // the emphasis's alpha at the press
@@ -62,10 +60,9 @@ const TRAIL_SWEEP = Math.PI / 4; // 45° behind the arm tip
 const TRAIL_MIN_ALPHA = 0.15; // the farthest segment's alpha
 const TRAIL_WIDTH = 2; // the trail's stroke width
 
-// Kind codes — ffi.gleam's LOCAL mapping of puzzle.DialKind (the retired
-// puzzle.kind_code wire contract). They are BEHAVIOR: phase draws the start
-// marker, radius scales the ring, k is the fixed ring whose arm speed is the
-// feedback. Colour never reads these.
+// Kind codes — ffi.gleam's LOCAL mapping of puzzle.DialKind. They are
+// BEHAVIOR: phase draws the start marker, radius scales the ring, k is the
+// fixed ring whose arm speed is the feedback. Colour never reads these.
 const KIND_PHASE = 0;
 const KIND_RADIUS = 1;
 const KIND_K = 2;
@@ -110,7 +107,7 @@ const anim = {
   raf: null,
   dirty: true,
   dark: false,
-  // press-highlight + solve reveal (PLAN-legibility-pass §2): draw-state only.
+  // press-highlight + solve reveal: draw-state only.
   // A request is PENDING until the next frame stamps it with that frame's own
   // timestamp — so both windows are measured on the draw clock, never on a
   // wall-clock read taken mid-draw.
@@ -122,7 +119,7 @@ const anim = {
 };
 
 // The ink scheme: black ink on white (light) / white ink on black (dark), with
-// exactly three term colours — ORDINAL ink (PLAN-dial-columns §3): the 1st
+// exactly three term colours — ORDINAL ink: the 1st
 // dialed column/term is red, the 2nd yellow, the 3rd blue, always. Colour
 // answers "which wheel in the chain?"; the dial KIND answers "what does this
 // wheel do?" through symbology (marker / ring size / arm speed). Extras stay a
@@ -130,7 +127,7 @@ const anim = {
 //
 // Light-mode yellow is #8a6d00, NOT a bright print-yellow: #c9a411 measures
 // 2.39:1 on the white card and 2.31:1 on the page paper — below the 3:1
-// non-text floor, and far below the 4.5:1 the old row readout needed (the page
+// non-text floor and far below the 4.5:1 a text-coloured ink needs (the page
 // wears the same hex). #8a6d00 measures 4.92:1 on the card / 4.75:1 on the
 // paper: legibility wins, and the hue is still the radius ink.
 const PALETTES = {
@@ -159,8 +156,7 @@ const PALETTES = {
 };
 
 // ordinal → palette entry; an ordinal beyond the palette (positions 4–6 are
-// parked, PLAN-dial-columns §5) falls back to scaffold ink rather than
-// inventing a colour
+// reserved) falls back to scaffold ink rather than inventing a colour
 function ordinal_ink(index, pal) {
   return index >= 0 && index < pal.ink.length ? pal.ink[index] : pal.neutral;
 }
@@ -258,9 +254,9 @@ let boot_retry = null;
 // sync can arrive while no canvas is in the DOM. Callers stash their payload
 // unconditionally; this only binds + fits + pumps, so a late boot simply
 // starts painting the stashed payload (sibling pattern — the proven
-// fourier_sketch_ffi flow). A missing canvas (the headless case, or a DOM that
-// predates the Phase-3 column view) is skipped, never an error; it binds the
-// next time a payload arrives after it mounts.
+// fourier_sketch_ffi flow). A missing canvas (the headless case, or a DOM
+// that has not mounted the columns yet) is skipped, never an error; it binds
+// the next time a payload arrives after it mounts.
 function ensure_boot() {
   const dpr = Math.min(Math.max(window.devicePixelRatio || 1, 1), MAX_DPR);
   let found = 0;
@@ -362,7 +358,7 @@ export function canvas_theme(dark) {
   ensure_boot();
 }
 
-/// Press-highlight (PLAN-legibility-pass §2): the slot that just stepped — its
+/// Press-highlight: the slot that just stepped — its
 /// term circle and its column ring pulse for ~600ms. A draw-state request, so
 /// it costs nothing on the payload path; a repeat that re-pushes the same slot
 /// simply re-arms the window.
@@ -374,7 +370,7 @@ export function canvas_pulse(slot) {
   pump();
 }
 
-/// Solve reveal (PLAN-legibility-pass §2): the comet goes solid over the target
+/// Solve reveal: the comet goes solid over the target
 /// for ~2s at the solve crossing. Fired beside the solve POST, never in front
 /// of it — the network side keeps its own timing and retry rules.
 export function canvas_reveal() {
@@ -517,7 +513,7 @@ function draw_board(now) {
     ctx.moveTo(X + r, Y);
     ctx.arc(X, Y, r, 0, 2 * Math.PI);
     ctx.stroke();
-    // press-highlight (PLAN-legibility-pass §2): the dialed slot's circle takes
+    // press-highlight: the dialed slot's circle takes
     // a thicker emphasis ring in its own full ordinal ink, swelling out and
     // fading back as the window runs out. The base circle above is untouched
     // (the chain geometry is the contract) — the emphasis is drawn over it.
@@ -589,7 +585,7 @@ function draw_board(now) {
 // One dial column = the term's epicycle in miniature, on the board's clock:
 // the ring, an arm from the centre to the tip at the exact `position_at` angle
 // (2π·k·t + φ), and a pen dot at the tip. The controlled indicator carries the
-// DIAL KIND (PLAN-dial-columns §2/§4):
+// DIAL KIND:
 //   - phase (kind 0): fixed ring at 0.5 × space + a lone static start-marker
 //     dot ON the ring at the dialed phase (the pen's t=0 position; no arm — the
 //     pen carries the arm, so the two stay distinguishable when they coincide);
@@ -639,7 +635,7 @@ function draw_column(i, now) {
   ctx.arc(cx, cy, ring, 0, 2 * Math.PI);
   ctx.stroke();
 
-  // press-highlight (PLAN-legibility-pass §2): the pressed column's ring takes
+  // press-highlight: the pressed column's ring takes
   // the same beat as its term circle — thicker, fading out over PULSE_MS
   const pulse = pulse_strength(now);
   if (pulse > 0 && anim.pulseSlot === i) {
@@ -673,7 +669,7 @@ function draw_column(i, now) {
   // column's angle, speed and phase are the canvas circle's own numbers
   const a = 2 * Math.PI * k * anim.t + (deg * Math.PI) / 180;
 
-  // arm trail (PLAN-legibility-pass §2): the k column's speed made legible as
+  // arm trail: the k column's speed made legible as
   // motion — six arc segments on the ring over the last 45° BEHIND the tip,
   // alpha stepped 0.15 → 1.0 (the comet's chunk ramp in miniature). Only k
   // rotates: phase has its marker, radius its size, so neither draws one, and
@@ -846,7 +842,7 @@ export function hold_init() {
 }
 
 // ---- the daily puzzle: fetch, identity, storage, telemetry ------------------
-// PLAN-daily-puzzles.md §1. The toy is a static single file, so everything a
+// The toy is a static single file, so everything a
 // daily puzzle needs beyond the bundle is reached from here: the puzzle
 // itself over the API, an anonymous identity, the in-progress attempt, and the
 // two fire-and-forget POSTs. Every access is guarded — private-mode storage,
@@ -860,7 +856,7 @@ const UID_KEY = "j-uid";
 // working identity (both generators below already emit lowercase).
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
-// The API's `tz` is minutes to ADD to UTC (plan Q4) — the opposite sign of
+// The API's `tz` is minutes to ADD to UTC — the opposite sign of
 // Date#getTimezoneOffset, which is minutes to SUBTRACT. UTC+2 ⇒ 120.
 export function tz_offset_minutes() {
   try {
@@ -898,7 +894,7 @@ export function ls_del(key) {
   }
 }
 
-// The site-wide anonymous identity (plan Q16): created once, reused forever,
+// The site-wide anonymous identity: created once, reused forever,
 // so a player's solves across days are recognised as one player. A stored
 // value that is not a CANONICAL LOWERCASE v4 uuid (hand-edited, a different
 // app's key) is replaced — the backend refuses anything else.
@@ -973,7 +969,7 @@ export function fetch_puzzle(tz, on_ok, on_error) {
 // POST /api/solve or /api/attempts/abandon: fire-and-forget, but the solve's
 // arrival is the only thing that retires the pending report, so a 2xx calls
 // back. `keepalive` lets a solve survive the tab closing mid-request. No
-// retries: the next boot re-sends an unreported solve (plan §1).
+// retries: the next boot re-sends an unreported solve.
 export function post_telemetry(path, body, on_sent) {
   if (typeof window.fetch !== "function") return;
   try {

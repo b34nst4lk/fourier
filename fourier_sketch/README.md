@@ -10,7 +10,7 @@ loop. A table beside it lists every circle's configuration — frequency `k`,
 radius, and phase — with a sine sparkline per row, so the whole causal chain
 *draw → sum of circles → circle recipe* stays visible at once.
 
-Part 1 of the `fourier/` umbrella. Phase 2 (`fourier_toy`) will turn the
+Part 1 of the `fourier/` umbrella. The sibling `fourier_toy` turns the
 configuration table into a tuning puzzle, consuming this repo's math core.
 
 ## Quick start
@@ -98,10 +98,10 @@ gleam run -m fourier_sketch/bench --target javascript
 ```
 
 Layout: all logic is pure Gleam (`complex`, `resample`, `dft`, `terms`,
-`sketch`, `store`, `render`, `spark`) with TDD'd contracts (plan archived in `docs/archive/PLAN-2026-draw-pipeline.md`);
+`sketch`, `store`, `render`, `spark`) with TDD'd contracts;
 `src/app.gleam` is the Lustre UI; `src/fourier_sketch_ffi.mjs` is the thin
-JS layer (canvas + RAF, pointer/keyboard FFI, localStorage). The full plan
-lives in the archived `docs/archive/PLAN-2026-draw-pipeline.md`, phase-tracked in `docs/PROGRESS.md`.
+JS layer (canvas + RAF, pointer/keyboard FFI, localStorage). `docs/PROGRESS.md`
+is the rolling history.
 
 ## Manual smoke checklist (run before saying it works)
 

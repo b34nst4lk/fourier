@@ -1,5 +1,5 @@
-//// The served puzzle's decoder (PLAN-daily-puzzles.md §1 Q1): the JSON
-//// `GET /api/puzzle/today` answers with becomes the toy's `Setup` + `Shape`.
+//// The served puzzle's decoder: the JSON `GET /api/puzzle/today` answers with
+//// becomes the toy's `Setup` + `Shape`.
 ////
 //// Why a decoder and not a second fixture pipeline: the backend derives the
 //// dial truth and the 512-point target ONCE at save time
@@ -23,19 +23,19 @@
 //// the target trace's polar RMS about the centroid). Both come from
 //// `shapes.from_parts`, the same code the built-in shapes use on themselves.
 ////
-//// Normalization (PLAN-dial-columns.md §4.1d). The board dials exactly THREE
-//// terms (three columns, kinds ∈ {phase, radius, k}). A served document may
-//// still carry the retired "fixed" arrangement (the shipped puzzles used to
-//// end in it), so "fixed" survives only as a PRIVATE marker here: every fixed
-//// slot's truth term becomes an EXTRA — a fixed-correct term IS an extra — and
-//// its patch is dropped, wherever the slot sits. After that there must be
-//// exactly three dialable slots with three truth terms and three patches;
-//// anything else is `Error(Nil)` (the caller keeps the built-in quaver).
+//// Normalization. The board dials exactly THREE terms (three columns, kinds ∈
+//// {phase, radius, k}). A served document may
+//// still carry a "fixed" arrangement (the backend once emitted one), so
+//// "fixed" survives only as a PRIVATE marker here: every fixed slot's truth
+//// term becomes an EXTRA — a fixed-correct term IS an extra — and its patch is
+//// dropped, wherever the slot sits. After that there must be exactly three
+//// dialable slots with three truth terms and three patches; anything else is
+//// `Error(Nil)` (the caller keeps the built-in quaver).
 ////
 //// Everything else — a "none" envelope for an empty calendar, an "error"
 //// envelope, a network failure's empty string, a document this decoder cannot
 //// use — is `Error(Nil)`: the caller keeps the built-in quaver and tells no
-//// telemetry (there is no puzzle identity to report against, §1).
+//// telemetry (there is no puzzle identity to report against).
 
 import fourier_toy/puzzle.{type DialKind, type Patch}
 import fourier_toy/shapes
@@ -104,9 +104,14 @@ fn at_puzzle() -> decode.Decoder(DailyPuzzle) {
   case
     list.length(kinds) == list.length(dial),
     list.length(kinds) == list.length(patches),
-    list.length(target) > 0
+    target
   {
-    True, True, True -> {
+    True, True, [] ->
+      decode.failure(
+        no_puzzle(),
+        "matching dial and patch counts and a non-empty target",
+      )
+    True, True, _ -> {
       let rows = zip3(kinds, dial, patches)
       // A fixed slot is data, not a position: its truth term is a fixed term
       // (an extra) and its patch is dropped, wherever the slot sits. The served

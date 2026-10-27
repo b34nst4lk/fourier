@@ -1,7 +1,7 @@
 //// fourier toy — the daily puzzle board: tune the three dialed Fourier terms
 //// (phase, radius, k) until the solid comet closes onto the dashed target.
 ////
-//// One screen, no routing. Three states feed it (PLAN-fetch-first-boot.md §1):
+//// One screen, no routing. Three states feed it:
 ////
 ////   * `Loading` — a cold start's first moment: `GET /api/puzzle/today` is
 ////     already out, nothing is cached, so the board shows a minimal loading
@@ -72,7 +72,7 @@ type Model {
     moves: Int,
     solved_once: Bool,
     match: Float,
-    /// The site-wide anonymous identity (Q16) — empty only if the platform
+    /// The site-wide anonymous identity — empty only if the platform
     /// gave us nothing, in which case nothing is reported.
     uuid: String,
     /// The live attempt for `source`. None while the board is the built-in
@@ -134,7 +134,7 @@ fn init(_: Nil) -> #(Model, Effect(Msg)) {
   #(
     model,
     batch([
-      // the fetch goes FIRST: nothing syncs a canvas before it (§1.1)
+      // the fetch goes FIRST: nothing syncs a canvas before it
       fetch_effect(),
       hold_driver(),
       theme_apply(dark),
@@ -192,9 +192,8 @@ fn push_terms(
 }
 
 /// The STEP's canvas push: the terms first, then the press-highlight for the
-/// slot that moved (PLAN-legibility-pass §2). The pulse is a sibling of the
-/// terms push, so every step pulses — including hold-repeat ticks, which are
-/// steps of their own.
+/// slot that moved. The pulse is a sibling of the terms push, so every step
+/// pulses — including hold-repeat ticks, which are steps of their own.
 fn push_step_terms(
   state: List(TermState),
   kinds: List(puzzle.DialKind),
@@ -206,9 +205,8 @@ fn push_step_terms(
   })
 }
 
-/// The solve moment's reveal (PLAN-legibility-pass §2): a sibling of the solve
-/// POST in the same effect list — the POST's timing, retries and dedupe are
-/// untouched.
+/// The solve moment's reveal: a sibling of the solve POST in the same effect
+/// list — the POST's timing, retries and dedupe are untouched.
 fn reveal_effect() -> Effect(Msg) {
   effect.from(fn(_dispatch) { ffi.canvas_reveal() })
 }
@@ -235,9 +233,9 @@ fn persist_effect(a: attempt.Attempt) -> Effect(Msg) {
   })
 }
 
-/// The raw document of the last successful load, kept for the next boot
-/// (PLAN-fetch-first-boot.md §1.2). Best-effort, like every storage write, and
-/// versionless on purpose: `wire.decode` IS the gate.
+/// The raw document of the last successful load, kept for the next boot.
+/// Best-effort, like every storage write, and versionless on purpose:
+/// `wire.decode` IS the gate.
 const last_doc_key = "j-last"
 
 fn cache_effect(raw: String) -> Effect(Msg) {
@@ -264,7 +262,7 @@ fn solve_effect(uuid: String, a: attempt.Attempt) -> Effect(Msg) {
   })
 }
 
-/// POST the abandonment of an unsolved attempt (Q21).
+/// POST the abandonment of an unsolved attempt.
 fn abandon_effect(uuid: String, a: attempt.Attempt) -> Effect(Msg) {
   effect.from(fn(_dispatch) {
     ffi.post_telemetry(
@@ -401,8 +399,8 @@ fn reset(model: Model) -> #(Model, Effect(Msg)) {
     }
     False -> {
       // an unsolved attempt that was actually played is ABANDONED before it is
-      // replaced (Q21): the backend keeps the day's record, so difficulty data
-      // is not biased toward the attempts that ended in a solve
+      // replaced: the backend keeps the day's record, so difficulty data is not
+      // biased toward the attempts that ended in a solve
       let retire = case model.attempt {
         Some(a) if a.count > 0 -> [abandon_effect(model.uuid, a)]
         _ -> []
@@ -557,7 +555,7 @@ fn retire_then_open(
     // a solve from that day that never landed: report it before the day is
     // forgotten (it is worth more than the abandon)
     True, False -> [solve_effect(model.uuid, old_attempt)]
-    // started and dropped: the abandon record (Q21) — but only when something
+    // started and dropped: the abandon record — but only when something
     // was actually played. A 0-move attempt was never stepped, so it is
     // replaced silently (the reset path's rule); abandoning it would post a
     // spurious 0-move record and skew the difficulty data.

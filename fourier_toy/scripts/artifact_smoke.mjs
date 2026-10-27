@@ -2,13 +2,12 @@
 // into jsdom, evals the EXACT shipped bundle (jsdom can't run type="module"
 // scripts, but the esbuild bundle is self-contained with no export syntax, so
 // it evaluates identically as a classic script), and drives the real Lustre
-// runtime end to end — the FINAL v2 interface: ONE puzzle (the quaver), no
+// runtime end to end — the shipped interface: ONE puzzle (the quaver), no
 // routing: the app boots straight into the board.
 //
-// PLAN-dial-columns.md §4 Phase 4. The board's stepper ROWS are gone: under
-// the canvas sit three purely-visual dial COLUMNS (one per dialed term, chain
-// order), each `[glyph ↑][canvas col-N][glyph ↓]` with NO text at all. This
-// smoke pins:
+// Under the canvas sit three purely-visual dial COLUMNS (one per dialed term,
+// chain order), each `[glyph ↑][canvas col-N][glyph ↓]` with NO text at all.
+// This smoke pins:
 //   - the shipped CSS (no rows/readouts, ordinal ink vars, glyph sizing, the
 //     touch-action / user-select guards kept on `button`);
 //   - the DOM contract (3 columns, 6 icon-only glyph buttons with the exact
@@ -23,7 +22,7 @@
 // (drained by tick()); canvas 2D contexts are replaced with op-recording stubs.
 // The stubs record ONE frame per clearRect (arcs/lines/strokes with the stroke
 // style), so the smoke can read a column's ring radius and the phase column's
-// start-marker angle — the visual stand-in for the retired text readouts.
+// start-marker angle — the visual stand-in for text readouts.
 // Element identity, per-canvas op counts and drawn geometry are the assertions;
 // pixels are not.
 //
@@ -107,7 +106,7 @@ function make_ctx() {
       ops.arc++;
       if (!Number.isFinite(x) || !Number.isFinite(y)) ops.nan++;
       const f = frame();
-      // the start/end angles are recorded too: the legibility pass's arm trail
+      // the start/end angles are recorded too: the k column's arm trail
       // is arc segments whose sweep is part of the contract
       if (f) f.arcs.push([x, y, r, a0, a1]);
       if (st.path) st.path.arcs.push([x, y, r, a0, a1]);
@@ -147,13 +146,13 @@ function make_ctx() {
   };
 }
 
-// The network half of the daily puzzle (PLAN-daily-puzzles.md §1). jsdom has no
+// The network half of the daily puzzle. jsdom has no
 // fetch, so the smoke supplies one: `fetchMode` picks the answer to
 // GET /api/puzzle/today ("none" is the default — the empty calendar every
 // pre-daily scenario boots into), and every call is logged so the scenarios can
 // count and read the POSTs. POSTs answer 200 unless `postFails`.
 //
-// PLAN-fetch-first-boot §4: `fetchMode: "pending"` leaves the GET in flight
+// `fetchMode: "pending"` leaves the GET in flight
 // until the scenario settles it by hand (`__resolve_fetch(body)` /
 // `__reject_fetch()`), so the boot's in-flight states (the loading state, the
 // optimistic cached board) can be inspected. Every GET also records how many
@@ -382,7 +381,7 @@ function board_inks(dom) {
   return f ? new Set(f.strokes.map((s) => s.style)) : new Set();
 }
 
-// The six glyph buttons' exact labels (PLAN-dial-columns §1 decision 8).
+// The six glyph buttons' exact labels.
 const GLYPH_LABELS = [
   "increase phase",
   "decrease phase",
@@ -459,7 +458,7 @@ console.log("S0 · artifact CSS — dial columns, ordinal ink, input guards kept
     dark.replace(/\s+/g, " ").slice(0, 160),
   );
   check(
-    "the retired kind vars are gone (colour answers 'which wheel', not 'what does it do')",
+    "no kind CSS vars (colour answers 'which wheel', not 'what does it do')",
     !/--term-phase|--term-radius|--term-k|--term-fixed/.test(html),
   );
   const ordRule = (n) => {
@@ -478,9 +477,9 @@ console.log("S0 · artifact CSS — dial columns, ordinal ink, input guards kept
       /\.glyph[^{]*\{[^}]*color:\s*inherit/s.test(html),
   );
 
-  // Glyph buttons read as BUTTONS: they keep the global chrome (the retired
-  // +/− steppers' line border, 10px radius, card fill) and only override what
-  // icon-only needs. Stripping the chrome back to bare icons is the regression.
+  // Glyph buttons read as BUTTONS: they keep the global chrome (line border,
+  // 10px radius, card fill) and only override what icon-only needs. Stripping
+  // the chrome back to bare icons is the regression.
   const glyphRule = html.match(/\n\.glyph \{[^}]*\}/);
   check(
     "glyph buttons wear the button chrome (line border, 10px radius, card fill — not stripped)",
@@ -502,9 +501,9 @@ console.log("S0 · artifact CSS — dial columns, ordinal ink, input guards kept
     !/\.glyph:active[^{]*\{[^}]*background:\s*none/.test(html),
   );
 
-  // The rows and their readouts are gone from the stylesheet.
+  // The stylesheet carries no dial rows, no readouts and no kind classes.
   check(
-    "the retired row/readout/kind CSS is gone",
+    "no row/readout/kind CSS is left in the stylesheet",
     !/\n\.rows \{/.test(html) &&
       !/\n\.row \{/.test(html) &&
       !/\n\.val \{/.test(html) &&
@@ -512,9 +511,9 @@ console.log("S0 · artifact CSS — dial columns, ordinal ink, input guards kept
       !/\.kind-(phase|radius|k|fixed)/.test(html),
   );
 
-  // PLAN-legibility-pass §2/§4: the corner chips are real touch targets now —
-  // 20px icons (grown from 16px) and a ≥40px hit box = icon + padding + border.
-  // Icon-only + aria labels are unchanged (pinned in S1).
+  // The corner chips are real touch targets — 20px icons and a ≥40px hit box
+  // = icon + padding + border. Icon-only + aria labels are unchanged (pinned
+  // in S1).
   const chipRule = html.match(/\n\.chip \{[^}]*\}/);
   const chipIconRule = html.match(/\.chip \.icon \{[^}]*\}/);
   const iconPx = chipIconRule ? /width:\s*([\d.]+)px/.exec(chipIconRule[0]) : null;
@@ -545,10 +544,9 @@ console.log("S0 · artifact CSS — dial columns, ordinal ink, input guards kept
 }
 
 // ==== S1 · boot straight into the quaver board + the column DOM contract =====
-// PLAN-fetch-first-boot §1: a COLD boot (no cache) paints the loading state
-// while the fetch is out and falls through to the quaver when the answer names
-// no puzzle. S1's contract is the fallback board, so it starts once the answer
-// has landed — the fallback itself is unchanged.
+// S1's contract is the fallback board: a COLD boot (no cache) paints the
+// loading state while the fetch is out and falls through to the quaver when the
+// answer names no puzzle, so S1 starts once the answer has landed.
 console.log("S1 · cold load — quaver board, three text-free dial columns, icon glyphs");
 const dom = boot_dom();
 let state = initial_state();
@@ -602,7 +600,7 @@ tick(34, 5); // draw frames
     JSON.stringify(colEls.map((c) => c.textContent)),
   );
   check(
-    "the retired row/readout nodes are gone",
+    "no dial row/readout nodes (.row, .val, .id, .sub)",
     doc.querySelectorAll(".row, .val, .id, .sub").length === 0,
     "nodes " + doc.querySelectorAll(".row, .val, .id, .sub").length,
   );
@@ -650,7 +648,7 @@ tick(34, 5); // draw frames
     return [...svg.querySelectorAll(sel)].some((n) => re.test(n.getAttribute("points") || n.getAttribute("d") || ""));
   };
   check(
-    "phase ↑ is rotate-cw (the phase pair is Q6-ruled: up = +5° = clockwise)",
+    "phase ↑ is rotate-cw (up = +5° = clockwise)",
     has("increase phase", "polyline", /^23 4 23 10 17 10$/) && has("increase phase", "path", /M20\.49 15/),
     text(svg_of("increase phase")),
   );
@@ -1195,9 +1193,9 @@ console.log("S7 · theme persistence — stored choice beats system preference")
 
 
 // ==== S8 · the daily puzzle: fetch → board → store → telemetry ==============
-// PLAN-daily-puzzles.md §1. The served document is an OLD-FORMAT one (four
+// The served document is an OLD-FORMAT one (four
 // dial kinds, the fourth "fixed"): the board normalizes it to the three
-// dialable terms plus the fixed term as an extra (PLAN-dial-columns §3), so
+// dialable terms plus the fixed term as an extra, so
 // the served shape's synthesis is the quaver's own — the dial-home walk below
 // really solves. The name, date and start differ, so the board proves it took
 // the fetched puzzle over. The wiring under test is the toy's, not the
@@ -1229,7 +1227,7 @@ const daily_doc = () => ({
       [90, 50],
     ],
     centroid: [shape.centroid[0], shape.centroid[1]],
-    // the deployed backend's arrangement: phase, radius, k, then the retired
+    // the deployed backend's arrangement: phase, radius, k, then a
     // fixed slot (its term and its "keep" patch are normalized away)
     dials: ["phase", "radius", "k", "fixed"],
     dial: [...Array.from(shape.dial, term_row), term_row(Q_EXTRAS[0])],
@@ -1310,8 +1308,8 @@ const attempt_json = (fields) =>
     reported: !!fields.reported,
   });
 
-// a pre-change (v1) attempt: four terms, the retired schema — stale by the
-// sanctioned version bump, so the board must start fresh, never crash
+// a v1 (four-term) attempt: stale by the
+// version bump, so the board must start fresh, never crash
 const STALE_V1 = JSON.stringify({
   v: 1,
   date: DAILY_DATE,
@@ -1376,7 +1374,7 @@ const uuid_now = (d) => d.window.localStorage.getItem("j-uid");
     get ? get.url : "no GET",
   );
   check(
-    "the anonymous identity is created anyway (site-wide, Q16)",
+    "the anonymous identity is created anyway (site-wide, j-uid)",
     /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(
       uuid_now(d) || "",
     ),
@@ -1531,7 +1529,7 @@ const uuid_now = (d) => d.window.localStorage.getItem("j-uid");
 // A FRESH session, not S8b's: the harness resets the global RAF
 // queue at every boot, which strands an earlier session's animation loop —
 // its canvas keeps only the frames drawn before the next boot. The reveal is
-// a live-clock behavior (PLAN-legibility-pass §2), so the solve-moment walk
+// a live-clock behavior, so the solve-moment walk
 // runs where the loop is actually turning.
 {
   const d = boot_dom({ fetchMode: "ok", fetchBody: daily_json() });
@@ -1556,7 +1554,7 @@ const uuid_now = (d) => d.window.localStorage.getItem("j-uid");
   const count = counter_n(d);
   let solve_calls = posts(d).filter((c) => c.url === "/api/solve");
   check("exactly one solve POST", solve_calls.length === 1, "got " + solve_calls.length);
-  // PLAN-legibility-pass §2/§4: the SAME solve-moment effect list that POSTs
+  // the SAME solve-moment effect list that POSTs
   // also fires canvas_reveal() — for ~2s the comet strokes full alpha at 1.5×
   // over the dashed target. It rides beside the POST, never gates it: the
   // solve POST above is still exactly once.
@@ -1878,12 +1876,11 @@ const uuid_now = (d) => d.window.localStorage.getItem("j-uid");
 }
 
 // ==== S9 · fetch-first boot — the cold loading state =======================
-// PLAN-fetch-first-boot.md §1 (user-ruled 2026-10-27) / §4. The old order — the
-// quaver painted first, the answer second — is gone. A COLD start (nothing
-// cached) shows a MINIMAL loading state for the fetch's duration: the GET is
-// already out, the board is empty, the columns are disabled, there is no title
-// and no score. Only a cold failure falls through to the quaver, and the
-// quaver's no-storage/no-telemetry rule is unchanged when reached.
+// A COLD start (nothing cached) shows a MINIMAL loading state for the fetch's
+// duration: the GET is already out, the board is empty, the columns are
+// disabled, there is no title and no score. Only a cold failure falls through
+// to the quaver, and the quaver's no-storage/no-telemetry rule holds whenever
+// it is reached.
 console.log("S9 · fetch-first boot — the loading state, and the cold quaver fallback");
 {
   const d = boot_dom({ fetchMode: "pending" });
@@ -2415,7 +2412,7 @@ console.log("S16 · j-last — the raw document is cached on every successful lo
 }
 
 // ==== S17 · press-highlight — a step pulses its circle and its column ring ====
-// PLAN-legibility-pass §2/§4: the step's canvas push also pulses the slot that
+// The step's canvas push also pulses the slot that
 // moved (canvas_pulse(slot)) — ~600ms of a thicker emphasis ring on the board's
 // term circle and on the pressed column's ring, then back to baseline. Hold-
 // repeat re-arms it: each synthesized repeat is a step of its own.

@@ -1,19 +1,19 @@
-// Per-step perf bench for the toy's pure core (C3 of the dead-code/review
-// handoff): proves the memoized-Model wins (C1 shape memoization, C2 single
-// match_pct per step) and guards against regressions.
+// Per-step perf bench for the toy's pure core: proves the memoized-Model design
+// (the shape memoized once at boot, one match_pct per step) and guards it
+// against regressions.
 //
-// The app used to rebuild the immutable quaver fixture (27-row table →
-// 512-point synth_trace → rms_polar) on EVERY call of the setup()/shape()
-// wrappers — twice per step — and computed the 512-sample metric twice per
-// step (update's solved() gate + view's match_pct). The memoized Model runs
-// the fixture ONCE at boot and the metric ONCE per step. This bench times
-// both patterns head-to-head on the compiled modules (the same code the
-// app runs) and asserts the ratio.
+// The memoized flow builds the immutable quaver fixture (27-row table →
+// 512-point synth_trace → rms_polar) ONCE at boot and computes the 512-sample
+// metric ONCE per step. The legacy flow — what the setup()/shape() wrappers
+// cost — rebuilds the fixture twice per steered step and computes the metric
+// twice (update's solved() gate + view's match_pct). This bench times both
+// head-to-head on the compiled modules (the same code the app runs) and asserts
+// the ratio.
 //
 // Contracts:
 //   - quaver() (the boot fixture build) under BOOT_BUDGET_MS
 //   - match_pct (the per-step metric) under STEP_BUDGET_MS
-//   - legacy per-step cost ≥ RATIO × memoized per-step cost (the win is real)
+//   - memoized per-step cost ≤ legacy per-step cost / RATIO (the win is real)
 //
 // Run: node scripts/bench_puzzle.mjs
 
@@ -60,10 +60,9 @@ const match_ms = Math.min(
   ...Array.from({ length: 5 }, () => time_match(50, state0)),
 );
 
-// ---- 3 · per-step flows: memoized (current) vs legacy (pre-C1/C2) -----------
-// legacy: the old update+view rebuilt the fixture twice and ran the metric
-// twice per steered step — the exact cost the wrappers `setup()`/`shape()`
-// induced before the memoized Model landed.
+// ---- 3 · per-step flows: memoized vs legacy ---------------------------------
+// legacy: the fixture rebuilt twice and the metric run twice per steered step —
+// the cost the setup()/shape() wrappers induce.
 function time_flow(iter, flow) {
   let min = Infinity;
   for (let i = 0; i < iter; i++) {
@@ -120,7 +119,7 @@ function check(name, ok, detail) {
 check("boot fixture build within budget", boot_ms < BOOT_BUDGET_MS, boot_ms.toFixed(3) + " ms");
 check("per-step metric within budget", match_ms < STEP_BUDGET_MS, match_ms.toFixed(3) + " ms");
 check(
-  "memoized flow beats the legacy flow (C1+C2 win)",
+  "memoized flow beats the legacy flow (the memoization win)",
   legacy_step_ms >= RATIO * memoized_step_ms,
   "ratio " + (legacy_step_ms / memoized_step_ms).toFixed(2) + "×",
 );
