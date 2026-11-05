@@ -78,6 +78,55 @@ possible later, not a venue for a small daily puzzle); Discord Activities
 3. Leave Tier C alone unless a licensing pitch from Coolmath/Armor ever
    appeals.
 
+## Submission URLs (verified 2026-10-31)
+
+Tier A — submit `https://jacks.im/toys/doodle/` as the embeddable link:
+
+- I Love Web Games — form: https://ilovewebgames.com/submit-game/ (or
+  contact@ilovewebgames.com). Wants: title, iframe-embeddable URL, credit
+  name, your site link, genre, 2–3 sentence blurb, 512×384+ thumbnail.
+- Good Browser Games — https://goodbrowsergames.com/submit (public URL +
+  embeddable URL; they track visits/playtime and surface player feedback).
+- Gamenora — https://www.gamenora.com ; submissions by email to
+  gamenoragames@gmail.com (their terms page: "send links, embed code, or
+  game files links"). Selective, no payment.
+- WebGamer — https://webgamer.io (curated; pitch via the About-page contact).
+
+Tier B — upload the build (after the enabler):
+
+- itch.io — create: https://itch.io/game/new (login); HTML5 guide:
+  https://itch.io/docs/creators/html5 — upload `dist/index.html` directly
+  (single-file projects skip the zip).
+- Newgrounds — upload wizard: https://www.newgrounds.com/upload (login);
+  canonical guide:
+  https://www.newgrounds.com/wiki/help-information/content-submission/games-and-movies
+  — ZIP with `index.html` at the root.
+- GameJolt — add: https://gamejolt.com/dashboard/games/add (login); guide:
+  https://gamejolt.com/help-docs/creators/add-game — Browser Build = ZIP
+  with root `index.html`.
+
+Tier C (for reference; not our targets):
+
+- Poki — https://developers.poki.com
+- CrazyGames — https://developer.crazygames.com
+- GamePix — https://www.gamepix.com (developer program; forbids external
+  network calls — disqualified for us regardless)
+- GameDistribution — https://gamedistribution.com
+- GameMonetize — https://gamemonetize.com
+- Y8 — https://www.y8.com (developer flow via a Y8 Storage account)
+- Kongregate — pitch by email: bd@kongregate.com
+- Armor Games — pitch by email: mygame@armorgames.com
+- Addicting Games — pitch by email: games@addictinggames.com
+- Lagged — https://lagged.dev (or contact@lagged.com)
+- Discord Activities — https://discord.com/developers/applications
+
+Link-only channels:
+
+- https://www.reddit.com/r/WebGames/
+- https://news.ycombinator.com (Show HN)
+- The 56-venue directory with per-entry links (checked Sept 2026):
+  https://github.com/ayomide321/game-portals
+
 ## Sources
 
 - itch.io HTML5 upload docs (itch.io/docs/creators/html5) — ZIP/single-file,
