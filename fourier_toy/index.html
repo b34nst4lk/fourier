@@ -37,9 +37,14 @@ body[data-theme="dark"] {
   --ord-2: #5aa0e8;
 }
 * { box-sizing: border-box; }
+/* the page IS the game: the column centers both ways in any viewport —
+   top-of-page on tall screens looked like dead space inside portal iframes,
+   and the paper propagates to the canvas either way (the body's background
+   paints the root when html carries none) */
+html { height: 100%; display: flex; }
 body {
   max-width: 430px;
-  margin: 0 auto;
+  margin: auto;
   padding: 14px;
   font: 16px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
   color: var(--ink);
