@@ -68,6 +68,16 @@ possible later, not a venue for a small daily puzzle); Discord Activities
   pattern (`/toys/doodle-dev/` pin) would want a platform twin if releases
   accelerate.
 
+## Submission status
+
+- 2026-11-05 — submitted to **I Love Web Games** (the form: the canonical
+  game URL, the blurb + how-to-play texts, the dotted dark trace thumbnail
+  via the webp URL) and **Good Browser Games** (public game URL = the
+  canonical page; embeddable URL = the /embed/ twin with the trailing
+  slash, after diagnosing their word-filter and the no-slash http redirect).
+  Both pending review (ILWG plays every submission within days and replies
+  by email with the live page link).
+
 ## Recommendation
 
 1. **Now, free**: submit the jacks.im URL to I Love Web Games (+ Gamenora/
