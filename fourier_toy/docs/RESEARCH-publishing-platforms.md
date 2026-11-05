@@ -80,7 +80,12 @@ possible later, not a venue for a small daily puzzle); Discord Activities
 
 ## Submission URLs (verified 2026-10-31)
 
-Tier A — submit `https://jacks.im/toys/doodle/` as the embeddable link:
+Tier A — the game is embeddable at two URLs: the canonical page
+`https://jacks.im/toys/doodle/` and the purpose-built embed twin
+`https://jacks.im/toys/doodle/embed/` (the same artifact served by the
+pipeline at an /embed/ path; GA rides only the canonical page, so embeds
+are tag-free). Use the embed twin where a form asks for an "embeddable URL"
+specifically, the canonical page elsewhere:
 
 - I Love Web Games — form: https://ilovewebgames.com/submit-game/ (or
   contact@ilovewebgames.com). Wants: title, iframe-embeddable URL, credit
