@@ -1,0 +1,7 @@
+# Agent / tooling droppings
+__pycache__/
+*.pyc
+*.log
+
+# Local credentials — the puzzle API key lives in /opt/data/.env, never here
+.env

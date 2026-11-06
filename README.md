@@ -17,9 +17,11 @@ Both toys sit in this repo as subtree imports (full per-project histories
 preserved, connected by the import commits); each project keeps its rolling
 history in its own `docs/PROGRESS.md`:
 
-    fourier_sketch/   draw-to-epicycles toy
-    fourier_toy/      Doodle, the daily puzzle toy
-    .github/          single CI workflow: test matrix over both projects
+    fourier_sketch/     draw-to-epicycles toy
+    fourier_toy/        Doodle, the daily puzzle toy
+    toy_admin/          daily-puzzle backend + Access-gated admin
+    fourier-pipeline/   the puzzle-authoring scripts, archived and explained
+    .github/            single CI workflow: test matrix over both projects
 
 ## Build & test
 
